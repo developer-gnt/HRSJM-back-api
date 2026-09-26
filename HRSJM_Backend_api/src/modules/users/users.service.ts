@@ -57,6 +57,14 @@ export class UsersService {
     return this.usersRepository.findOne({ where: { id } });
   }
 
+  async findActiveUsers(): Promise<User[]> {
+    return this.usersRepository.find({ where: { status: UserStatus.ACTIVE } });
+  }
+
+  async findActiveUsersByRole(role: UserRole): Promise<User[]> {
+    return this.usersRepository.find({ where: { role, status: UserStatus.ACTIVE } });
+  }
+
   async listUsers(page: number, limit: number, role?: string, search?: string) {
     const qb = this.usersRepository.createQueryBuilder("user");
 
