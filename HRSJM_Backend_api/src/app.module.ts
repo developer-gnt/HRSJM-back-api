@@ -7,6 +7,7 @@ import { JwtAuthGuard } from "./shared/guards/jwt-auth.guard";
 import { RolesGuard } from "./shared/guards/roles.guard";
 import { SharedModule } from "./shared/shared.module";
 import { AuthModule } from "./modules/auth/auth.module";
+import { DocumentsModule } from "./modules/documents/documents.module";
 import { HealthModule } from "./modules/health/health.module";
 import { MembershipsModule } from "./modules/memberships/memberships.module";
 import { UsersModule } from "./modules/users/users.module";
@@ -35,6 +36,7 @@ import { UsersModule } from "./modules/users/users.module";
     HealthModule,
     UsersModule,
     MembershipsModule,
+    DocumentsModule,
     AuthModule,
   ],
   providers: [

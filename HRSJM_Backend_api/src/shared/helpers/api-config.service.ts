@@ -74,6 +74,10 @@ export class ApiConfigService {
     return this.getBoolean("DATABASE_LOGGING", false);
   }
 
+  get documentMaxSizeBytes(): number {
+    return this.getNumber("DOCUMENT_MAX_SIZE_MB", 5) * 1024 * 1024;
+  }
+
   get jwtSecret(): string {
     return this.getString("JWT_SECRET", "changeme-dev-secret");
   }
