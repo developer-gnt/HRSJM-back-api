@@ -3,19 +3,19 @@
 Source of truth: the HRSJM Junior Backend Developer BRD. One phase at a time; each phase
 ends with a working, committed, testable increment before moving on.
 
-## Phase 0 — Foundation & Environment (in progress)
+## Phase 0 — Foundation & Environment (completed)
 - Decide stack: NestJS + TypeScript + PostgreSQL (BRD mandate) vs. Express + MongoDB (current scaffold)
 - DB connection, health endpoint, env config, first git commit
 - **Done when:** `GET /api/health` returns 200 and the scaffold is committed
 
-## Phase 1 — Auth & Users (RBAC foundation)
+## Phase 1 — Auth & Users (RBAC foundation, completed)
 - User entity with roles: ADMIN, MEMBER, DONOR, DONATION_SEEKER
 - Register, login (JWT, bcrypt), current-user endpoint
 - Role + ownership guards reused by every later module
 - Shared response envelope `{ success, message, data }`, standard error format, pagination helpers
 - **Done when:** register/login work, protected route rejects wrong role, committed
 
-## Phase 2 — Membership Core & Digital ID
+## Phase 2 — Membership Core & Digital ID (completed)
 - Membership entity: category, status, joining date, expiry
 - Digital Membership ID derived from membership (no duplicate member data — BRD rule 1)
 - Validate membership endpoint

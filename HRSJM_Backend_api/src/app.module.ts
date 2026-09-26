@@ -8,6 +8,7 @@ import { RolesGuard } from "./shared/guards/roles.guard";
 import { SharedModule } from "./shared/shared.module";
 import { AuthModule } from "./modules/auth/auth.module";
 import { HealthModule } from "./modules/health/health.module";
+import { MembershipsModule } from "./modules/memberships/memberships.module";
 import { UsersModule } from "./modules/users/users.module";
 
 @Module({
@@ -33,6 +34,7 @@ import { UsersModule } from "./modules/users/users.module";
     SharedModule,
     HealthModule,
     UsersModule,
+    MembershipsModule,
     AuthModule,
   ],
   providers: [
