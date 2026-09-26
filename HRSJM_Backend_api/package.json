@@ -6,7 +6,8 @@
     "build": "nest build",
     "start": "nest start",
     "start:dev": "nest start --watch",
-    "start:prod": "node dist/main"
+    "start:prod": "node dist/main",
+    "test:smoke": "node scripts/test-phases-0-6.mjs"
   },
   "dependencies": {
     "@nestjs/common": "^10.3.10",
