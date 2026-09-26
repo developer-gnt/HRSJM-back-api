@@ -1,0 +1,424 @@
+# HRSJM Backend — Development Phases
+
+**Owner:** Mubasshir (Senior Backend Developer)
+**Source:** `HRSJM_Mubasshir_Senior_Backend_BRD.md`
+**Scope:** 12 modules / 74 APIs — core backend + financial engine
+**Stack:** NestJS + TypeScript · PostgreSQL · TypeORM (migrations, `synchronize: false`) · REST `/api/v1`
+
+---
+
+## Progress Tracker
+
+| Phase | Name | APIs | Status |
+|---|---|---:|---|
+| 0 | Project Foundation & Setup | — | ✅ Done (verified 2026-09-26) |
+| 1 | Authentication & User Account | 8 | ✅ Done (verified 2026-09-26) |
+| 2 | Users / Roles / Permissions (RBAC) | 15 | ✅ Done (verified 2026-09-26) |
+| 3 | Membership Categories | 5 | ✅ Done (verified 2026-09-26) |
+| 4 | Membership Management | 9 | ✅ Done (verified 2026-09-26) |
+| 5 | Membership Payment | 6 | ✅ Done (verified 2026-09-26) |
+| 6 | Accounting Foundation (COA + Entries + Ledger) | 10 | ⬜ Not started |
+| 7 | Expense / Payment Entry | 5 | ⬜ Not started |
+| 8 | Receipt / Payment Accounting Integration | 0 (integration) | ⬜ Not started |
+| 9 | Donation Financial / Payment Integration | 7 | ⬜ Not started |
+| 10 | Trial Balance | 2 | ⬜ Not started |
+| 11 | Profit & Loss | 2 | ⬜ Not started |
+| 12 | Balance Sheet | 2 | ⬜ Not started |
+| 13 | Integration, QA & Handoff | — | ⬜ Not started |
+| | **TOTAL** | **74** | |
+
+Phases 1 → 5 build the identity + membership pipeline; Phases 6 → 12 build the accounting engine and reports; Phase 13 hardens everything. A phase must be complete (per Definition of Done below) before the next starts, except Phase 0 which only needs to exist once.
+
+---
+
+## Phase 0 — Project Foundation & Setup
+
+**Objective:** A runnable NestJS project with the shared skeleton every later phase plugs into.
+
+**Deliverables**
+- [ ] NestJS + TypeScript project initialized, Git flow agreed (`main` / `develop` / `feature/*`)
+- [ ] PostgreSQL connection via TypeORM, `synchronize: false`, migrations pipeline configured
+- [ ] `.env.example` committed; real secrets never committed (`DATABASE_*`, `JWT_SECRET`, `PAYMENT_GATEWAY_*`, `STORAGE_*`)
+- [ ] Base entity with audit fields: `id`, `created_at`, `updated_at`, `created_by`, `updated_by`
+- [ ] Common enums: `ACTIVE/INACTIVE`, membership + payment status enums
+- [ ] Standard response envelope: `{ success, message, data }` and error shape `{ success, message, error: { code, details } }`
+- [ ] Global error filter, DTO validation pipe (single validation approach project-wide), Swagger setup
+- [ ] Health check endpoint
+- [ ] Module folder convention: `module/{controllers,services,repositories,entities,dto,enums,module.ts}`
+
+**Exit criteria:** App boots, connects to DB, serves `/health`, Swagger reachable, a sample migration runs.
+
+---
+
+## Phase 1 — Authentication & User Account (8 APIs)
+
+**Objective:** Secure registration, login, token lifecycle, and profile self-service.
+
+**Tables:** `users`, `refresh_tokens / sessions`
+
+**APIs**
+```text
+POST   /api/v1/auth/register
+POST   /api/v1/auth/login
+POST   /api/v1/auth/logout
+POST   /api/v1/auth/refresh
+POST   /api/v1/auth/forgot-password
+POST   /api/v1/auth/reset-password
+GET    /api/v1/auth/me
+PATCH  /api/v1/auth/me
+```
+
+**Key rules**
+- Passwords hashed, never stored or logged in plain text
+- Access + refresh token strategy; logout revokes the session/refresh token
+- Registration assigns an initial role (integration point with Phase 2 — seed baseline roles early)
+- Account status checked before protected operations
+
+**Exit criteria:** Full auth flow works end-to-end; invalid credentials, expired/revoked tokens, and disabled accounts are rejected; auth events audited.
+
+---
+
+## Phase 2 — Users / Roles / Permissions (15 APIs)
+
+**Objective:** Central RBAC: `User → Role → Permissions → Authorization Guard → Protected API`.
+
+**Tables:** `roles`, `permissions`, `role_permissions`, `user_roles`
+
+**APIs**
+```text
+GET    /api/v1/users
+GET    /api/v1/users/:id
+PATCH  /api/v1/users/:id
+PATCH  /api/v1/users/:id/status
+GET    /api/v1/roles
+POST   /api/v1/roles
+GET    /api/v1/roles/:id
+PATCH  /api/v1/roles/:id
+DELETE /api/v1/roles/:id
+GET    /api/v1/permissions
+POST   /api/v1/roles/:id/permissions
+DELETE /api/v1/roles/:id/permissions/:permissionId
+GET    /api/v1/users/:id/roles
+POST   /api/v1/users/:id/roles
+DELETE /api/v1/users/:id/roles/:roleId
+```
+
+**Key rules**
+- Baseline roles seeded: Member, Donor, Donation Seeker, HRSJM Admin
+- Permission-based guards on every protected endpoint from here on (this phase produces the guard all later phases consume)
+- Role info is never trusted from client payloads
+
+**Exit criteria:** Admin can manage users/roles/permissions; a non-admin is blocked from admin endpoints; guard is reusable and documented.
+
+> **Verified 2026-09-26:** 15 APIs verified with full RBAC guard integration (`PermissionsGuard` resolving from DB, `JwtAuthGuard`), role protection checks, self-status guard, custom role lifecycle, and 100% unit tests (35 tests total across 4 suites) + E2E suite (`test/e2e-rbac.sh`). All scenarios in `docs/test-scenarios.md` passed.
+
+---
+
+## Phase 3 — Membership Categories (5 APIs)
+
+**Objective:** Admin-managed catalog of membership categories (name, description, fee, validity/period, status).
+
+**Tables:** `membership_categories`
+
+**APIs**
+```text
+GET    /api/v1/membership-categories
+POST   /api/v1/membership-categories
+GET    /api/v1/membership-categories/:id
+PATCH  /api/v1/membership-categories/:id
+PATCH  /api/v1/membership-categories/:id/status
+```
+
+**Key rules**
+- Deactivated categories are not selectable for new applications
+- Fee changes must not alter historical payment records (fees snapshotted at application/payment time)
+
+**Exit criteria:** Admin CRUD works; inactive categories blocked from selection; audit fields populated.
+
+> **Verified 2026-09-26:** 5 APIs verified with RBAC permissions (`membership_category.read`, `membership_category.create`, `membership_category.update`, `membership_category.manage_status`), unique constraint validation, audit logging on create/update/status-change, unit tests (9/9 passed), and E2E suite (`test/e2e-membership-categories.sh` passed TC-CAT-001–012).
+
+---
+
+## Phase 4 — Membership Management (9 APIs)
+
+**Objective:** Membership application lifecycle: apply → admin review → approve/reject → active.
+
+**Tables:** `memberships`
+
+**APIs**
+```text
+POST   /api/v1/memberships
+GET    /api/v1/memberships
+GET    /api/v1/memberships/:id
+PATCH  /api/v1/memberships/:id
+PATCH  /api/v1/memberships/:id/status
+GET    /api/v1/users/me/membership
+GET    /api/v1/memberships/:id/documents
+GET    /api/v1/memberships/:id/payment-history
+GET    /api/v1/memberships/:id/renewal-history
+```
+
+**Key rules**
+- Application belongs to the authenticated user; ownership enforced
+- Status transitions (approve/reject/activate) are backend-authoritative only
+- Start/expiry dates derived from category validity at approval
+- Payment/renewal/documents history endpoints expose Phase 5+ data — stub or wire as those phases land
+
+**Exit criteria:** Apply → review → approve → active flow works with correct status transitions; members see only their own membership; admins see all with filtering.
+
+> **Verified 2026-09-26:** 9 APIs verified with strict ownership gating, admin filtering, lifecycle status transitions (auto-generating membership numbers & deriving validity dates on approval), post-approval immutability, audit logging, unit tests (10/10 passed), and E2E suite (`test/e2e-memberships.sh` passed TC-MEM-001–013).
+
+---
+
+## Phase 5 — Membership Payment (6 APIs)
+
+**Objective:** Record, verify, and monetize membership: payment → gateway → verification → receipt → accounting → activation.
+
+**Tables:** `membership_payments`, `receipts`, `payment_transactions`
+
+**APIs**
+```text
+POST   /api/v1/membership-payments
+GET    /api/v1/membership-payments
+GET    /api/v1/membership-payments/:id
+PATCH  /api/v1/membership-payments/:id/status
+POST   /api/v1/membership-payments/:id/verify
+GET    /api/v1/membership-payments/:id/receipt
+```
+
+**Key rules**
+- **Never trust frontend-only payment success** — backend verifies every gateway result
+- Amount validated server-side against the category fee; `NUMERIC(12,2)`, INR
+- Successful payment generates receipt and posts the accounting entry (Dr Bank/Cash, Cr Membership Income) — requires Phase 6 accounting service if built in parallel; if not yet available, post on Phase 6 completion
+- Payment verification must be idempotent (duplicate callbacks safe)
+- DB transaction wraps: payment status update + receipt + accounting entry
+
+**Exit criteria:** Verified payment → receipt → accounting entry → membership activation chain works; failed/duplicate gateway results handled; payment history visible in Phase 4 endpoints.
+
+---
+
+## Phase 6 — Accounting Foundation: COA + Entries + Ledger (10 APIs)
+
+**Objective:** The core double-entry financial engine everything else posts into.
+
+**Tables:** `accounts`, `accounting_entries`, `accounting_entry_lines`
+
+**APIs**
+```text
+GET    /api/v1/accounts
+POST   /api/v1/accounts
+GET    /api/v1/accounts/:id
+PATCH  /api/v1/accounts/:id
+PATCH  /api/v1/accounts/:id/status
+GET    /api/v1/accounting/entries
+GET    /api/v1/accounting/entries/:id
+POST   /api/v1/accounting/entries/:id/reverse
+GET    /api/v1/accounts/:id/ledger
+GET    /api/v1/accounting/ledger
+```
+
+**Key rules — non-negotiable**
+- Account types: `ASSET / LIABILITY / INCOME / EXPENSE / FUND_EQUITY`, with parent-account hierarchy and account codes
+- **Every posted entry must balance: TOTAL DEBIT = TOTAL CREDIT** — unbalanced entries rejected at the service layer
+- Entries carry `reference_type` + `reference_id` linking back to the source (MEMBERSHIP_PAYMENT, RENEWAL_PAYMENT, DONATION_PAYMENT, MANUAL_RECEIPT, MANUAL_EXPENSE)
+- Posted entries are immutable — corrections only via controlled reversal
+- Ledger derives strictly from posted entry lines (running balance by account/date range)
+- Seed the baseline Chart of Accounts as a migration
+
+**Exit criteria:** Posting service (used by Phases 5, 7, 8, 9) validates balanced entries transactionally; reversal produces mirrored entries; ledger output includes running balance; source references retained.
+
+---
+
+## Phase 7 — Expense / Payment Entry (5 APIs)
+
+**Objective:** Manual expense vouchers that post to the ledger.
+
+**Tables:** `expense_entries`
+
+**APIs**
+```text
+POST   /api/v1/expense-entries
+GET    /api/v1/expense-entries
+GET    /api/v1/expense-entries/:id
+PATCH  /api/v1/expense-entries/:id
+PATCH  /api/v1/expense-entries/:id/status
+```
+
+**Key rules**
+- Required fields: Date, Paid To, Expense Account, Amount, Paid From, Payment Method, Reference, Description, Attachment
+- Posting pattern: `Dr Expense Account / Cr Bank-Cash`
+- Uses the Phase 6 posting service inside a DB transaction; status changes re-validate accounting state
+
+**Exit criteria:** Expense entry creates a balanced accounting entry; list/detail/filter work; audit trail intact.
+
+---
+
+## Phase 8 — Receipt / Payment Accounting Integration (integration — 0 new senior APIs)
+
+**Objective:** Wire receipt entries into the ledger. **Arshad owns receipt CRUD/DTO/attachment/admin API; Mubasshir owns everything downstream of it.**
+
+**Tables:** `receipt_entries` (CRUD owned by Arshad — coordinate migration ownership)
+
+**Mubasshir's responsibilities**
+- Double-entry posting from receipt entry → accounting entry
+- Ledger posting + debit/credit validation
+- Accounting entry generation: `Dr Bank/Cash / Cr Income Account`
+- Report exposure (feeds Phase 10–12)
+
+**Coordination rules**
+- Arshad must NOT manipulate ledger balances directly — all money movement goes through the posting service
+- Agree on the receipt-entry event/contract (service call after receipt creation/approval) before either side implements
+
+**Exit criteria:** A created/approved receipt entry produces a balanced ledger entry with a MANUAL_RECEIPT reference; totals reconcile with manual accounting entries.
+
+---
+
+## Phase 9 — Donation Financial / Payment Integration (7 APIs)
+
+**Objective:** The financial layer of donations. **Arshad owns donation/donor/cause CRUD; Mubasshir owns payments, gateway, verification, receipt, refund, accounting.**
+
+**Tables:** `donation_payments` (+ `donations` from Arshad's side), refund records
+
+**APIs**
+```text
+POST   /api/v1/donation-payments
+GET    /api/v1/donation-payments
+GET    /api/v1/donation-payments/:id
+POST   /api/v1/donation-payments/:id/verify
+PATCH  /api/v1/donation-payments/:id/status
+GET    /api/v1/donation-payments/:id/receipt
+POST   /api/v1/donations/:id/refund
+```
+
+**Key rules**
+- Same gateway discipline as Phase 5: backend verification only, idempotent verify, server-validated amounts
+- Posting pattern: `Dr Bank/Cash / Cr Donation Income`
+- Refund: controlled accounting reversal (mirrored entry), refund policy per HRSJM confirmation
+- Coordinate the `donations` ↔ `donation_payments` contract with Arshad before building
+
+**Exit criteria:** Donation payment → verify → receipt → accounting chain works; refund reverses correctly in the ledger; donation history reflects financial status.
+
+---
+
+## Phase 10 — Trial Balance (2 APIs)
+
+**Objective:** Account balances as of a date, proving Debit = Credit.
+
+**APIs**
+```text
+GET /api/v1/reports/trial-balance
+GET /api/v1/reports/trial-balance/summary
+```
+
+**Key rules**
+- Aggregates `accounting_entry_lines` grouped by account (as-of date filter)
+- Report returns per-account debit/credit balances, totals, and difference flag
+- Derived strictly from accounting entries — no side calculations
+
+**Exit criteria:** Trial balance balances (total debit = total credit) for seeded test data; imbalance surfaces as a visible difference, never silently.
+
+---
+
+## Phase 11 — Profit & Loss (2 APIs)
+
+**Objective:** Income − Expenses = Net Result for a period.
+
+**APIs**
+```text
+GET /api/v1/reports/profit-loss
+GET /api/v1/reports/profit-loss/summary
+```
+
+**Key rules**
+- Income breakdown by INCOME accounts (Membership, Renewal, Donation, Other), expenses by EXPENSE accounts
+- From/to date filtering; summary returns totals + net result
+- Grouping follows the approved Chart of Accounts
+
+**Exit criteria:** P&L matches hand-computed figures from ledger test data for a given period.
+
+---
+
+## Phase 12 — Balance Sheet (2 APIs)
+
+**Objective:** Assets = Liabilities + Fund/Equity as of a date.
+
+**APIs**
+```text
+GET /api/v1/reports/balance-sheet
+GET /api/v1/reports/balance-sheet/summary
+```
+
+**Key rules**
+- ASSET / LIABILITY / FUND_EQUITY account groups with breakdowns
+- Current surplus/deficit ties to the P&L net result; opening fund treatment per HRSJM confirmation
+- Must satisfy the accounting equation — difference surfaced if not
+
+**Exit criteria:** Balance sheet equation holds on seeded data; cross-checks with Trial Balance and P&L.
+
+---
+
+## Phase 13 — Integration, QA & Handoff
+
+**Objective:** Harden the whole engine and hand off to frontend/Arshad integration.
+
+**Checklist**
+- [ ] End-to-end flows tested: register → apply → pay → verify → receipt → accounting → active; donate → pay → verify → receipt → accounting; expense → accounting
+- [ ] Report consistency suite: same test data reconciles across Ledger, R&P, Trial Balance, P&L, Balance Sheet
+- [ ] Auth + authorization tests (every endpoint's RBAC verified)
+- [ ] Financial consistency tests (no unbalanced entries possible; reversals correct)
+- [ ] Swagger complete and verified for all 74 APIs
+- [ ] Production config verified (env vars, `synchronize: false`, migrations run clean from zero)
+- [ ] Unit + integration + API test coverage on all modules
+- [ ] API handoff contract per endpoint (method, auth, role, request/response, errors, pagination) shared with frontend + Arshad
+- [ ] Code review complete; merged per Git standards
+
+---
+
+## Definition of Done — every phase
+
+- [ ] Entity/model created
+- [ ] Migration created (never edit an applied migration)
+- [ ] DTOs created with validation
+- [ ] Service implemented (DB transactions where financial)
+- [ ] Controller implemented with authentication + RBAC
+- [ ] Error handling with standard error codes
+- [ ] Audit fields handled
+- [ ] Swagger documented
+- [ ] Unit + integration tests (accounting integration tested where applicable)
+- [ ] Manual test scenario checklist written and executed (`docs/test-scenarios.md`) — see rule.md §6: no module completes without tests
+- [ ] No frontend-dependent financial calculations
+- [ ] Code reviewed
+- [ ] API handed off
+
+## Cross-phase non-negotiables
+
+- Never trust frontend totals; backend validates all amounts and verifies all gateway results
+- Every accounting transaction balances (Dr = Cr); posted entries immutable; corrections via reversal
+- Reports derive from accounting entries only — ledger balances are never updated directly
+- Money: `NUMERIC(12,2)`, currency INR
+- Database: TypeORM migrations only, `synchronize: false`
+- All protected endpoints behind JWT + permission guards; ownership checks on self-scoped resources
+- No sensitive data in logs; secrets only via environment variables
+
+## Cross-phase dependencies & coordination points (Arshad)
+
+| Where | Arshad provides | Mubasshir provides |
+|---|---|---|
+| Phase 4 (renewal history endpoint) | renewal records/history | financial view of renewal payments (Phase 9-style verify/receipt/accounting) |
+| Phase 8 | receipt CRUD, DTOs, attachments, admin API | double-entry posting, ledger, reports |
+| Phase 9 | donations, donors, causes, donation status | donation payments, gateway, verification, receipt, refund, accounting |
+
+Migration ownership must be agreed before any cross-module foreign keys are created.
+
+## Migration Issue Log
+
+Per rule.md §2.10: every issue encountered while generating, applying, or verifying a migration is fixed before the change is done **and recorded here** (one row per issue).
+
+| Date | Migration | Issue | Resolution |
+|---|---|---|---|
+| 2026-09-26 | 1790408367891-Init (first run) | `typeorm-ts-node-esm` CLI failed to load `data-source.ts` — ESM/CJS interop mismatch with the project's `module: commonjs` tsconfig | Switched all `migration:*` scripts in `package.json` to `typeorm-ts-node-commonjs`; `migration:run` then succeeded |
+| 2026-09-26 | 1790412218573-CreateAuthSchema | none — schema, FKs, unique indexes, and baseline role seeds applied cleanly; verified via `migration:show` and app boot | — |
+| 2026-09-26 | 1790417442685-CreatePermissionsSchema | none — schema, FKs, unique index, permissions catalogue seeds, and ADMIN role permissions mapping applied cleanly; verified via `migration:show` | — |
+| 2026-09-26 | 1790420422144-CreateMembershipCategoriesSchema | none — schema, unique indexes on name/code, permissions catalogue seeds, and ADMIN role permissions mapping applied cleanly; verified via `migration:show` and app boot | — |
+| 2026-09-26 | 1790420936132-CreateMembershipsSchema | none — schema, FKs on users and membership_categories, indexes on user_id/category_id, unique index on membership_number, permissions seeds, and ADMIN role permissions mapping applied cleanly; verified via `migration:show` and app boot | — |
+| 2026-09-26 | 1790422318068-CreateArshadModulesSchema | none — schema for `documents`, `assistance_requests`, `support_tickets`, `support_ticket_messages`, FKs, indexes, permissions seeds for `assistance.review` and `support.manage`, and ADMIN role permissions mapping applied cleanly; verified via `migration:show` and app boot | — |

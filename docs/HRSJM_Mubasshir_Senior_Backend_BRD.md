@@ -794,6 +794,7 @@ For every module:
 - [ ] Swagger documentation added
 - [ ] API tested
 - [ ] Edge cases tested
+- [ ] Test cases added (unit + manual scenarios in `docs/test-scenarios.md`)
 - [ ] Integration tested
 - [ ] Accounting integration tested where applicable
 - [ ] No frontend-dependent financial calculations
