@@ -78,6 +78,19 @@ export class ApiConfigService {
     return this.getNumber("DOCUMENT_MAX_SIZE_MB", 5) * 1024 * 1024;
   }
 
+  // Renewal policy - deliberately env-driven until HRSJM confirms the final
+  // fee schedule and duration options (BRD: do not hard-code the policy).
+  get renewalFeePerYear(): string {
+    return this.getString("RENEWAL_FEE_PER_YEAR", "500.00");
+  }
+
+  get renewalAllowedPeriods(): number[] {
+    return this.getString("RENEWAL_ALLOWED_PERIODS", "1,2,5")
+      .split(",")
+      .map((value) => Number(value.trim()))
+      .filter((value) => Number.isInteger(value) && value > 0);
+  }
+
   get jwtSecret(): string {
     return this.getString("JWT_SECRET", "changeme-dev-secret");
   }

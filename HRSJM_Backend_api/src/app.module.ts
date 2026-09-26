@@ -11,6 +11,7 @@ import { AssistanceModule } from "./modules/assistance/assistance.module";
 import { DocumentsModule } from "./modules/documents/documents.module";
 import { HealthModule } from "./modules/health/health.module";
 import { MembershipsModule } from "./modules/memberships/memberships.module";
+import { RenewalsModule } from "./modules/renewals/renewals.module";
 import { SupportModule } from "./modules/support/support.module";
 import { UsersModule } from "./modules/users/users.module";
 
@@ -38,6 +39,7 @@ import { UsersModule } from "./modules/users/users.module";
     HealthModule,
     UsersModule,
     MembershipsModule,
+    RenewalsModule,
     DocumentsModule,
     AssistanceModule,
     SupportModule,

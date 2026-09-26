@@ -1,5 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
 import { IsEnum, IsOptional, IsString, Length } from "class-validator";
+import { PaginationQueryDto } from "../../../shared/dto/pagination.dto";
 import { TicketStatus } from "../entities/support-ticket.entity";
 
 export class CreateTicketDto {
@@ -34,7 +35,7 @@ export class CreateTicketMessageDto {
   body!: string;
 }
 
-export class ListTicketsQueryDto {
+export class ListTicketsQueryDto extends PaginationQueryDto {
   @ApiPropertyOptional({ enum: TicketStatus })
   @IsOptional()
   @IsEnum(TicketStatus)
