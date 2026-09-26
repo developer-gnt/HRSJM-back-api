@@ -1,9 +1,14 @@
 import { Module } from "@nestjs/common";
+import { APP_GUARD } from "@nestjs/core";
 import { ConfigModule } from "@nestjs/config";
 import { TypeOrmModule } from "@nestjs/typeorm";
 import { ApiConfigService } from "./shared/helpers/api-config.service";
+import { JwtAuthGuard } from "./shared/guards/jwt-auth.guard";
+import { RolesGuard } from "./shared/guards/roles.guard";
 import { SharedModule } from "./shared/shared.module";
+import { AuthModule } from "./modules/auth/auth.module";
 import { HealthModule } from "./modules/health/health.module";
+import { UsersModule } from "./modules/users/users.module";
 
 @Module({
   imports: [
@@ -17,9 +22,9 @@ import { HealthModule } from "./modules/health/health.module";
         username: configService.dbUsername,
         password: configService.dbPassword,
         database: configService.dbName,
-        // Phase 0 has no entities yet - they arrive with each module phase,
-        // registered here as they are created.
-        entities: [],
+        autoLoadEntities: true,
+        // Entities are registered per module phase via forFeature().
+        // Production must stay on migrations (BRD rule) - SYNC_DB only in dev.
         synchronize: configService.isDevelopment,
         logging: configService.dbLogging,
         ssl: configService.dbSsl ? { rejectUnauthorized: false } : false,
@@ -27,6 +32,12 @@ import { HealthModule } from "./modules/health/health.module";
     }),
     SharedModule,
     HealthModule,
+    UsersModule,
+    AuthModule,
+  ],
+  providers: [
+    { provide: APP_GUARD, useClass: JwtAuthGuard },
+    { provide: APP_GUARD, useClass: RolesGuard },
   ],
 })
 export class AppModule {}
