@@ -9,12 +9,14 @@ jest.mock('../../../common/guards/jwt-auth.guard', () => ({
 import { ReportsController } from './reports.controller';
 import { TrialBalanceService } from '../services/trial-balance.service';
 import { ProfitLossService } from '../services/profit-loss.service';
+import { BalanceSheetService } from '../services/balance-sheet.service';
 import { AccountType } from '../../accounting/enums/accounting.enums';
 
 describe('ReportsController', () => {
   let controller: ReportsController;
   let trialBalanceService: Record<string, jest.Mock>;
   let profitLossService: Record<string, jest.Mock>;
+  let balanceSheetService: Record<string, jest.Mock>;
 
   beforeEach(() => {
     trialBalanceService = {
@@ -64,9 +66,43 @@ describe('ReportsController', () => {
       }),
     };
 
+    balanceSheetService = {
+      getBalanceSheet: jest.fn().mockResolvedValue({
+        as_of_date: '2026-09-28T00:00:00.000Z',
+        assets: { items: [], total: 0 },
+        liabilities: { items: [], total: 0 },
+        equity: {
+          items: [],
+          total_equity_accounts: 0,
+          current_surplus_deficit: 0,
+          total: 0,
+        },
+        total_assets: 0,
+        total_liabilities: 0,
+        total_equity: 0,
+        total_liabilities_and_equity: 0,
+        difference: 0,
+        is_balanced: true,
+      }),
+      getBalanceSheetSummary: jest.fn().mockResolvedValue({
+        as_of_date: '2026-09-28T00:00:00.000Z',
+        total_assets: 0,
+        total_liabilities: 0,
+        total_equity: 0,
+        current_surplus_deficit: 0,
+        total_liabilities_and_equity: 0,
+        difference: 0,
+        is_balanced: true,
+        asset_accounts_count: 0,
+        liability_accounts_count: 0,
+        equity_accounts_count: 0,
+      }),
+    };
+
     controller = new ReportsController(
       trialBalanceService as unknown as TrialBalanceService,
       profitLossService as unknown as ProfitLossService,
+      balanceSheetService as unknown as BalanceSheetService,
     );
   });
 
@@ -118,6 +154,29 @@ describe('ReportsController', () => {
       const res = await controller.getProfitLossSummary(dto);
       expect(profitLossService.getProfitLossSummary).toHaveBeenCalledWith(dto);
       expect(res.result_type).toBe('SURPLUS');
+    });
+  });
+
+  describe('getBalanceSheet', () => {
+    it('calls service.getBalanceSheet with query dto', async () => {
+      const dto = {
+        as_of_date: '2026-09-28',
+        include_zero_balances: true,
+      };
+
+      const res = await controller.getBalanceSheet(dto);
+      expect(balanceSheetService.getBalanceSheet).toHaveBeenCalledWith(dto);
+      expect(res.is_balanced).toBe(true);
+    });
+  });
+
+  describe('getBalanceSheetSummary', () => {
+    it('calls service.getBalanceSheetSummary with query dto', async () => {
+      const dto = { as_of_date: '2026-09-28' };
+
+      const res = await controller.getBalanceSheetSummary(dto);
+      expect(balanceSheetService.getBalanceSheetSummary).toHaveBeenCalledWith(dto);
+      expect(res.is_balanced).toBe(true);
     });
   });
 });

@@ -320,6 +320,41 @@ Every response must use the standard envelopes:
 
 ---
 
+## Phase 10 — Trial Balance (2 APIs)
+
+> **Executed 2026-09-28 (unit + E2E suite `test/e2e-trial-balance.sh` + date-filter verification `test/verify-date-filters.sh` + cross-check `test/cross-check-reports.js`):** PASS — TC-TB-001 through TC-TB-006. Unit test suite: `trial-balance.service.spec.ts` — passing.
+
+| ID | Scenario | Steps | Expected |
+|---|---|---|---|
+| TC-TB-001 | Non-admin denied | GET `/api/v1/reports/trial-balance` as authenticated non-admin | 403 `PERMISSION_DENIED` (reports are admin-only) |
+| TC-TB-002 | Trial balance balances | GET `/api/v1/reports/trial-balance` | 200 with per-account gross debit/credit, net debit/credit balances; `is_balanced=true`, `difference=0` |
+| TC-TB-003 | Summary by account type | GET `/api/v1/reports/trial-balance/summary` | 200 with per-type totals, net balances, account counts |
+| TC-TB-004 | As-of-date filter | GET with `as_of_date` | 200; report derived strictly from entries dated ≤ as-of date |
+| TC-TB-005 | Account-type filter | GET with `account_type=EXPENSE` | 200 with only matching accounts |
+| TC-TB-006 | As-of-date excludes future entries | Post a 2027-dated expense voucher, GET TB `as_of_date=2026-09-28` vs `2027-12-31` | Future voucher absent at 2026 as-of, present at 2027 as-of (per-account gross figures — TB totals never move for a single balanced entry, so totals alone cannot detect this) |
+| TC-TB-007 | Hand-computed reconciliation | Compare API per-account balances with sums computed directly from `accounting_entry_lines` | Identical for every account; total debit = total credit |
+
+**Date-filter bug found & fixed 2026-09-28:** the as-of condition originally sat inside the entry LEFT JOIN's ON clause and never filtered rows; fixed to a WHERE row filter in all three report services (TB, P&L, Balance Sheet).
+
+---
+
+## Phase 11 — Profit & Loss (2 APIs)
+
+> **Executed 2026-09-28 (unit + E2E suite `test/e2e-profit-loss.sh` + date-filter verification + cross-check):** PASS — TC-PL-001 through TC-PL-007. Unit test suite: `profit-loss.service.spec.ts` — passing.
+
+| ID | Scenario | Steps | Expected |
+|---|---|---|---|
+| TC-PL-001 | Non-admin denied | GET `/api/v1/reports/profit-loss` as authenticated non-admin | 403 `PERMISSION_DENIED` |
+| TC-PL-002 | P&L report for period | GET with `from_date`/`to_date` | 200 with INCOME and EXPENSE account breakdowns, totals, net result, SURPLUS/DEFICIT |
+| TC-PL-003 | P&L summary | GET `/api/v1/reports/profit-loss/summary` | 200 with totals + net result + account counts |
+| TC-PL-004 | Invalid date range | GET with `from_date > to_date` | 400 `INVALID_DATE_RANGE` |
+| TC-PL-005 | Missing date params | GET without `from_date`/`to_date` | 400 `VALIDATION_ERROR` |
+| TC-PL-006 | Period filter excludes future entries | Post a 2027-dated voucher, GET P&L for 2026 period vs through 2027 | Excluded from the 2026 period; included when the range covers 2027 (P&L through 2027 = 2331 = exactly three 777 vouchers) |
+| TC-PL-007 | Hand-computed reconciliation | Compare API totals with sums computed directly from entry lines for the period | Identical income/expenses/net (2026-01-01..2026-09-28: income 5500, expenses 0 in-period, SURPLUS) |
+
+**Date-filter bug found & fixed 2026-09-28:** same LEFT JOIN ON-clause pattern as Phase 10; additionally the date condition must use `.andWhere` after the account-type `.where` — a later `.where()` call replaces the entire WHERE clause.
+
+---
 ## Template — every future module adds a section here
 
 Minimum coverage per module (rule.md §6):

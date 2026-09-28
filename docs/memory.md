@@ -100,7 +100,9 @@ HRSJM — Digital Membership & Donation Platform backend. The backend is the **s
   - Config: `src/config/payment.config.ts` — generic `PAYMENT_GATEWAY_KEY/SECRET` placeholders (provider TBC).
 
 ### In progress / Next
-- Next: **Phase 10+ — financial reports (Trial Balance / P&L / Balance Sheet)** per `phases.md` (report endpoints derive strictly from accounting entries; permissions `report.read` / `trial_balance.read` already seeded via `CreateReportsPermissionsSchema`).
+- Phase 10/11 verified 2026-09-28 (with date-filter fix): Trial Balance + P&L e2e suites passing (TC-TB-001–005, TC-PL-001–005); dedicated date-filter verification (`test/verify-date-filters.sh`) and hand-computed reconciliation (`test/cross-check-reports.js`) PASS. A real bug was found and fixed: report date filters sat inside the entry LEFT JOIN's ON clause and never filtered rows (future-dated entries leaked into as-of/period reports); fixed in all three report services (TB, P&L, Balance Sheet) by moving the date condition to a WHERE row filter.
+- Phase 12 (Balance Sheet) is IMPLEMENTED (service + spec + DTOs + controller routes) but NOT yet verified — no e2e suite yet; tracker still ⬜.
+- Next: **Phase 12 — Balance Sheet verification** (write `test/e2e-balance-sheet.sh`, cross-check Assets = Liabilities + Equity against hand-computed figures), then Phase 13 (Integration, QA & Handoff).
 
 ### Progress tracker status (from phases.md)
 - Phase 0: ✅ done (verified 2026-09-26)
@@ -169,3 +171,6 @@ Full TBC list: `HRSJM_Complete_Backend_BRD_20_Modules.md` §54 and `HRSJM_Full_R
 - `@nestjs/jwt` ships ESM syntax that jest cannot parse from `node_modules` — mock it in unit tests (`jest.mock('@nestjs/jwt', () => ({ JwtService: class {} }))`).
 - On Windows, stopping a background dev server can orphan the node process holding port 3000 — check `netstat -ano | findstr :3000` and `taskkill //PID <pid> //F` before rebooting (a stale pre-auth server caused a full suite of 404s once).
 - Password-reset token delivery is TBC; outside `production` the raw reset token is returned in the forgot-password response for manual testing only — remove/replace when the delivery channel is confirmed.
+- LEFT JOIN date conditions in the ON clause never filter rows (out-of-range lines survive with entry NULL and still aggregate). Filter reports with a WHERE row guard: `(line.id IS NULL OR entry.entry_date <= :asOfDate)`.
+- In TypeORM query builders, a later `.where()` call REPLACES the entire WHERE clause — put the primary `.where()` first and additional conditions via `.andWhere()` after it.
+- A single balanced journal never changes Trial Balance totals (Dr and Cr sides net out) — date-filter tests must assert per-account figures, not TB totals; the same is true for e2e balance-only checks.

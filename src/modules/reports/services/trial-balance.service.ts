@@ -70,12 +70,13 @@ export class TrialBalanceService {
     const qb = this.accountRepo
       .createQueryBuilder('account')
       .leftJoin('accounting_entry_lines', 'line', 'line.account_id = account.id')
-      .leftJoin(
-        'accounting_entries',
-        'entry',
-        'entry.id = line.accounting_entry_id AND entry.entry_date <= :asOfDate',
-        { asOfDate },
-      )
+      .leftJoin('accounting_entries', 'entry', 'entry.id = line.accounting_entry_id')
+      // Date filter must be a row filter, not part of the LEFT JOIN's ON
+      // clause — an ON-clause condition would leave out-of-range lines in
+      // the join (entry NULL) and their amounts would still be summed.
+      .andWhere('(line.id IS NULL OR entry.entry_date <= :asOfDate)', {
+        asOfDate,
+      })
       .select('account.id', 'id')
       .addSelect('account.account_code', 'account_code')
       .addSelect('account.account_name', 'account_name')

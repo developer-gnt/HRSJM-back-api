@@ -23,7 +23,7 @@
 | 9 | Donation Financial / Payment Integration | 7 | ✅ Done (verified 2026-09-28) |
 | 10 | Trial Balance | 2 | ✅ Done (verified 2026-09-28) |
 | 11 | Profit & Loss | 2 | ✅ Done (verified 2026-09-28) |
-| 12 | Balance Sheet | 2 | ⬜ Not started |
+| 12 | Balance Sheet | 2 | ✅ Done (verified 2026-09-28) |
 | 13 | Integration, QA & Handoff | — | ⬜ Not started |
 | | **TOTAL** | **74** | |
 
@@ -330,6 +330,8 @@ GET /api/v1/reports/trial-balance/summary
 
 **Exit criteria:** Trial balance balances (total debit = total credit) for seeded test data; imbalance surfaces as a visible difference, never silently.
 
+> **Verified 2026-09-28 (with date-filter fix):** 2 APIs verified. Testing found and fixed a real bug: the as-of-date condition sat inside the entry LEFT JOIN's ON clause, which never filters rows — future-dated entries leaked into as-of reports (proven by a 2027-dated voucher appearing in a 2026 as-of report). Fixed by moving the date condition to a row filter `WHERE (line.id IS NULL OR entry.entry_date <= :asOfDate)` (same fix applied to Balance Sheet). Unit tests: `trial-balance.service.spec.ts` passing (QB mock extended with `andWhere`). E2E `test/e2e-trial-balance.sh` passed TC-TB-001–005; a dedicated date-filter verification (`test/verify-date-filters.sh`) proves future entries are excluded as-of today and included as-of 2027; cross-check (`test/cross-check-reports.js`) reconciles the API report against per-account sums computed directly from `accounting_entry_lines` (9 accounts) — PASS, and the report balances (Dr = Cr = 6931).
+
 ---
 
 ## Phase 11 — Profit & Loss (2 APIs)
@@ -348,6 +350,8 @@ GET /api/v1/reports/profit-loss/summary
 - Grouping follows the approved Chart of Accounts
 
 **Exit criteria:** P&L matches hand-computed figures from ledger test data for a given period.
+
+> **Verified 2026-09-28 (with date-filter fix):** 2 APIs verified. Same LEFT JOIN ON-clause date-filter bug as Phase 10 found and fixed here (plus a TypeORM ordering lesson: the date condition must use `.andWhere` AFTER the `.where` account-type filter — a later `.where()` replaces the whole WHERE clause). E2E `test/e2e-profit-loss.sh` passed TC-PL-001–005 (non-admin denied, report, summary, invalid range 400 `INVALID_DATE_RANGE`, missing params 400). Date-filter verification proves future-dated vouchers are excluded from the period and included when the range covers them (P&L through 2027-12-31 = 2331 = three 777 vouchers exactly); cross-check reconciles income/expenses/net for 2026-01-01..2026-09-28 against hand-computed entry-line sums — PASS (income 5500, expenses 0 in-period, SURPLUS).
 
 ---
 

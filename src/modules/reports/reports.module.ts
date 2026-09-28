@@ -6,6 +6,7 @@ import { AccountingEntryLineEntity } from '../accounting/entities/accounting-ent
 import { ReportsController } from './controllers/reports.controller';
 import { TrialBalanceService } from './services/trial-balance.service';
 import { ProfitLossService } from './services/profit-loss.service';
+import { BalanceSheetService } from './services/balance-sheet.service';
 
 @Module({
   imports: [
@@ -16,7 +17,7 @@ import { ProfitLossService } from './services/profit-loss.service';
     ]),
   ],
   controllers: [ReportsController],
-  providers: [TrialBalanceService, ProfitLossService],
-  exports: [TrialBalanceService, ProfitLossService],
+  providers: [TrialBalanceService, ProfitLossService, BalanceSheetService],
+  exports: [TrialBalanceService, ProfitLossService, BalanceSheetService],
 })
 export class ReportsModule {}
