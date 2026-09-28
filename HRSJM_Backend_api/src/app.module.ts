@@ -9,6 +9,8 @@ import { SharedModule } from "./shared/shared.module";
 import { AuthModule } from "./modules/auth/auth.module";
 import { AdminModule } from "./modules/admin/admin.module";
 import { AssistanceModule } from "./modules/assistance/assistance.module";
+import { AccountingModule } from "./modules/accounting/accounting.module";
+import { ReceiptsModule } from "./modules/receipts/receipts.module";
 import { DocumentsModule } from "./modules/documents/documents.module";
 import { HealthModule } from "./modules/health/health.module";
 import { MembershipsModule } from "./modules/memberships/memberships.module";
@@ -47,6 +49,8 @@ import { UsersModule } from "./modules/users/users.module";
     SupportModule,
     NotificationsModule,
     AdminModule,
+    AccountingModule,
+    ReceiptsModule,
     AuthModule,
   ],
   providers: [

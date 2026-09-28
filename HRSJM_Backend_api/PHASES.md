@@ -57,7 +57,7 @@ ends with a working, committed, testable increment before moving on.
 - Member list/search/filter, member detail 360° view
 - **Done when:** dashboard + member management endpoints live; committed
 
-## Phase 9 — Receipt / Credit Entry
+## Phase 9 — Receipt / Credit Entry (completed)
 - Manual income receipts: date, received from, income account, amount, received-in account, method
 - Auto entry numbers, filters (fromDate/toDate/account/method), attachment, audit
 - CRITICAL: call the (stub) senior accounting posting boundary — never touch ledger/report balances

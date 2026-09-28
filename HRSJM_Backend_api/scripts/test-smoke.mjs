@@ -493,6 +493,81 @@ async function main() {
     check("phase 8 flow", false, err.message);
   }
 
+  // ---------- PHASE 9 ----------
+  section("Phase 9 — Receipt / Credit Entry");
+  try {
+    const memberCreate = await api("/admin/receipts", {
+      method: "POST",
+      token: memberToken,
+      body: { receiptDate: "2026-09-28", receivedFrom: "X", incomeAccount: "Y", receivedInAccount: "Z", amount: 100, method: "CASH" },
+    });
+    check("member cannot record receipt (403)", memberCreate.status === 403, `status ${memberCreate.status}`);
+
+    const today = new Date().toISOString().slice(0, 10);
+    const r1 = await api("/admin/receipts", {
+      method: "POST",
+      token: adminToken,
+      body: { receiptDate: today, receivedFrom: "Abdul Karim", incomeAccount: "Membership Fees", receivedInAccount: "Cash Box", amount: 5000, method: "CASH", remarks: "Smoke receipt one" },
+    });
+    check("admin records receipt (201)", r1.status === 201, `status ${r1.status}: ${JSON.stringify(r1.data)}`);
+    check("auto entry number format RCV-YYYY-NNNN", /^RCV-\d{4}-\d{4}$/.test(r1.data?.data?.entryNumber ?? ""), r1.data?.data?.entryNumber);
+    check("receipt carries accounting posting ref (stub boundary)", !!r1.data?.data?.postingRef && !!r1.data?.data?.postedAt);
+
+    const r2 = await api("/admin/receipts", {
+      method: "POST",
+      token: adminToken,
+      body: { receiptDate: today, receivedFrom: "Nadia Islam", incomeAccount: "Donations - General", receivedInAccount: "Bank - City", amount: 12000.5, method: "BANK_TRANSFER" },
+    });
+    check("second receipt recorded (201)", r2.status === 201);
+    const seq1 = Number(r1.data.data.entryNumber.slice(-4));
+    const seq2 = Number(r2.data.data.entryNumber.slice(-4));
+    check("entry numbers increment per year", seq2 === seq1 + 1, `${seq1} -> ${seq2}`);
+    check("amount stored with 2 decimals", r2.data?.data?.amount === "12000.50", `got ${r2.data?.data?.amount}`);
+
+    const badAmount = await api("/admin/receipts", {
+      method: "POST",
+      token: adminToken,
+      body: { receiptDate: today, receivedFrom: "X", incomeAccount: "Y", receivedInAccount: "Z", amount: 0, method: "CASH" },
+    });
+    check("zero amount rejected (400)", badAmount.status === 400, `status ${badAmount.status}`);
+
+    const badDate = await api("/admin/receipts", {
+      method: "POST",
+      token: adminToken,
+      body: { receiptDate: "not-a-date", receivedFrom: "X", incomeAccount: "Y", receivedInAccount: "Z", amount: 10, method: "CASH" },
+    });
+    check("invalid date rejected (400)", badDate.status === 400, `status ${badDate.status}`);
+
+    const listAll = await api("/admin/receipts", { token: adminToken });
+    check("admin lists receipts with audit info", listAll.status === 200 && (listAll.data?.data?.items ?? []).every((r) => r.audit?.createdByFullName));
+
+    const byMethod = await api("/admin/receipts?method=CASH", { token: adminToken });
+    check("method filter returns only CASH", byMethod.status === 200 && (byMethod.data?.data?.items ?? []).length >= 1 && (byMethod.data?.data?.items ?? []).every((r) => r.method === "CASH"));
+
+    const byAccount = await api("/admin/receipts?incomeAccount=" + encodeURIComponent("Donations - General"), { token: adminToken });
+    check("income account filter matches", byAccount.status === 200 && (byAccount.data?.data?.items ?? []).some((r) => r.entryNumber === r2.data.data.entryNumber));
+
+    const byDate = await api(`/admin/receipts?fromDate=${today}&toDate=${today}`, { token: adminToken });
+    check("date range filter includes today's receipts", byDate.status === 200 && (byDate.data?.data?.items ?? []).some((r) => r.entryNumber === r1.data.data.entryNumber));
+
+    const detail = await api(`/admin/receipts/${r1.data.data.id}`, { token: adminToken });
+    check("receipt detail with attachment null + posting ref", detail.status === 200 && detail.data?.data?.attachment === null && !!detail.data?.data?.postingRef);
+
+    const attach = await api(`/admin/receipts/${r1.data.data.id}/attachment`, {
+      method: "POST",
+      token: adminToken,
+      form: multipart({ file: [pdfBlob(), "receipt-slip.pdf"], documentName: "Cash slip" }),
+    });
+    check("attachment linked to receipt (RECEIPT_ENTRY)", attach.status === 201 && !!attach.data?.data?.attachmentDocumentId);
+    const detailAfter = await api(`/admin/receipts/${r1.data.data.id}`, { token: adminToken });
+    check("detail shows attachment after upload", detailAfter.status === 200 && detailAfter.data?.data?.attachment?.documentName === "Cash slip");
+
+    const memberList = await api("/admin/receipts", { token: memberToken });
+    check("member cannot list receipts (403)", memberList.status === 403, `status ${memberList.status}`);
+  } catch (err) {
+    check("phase 9 flow", false, err.message);
+  }
+
   // ---------- SUMMARY ----------
   console.log("\n========================================");
   console.log(`RESULT: ${pass} passed, ${fail} failed`);
