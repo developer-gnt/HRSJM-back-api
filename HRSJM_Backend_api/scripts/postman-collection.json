@@ -1,0 +1,626 @@
+{
+  "info": {
+    "name": "HRSJM Backend API",
+    "description": "All modules of the HRSJM NGO backend. Set {{baseUrl}}, then run a Login request and copy the accessToken into {{adminToken}} / {{memberToken}} / {{donorToken}}. Seeded accounts: admin@hrsjm.org/Admin@12345, aisha@example.com/Str0ngP@ss (member), rahim@example.com/D0norP@ss (donor). Docs: http://localhost:3000/docs",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:3000/api/v1" },
+    { "key": "adminToken", "value": "paste-admin-access-token" },
+    { "key": "memberToken", "value": "paste-member-access-token" },
+    { "key": "donorToken", "value": "paste-donor-access-token" },
+    { "key": "userId", "value": "user-uuid" },
+    { "key": "membershipNumber", "value": "HRSJM-2026-00001" },
+    { "key": "membershipId", "value": "membership-uuid" },
+    { "key": "renewalId", "value": "renewal-uuid" },
+    { "key": "documentId", "value": "document-uuid" },
+    { "key": "requestId", "value": "assistance-request-uuid" },
+    { "key": "ticketId", "value": "ticket-uuid" },
+    { "key": "notificationId", "value": "notification-uuid" },
+    { "key": "recipientId", "value": "recipient-row-uuid" },
+    { "key": "receiptId", "value": "receipt-uuid" },
+    { "key": "donationId", "value": "donation-uuid" }
+  ],
+  "item": [
+    {
+      "name": "0 Health",
+      "item": [
+        {
+          "name": "Health (public)",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/health", "host": ["{{baseUrl}}"], "path": ["health"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "1 Auth & Users",
+      "item": [
+        {
+          "name": "Register (public)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"fullName\": \"Test Member\",\n  \"email\": \"testmember@example.com\",\n  \"password\": \"Str0ngP@ss\",\n  \"role\": \"MEMBER\"\n}" },
+            "url": { "raw": "{{baseUrl}}/auth/register", "host": ["{{baseUrl}}"], "path": ["auth", "register"] }
+          }
+        },
+        {
+          "name": "Login ADMIN (copy accessToken -> adminToken)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"email\": \"admin@hrsjm.org\",\n  \"password\": \"Admin@12345\"\n}" },
+            "url": { "raw": "{{baseUrl}}/auth/login", "host": ["{{baseUrl}}"], "path": ["auth", "login"] }
+          }
+        },
+        {
+          "name": "Login MEMBER (copy accessToken -> memberToken)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"email\": \"aisha@example.com\",\n  \"password\": \"Str0ngP@ss\"\n}" },
+            "url": { "raw": "{{baseUrl}}/auth/login", "host": ["{{baseUrl}}"], "path": ["auth", "login"] }
+          }
+        },
+        {
+          "name": "Login DONOR (copy accessToken -> donorToken)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"email\": \"rahim@example.com\",\n  \"password\": \"D0norP@ss\"\n}" },
+            "url": { "raw": "{{baseUrl}}/auth/login", "host": ["{{baseUrl}}"], "path": ["auth", "login"] }
+          }
+        },
+        {
+          "name": "Current user (auth)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{memberToken}}" }],
+            "url": { "raw": "{{baseUrl}}/auth/me", "host": ["{{baseUrl}}"], "path": ["auth", "me"] }
+          }
+        },
+        {
+          "name": "List users (admin)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }],
+            "url": { "raw": "{{baseUrl}}/users?page=1&limit=10", "host": ["{{baseUrl}}"], "path": ["users"], "query": [{ "key": "page", "value": "1" }, { "key": "limit", "value": "10" }] }
+          }
+        },
+        {
+          "name": "Get user (self or admin)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }],
+            "url": { "raw": "{{baseUrl}}/users/{{userId}}", "host": ["{{baseUrl}}"], "path": ["users", "{{userId}}"] }
+          }
+        },
+        {
+          "name": "Suspend / reactivate user (admin)",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }, { "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"status\": \"SUSPENDED\"\n}" },
+            "url": { "raw": "{{baseUrl}}/users/{{userId}}/status", "host": ["{{baseUrl}}"], "path": ["users", "{{userId}}", "status"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "2 Memberships & Digital ID",
+      "item": [
+        {
+          "name": "Create membership (admin)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }, { "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"userId\": \"{{userId}}\",\n  \"category\": \"REGULAR\"\n}" },
+            "url": { "raw": "{{baseUrl}}/admin/memberships", "host": ["{{baseUrl}}"], "path": ["admin", "memberships"] }
+          }
+        },
+        {
+          "name": "List memberships (admin)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }],
+            "url": { "raw": "{{baseUrl}}/admin/memberships?page=1&limit=10&status=ACTIVE", "host": ["{{baseUrl}}"], "path": ["admin", "memberships"], "query": [{ "key": "page", "value": "1" }, { "key": "limit", "value": "10" }, { "key": "status", "value": "ACTIVE" }] }
+          }
+        },
+        {
+          "name": "Digital ID lookup (public)",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/membership-id/{{membershipNumber}}", "host": ["{{baseUrl}}"], "path": ["membership-id", "{{membershipNumber}}"] }
+          }
+        },
+        {
+          "name": "Validate membership (public)",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/membership-id/{{membershipNumber}}/validate", "host": ["{{baseUrl}}"], "path": ["membership-id", "{{membershipNumber}}", "validate"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3 Renewals",
+      "item": [
+        {
+          "name": "Submit renewal (member owns it)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{memberToken}}" }, { "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"membershipId\": \"{{membershipId}}\",\n  \"periodYears\": 1,\n  \"paymentMethod\": \"BANK_TRANSFER\",\n  \"transactionId\": \"TRX-1001\",\n  \"note\": \"Renewing for one more year\"\n}" },
+            "url": { "raw": "{{baseUrl}}/renewals", "host": ["{{baseUrl}}"], "path": ["renewals"] }
+          }
+        },
+        {
+          "name": "My renewals",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{memberToken}}" }],
+            "url": { "raw": "{{baseUrl}}/renewals/me?page=1&limit=10", "host": ["{{baseUrl}}"], "path": ["renewals", "me"], "query": [{ "key": "page", "value": "1" }, { "key": "limit", "value": "10" }] }
+          }
+        },
+        {
+          "name": "Get renewal (owner or admin)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }],
+            "url": { "raw": "{{baseUrl}}/renewals/{{renewalId}}", "host": ["{{baseUrl}}"], "path": ["renewals", "{{renewalId}}"] }
+          }
+        },
+        {
+          "name": "Admin list renewals",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }],
+            "url": { "raw": "{{baseUrl}}/admin/renewals?page=1&limit=10&status=PENDING", "host": ["{{baseUrl}}"], "path": ["admin", "renewals"], "query": [{ "key": "page", "value": "1" }, { "key": "limit", "value": "10" }, { "key": "status", "value": "PENDING" }] }
+          }
+        },
+        {
+          "name": "Admin: mark payment SUCCESS",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }, { "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"paymentStatus\": \"SUCCESS\",\n  \"transactionId\": \"TRX-1001\"\n}" },
+            "url": { "raw": "{{baseUrl}}/admin/renewals/{{renewalId}}/payment", "host": ["{{baseUrl}}"], "path": ["admin", "renewals", "{{renewalId}}", "payment"] }
+          }
+        },
+        {
+          "name": "Admin: approve renewal",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }, { "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"adminRemark\": \"Payment slip verified\"\n}" },
+            "url": { "raw": "{{baseUrl}}/admin/renewals/{{renewalId}}/approve", "host": ["{{baseUrl}}"], "path": ["admin", "renewals", "{{renewalId}}", "approve"] }
+          }
+        },
+        {
+          "name": "Admin: reject renewal",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }, { "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"adminRemark\": \"Documents missing\"\n}" },
+            "url": { "raw": "{{baseUrl}}/admin/renewals/{{renewalId}}/reject", "host": ["{{baseUrl}}"], "path": ["admin", "renewals", "{{renewalId}}", "reject"] }
+          }
+        },
+        {
+          "name": "Admin: activate renewal (extends expiry)",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }],
+            "url": { "raw": "{{baseUrl}}/admin/renewals/{{renewalId}}/activate", "host": ["{{baseUrl}}"], "path": ["admin", "renewals", "{{renewalId}}", "activate"] }
+          }
+        },
+        {
+          "name": "Renewal history by membership number (admin)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }],
+            "url": { "raw": "{{baseUrl}}/admin/memberships/{{membershipNumber}}/renewals", "host": ["{{baseUrl}}"], "path": ["admin", "memberships", "{{membershipNumber}}", "renewals"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "4 Documents",
+      "item": [
+        {
+          "name": "Upload document (multipart)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{memberToken}}" }],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                { "key": "file", "type": "file", "src": [] },
+                { "key": "documentName", "value": "My certificate", "type": "text" },
+                { "key": "documentType", "value": "CERTIFICATE", "type": "text" },
+                { "key": "description", "value": "Uploaded from Postman", "type": "text" }
+              ]
+            },
+            "url": { "raw": "{{baseUrl}}/documents", "host": ["{{baseUrl}}"], "path": ["documents"] }
+          }
+        },
+        {
+          "name": "List my documents",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{memberToken}}" }],
+            "url": { "raw": "{{baseUrl}}/documents?page=1&limit=10", "host": ["{{baseUrl}}"], "path": ["documents"], "query": [{ "key": "page", "value": "1" }, { "key": "limit", "value": "10" }] }
+          }
+        },
+        {
+          "name": "Get document metadata",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{memberToken}}" }],
+            "url": { "raw": "{{baseUrl}}/documents/{{documentId}}", "host": ["{{baseUrl}}"], "path": ["documents", "{{documentId}}"] }
+          }
+        },
+        {
+          "name": "Download document",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{memberToken}}" }],
+            "url": { "raw": "{{baseUrl}}/documents/{{documentId}}/download", "host": ["{{baseUrl}}"], "path": ["documents", "{{documentId}}", "download"] }
+          }
+        },
+        {
+          "name": "Archive document (soft delete)",
+          "request": {
+            "method": "DELETE",
+            "header": [{ "key": "Authorization", "value": "Bearer {{memberToken}}" }],
+            "url": { "raw": "{{baseUrl}}/documents/{{documentId}}", "host": ["{{baseUrl}}"], "path": ["documents", "{{documentId}}"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "5 Assistance Requests",
+      "item": [
+        {
+          "name": "Create request (donation seeker)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{memberToken}}" }, { "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"fullName\": \"Nasreen Akter\",\n  \"mobile\": \"+8801700000000\",\n  \"email\": \"nasreen@example.com\",\n  \"requestedAmount\": \"5000\",\n  \"reason\": \"Medical treatment for family\",\n  \"description\": \"Additional details here\"\n}" },
+            "url": { "raw": "{{baseUrl}}/assistance-requests", "host": ["{{baseUrl}}"], "path": ["assistance-requests"] }
+          }
+        },
+        {
+          "name": "My requests",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{memberToken}}" }],
+            "url": { "raw": "{{baseUrl}}/assistance-requests/me?page=1&limit=10", "host": ["{{baseUrl}}"], "path": ["assistance-requests", "me"], "query": [{ "key": "page", "value": "1" }, { "key": "limit", "value": "10" }] }
+          }
+        },
+        {
+          "name": "Admin list (shows owner)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }],
+            "url": { "raw": "{{baseUrl}}/assistance-requests?page=1&limit=10&status=PENDING", "host": ["{{baseUrl}}"], "path": ["assistance-requests"], "query": [{ "key": "page", "value": "1" }, { "key": "limit", "value": "10" }, { "key": "status", "value": "PENDING" }] }
+          }
+        },
+        {
+          "name": "Get request (owner or admin)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }],
+            "url": { "raw": "{{baseUrl}}/assistance-requests/{{requestId}}", "host": ["{{baseUrl}}"], "path": ["assistance-requests", "{{requestId}}"] }
+          }
+        },
+        {
+          "name": "Admin review (status + remark)",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }, { "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"status\": \"UNDER_REVIEW\",\n  \"adminRemark\": \"Documents being checked\"\n}" },
+            "url": { "raw": "{{baseUrl}}/assistance-requests/{{requestId}}/status", "host": ["{{baseUrl}}"], "path": ["assistance-requests", "{{requestId}}", "status"] }
+          }
+        },
+        {
+          "name": "Attach supporting document (multipart)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{memberToken}}" }],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                { "key": "file", "type": "file", "src": [] },
+                { "key": "documentName", "value": "Supporting doc", "type": "text" }
+              ]
+            },
+            "url": { "raw": "{{baseUrl}}/assistance-requests/{{requestId}}/documents", "host": ["{{baseUrl}}"], "path": ["assistance-requests", "{{requestId}}", "documents"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "6 Support Tickets",
+      "item": [
+        {
+          "name": "Create ticket",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{memberToken}}" }, { "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"subject\": \"Cannot download my certificate\",\n  \"description\": \"The download button returns an error every time.\"\n}" },
+            "url": { "raw": "{{baseUrl}}/support-tickets", "host": ["{{baseUrl}}"], "path": ["support-tickets"] }
+          }
+        },
+        {
+          "name": "My tickets",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{memberToken}}" }],
+            "url": { "raw": "{{baseUrl}}/support-tickets/me?page=1&limit=10", "host": ["{{baseUrl}}"], "path": ["support-tickets", "me"], "query": [{ "key": "page", "value": "1" }, { "key": "limit", "value": "10" }] }
+          }
+        },
+        {
+          "name": "Admin list tickets",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }],
+            "url": { "raw": "{{baseUrl}}/support-tickets?page=1&limit=10", "host": ["{{baseUrl}}"], "path": ["support-tickets"], "query": [{ "key": "page", "value": "1" }, { "key": "limit", "value": "10" }] }
+          }
+        },
+        {
+          "name": "Get ticket (owner or admin)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }],
+            "url": { "raw": "{{baseUrl}}/support-tickets/{{ticketId}}", "host": ["{{baseUrl}}"], "path": ["support-tickets", "{{ticketId}}"] }
+          }
+        },
+        {
+          "name": "Post message on thread",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{memberToken}}" }, { "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"body\": \"Still not working after the fix.\"\n}" },
+            "url": { "raw": "{{baseUrl}}/support-tickets/{{ticketId}}/messages", "host": ["{{baseUrl}}"], "path": ["support-tickets", "{{ticketId}}", "messages"] }
+          }
+        },
+        {
+          "name": "List thread messages",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{memberToken}}" }],
+            "url": { "raw": "{{baseUrl}}/support-tickets/{{ticketId}}/messages", "host": ["{{baseUrl}}"], "path": ["support-tickets", "{{ticketId}}", "messages"] }
+          }
+        },
+        {
+          "name": "Admin: change ticket status (note optional)",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }, { "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"status\": \"RESOLVED\",\n  \"note\": \"Issue fixed, please try again.\"\n}" },
+            "url": { "raw": "{{baseUrl}}/support-tickets/{{ticketId}}/status", "host": ["{{baseUrl}}"], "path": ["support-tickets", "{{ticketId}}", "status"] }
+          }
+        },
+        {
+          "name": "Attach file to ticket (multipart)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{memberToken}}" }],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                { "key": "file", "type": "file", "src": [] },
+                { "key": "documentName", "value": "Screenshot", "type": "text" }
+              ]
+            },
+            "url": { "raw": "{{baseUrl}}/support-tickets/{{ticketId}}/attachments", "host": ["{{baseUrl}}"], "path": ["support-tickets", "{{ticketId}}", "attachments"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "7 Notifications",
+      "item": [
+        {
+          "name": "Send now (admin)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }, { "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"title\": \"Annual General Meeting 2026\",\n  \"body\": \"The AGM will be held on 2026-10-15 at the community hall.\",\n  \"targetAudience\": \"MEMBERS\"\n}" },
+            "url": { "raw": "{{baseUrl}}/notifications", "host": ["{{baseUrl}}"], "path": ["notifications"] }
+          }
+        },
+        {
+          "name": "Send to specific user (admin)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }, { "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"title\": \"Thank you for your donation\",\n  \"body\": \"Your contribution was received.\",\n  \"targetAudience\": \"SPECIFIC_USER\",\n  \"userIds\": [\"{{userId}}\"]\n}" },
+            "url": { "raw": "{{baseUrl}}/notifications", "host": ["{{baseUrl}}"], "path": ["notifications"] }
+          }
+        },
+        {
+          "name": "Schedule for later (admin)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }, { "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"title\": \"Scheduled reminder\",\n  \"body\": \"This was scheduled.\",\n  \"targetAudience\": \"DONORS\",\n  \"scheduledAt\": \"2026-12-01T09:00:00.000Z\"\n}" },
+            "url": { "raw": "{{baseUrl}}/notifications", "host": ["{{baseUrl}}"], "path": ["notifications"] }
+          }
+        },
+        {
+          "name": "Admin list notifications",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }],
+            "url": { "raw": "{{baseUrl}}/notifications?page=1&limit=10", "host": ["{{baseUrl}}"], "path": ["notifications"], "query": [{ "key": "page", "value": "1" }, { "key": "limit", "value": "10" }] }
+          }
+        },
+        {
+          "name": "Admin: recipients + read state",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }],
+            "url": { "raw": "{{baseUrl}}/notifications/{{notificationId}}/recipients", "host": ["{{baseUrl}}"], "path": ["notifications", "{{notificationId}}", "recipients"] }
+          }
+        },
+        {
+          "name": "My feed (unreadOnly optional)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{memberToken}}" }],
+            "url": { "raw": "{{baseUrl}}/notifications/me?page=1&limit=10", "host": ["{{baseUrl}}"], "path": ["notifications", "me"], "query": [{ "key": "page", "value": "1" }, { "key": "limit", "value": "10" }] }
+          }
+        },
+        {
+          "name": "Mark one read",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Authorization", "value": "Bearer {{memberToken}}" }],
+            "url": { "raw": "{{baseUrl}}/notifications/recipients/{{recipientId}}/read", "host": ["{{baseUrl}}"], "path": ["notifications", "recipients", "{{recipientId}}", "read"] }
+          }
+        },
+        {
+          "name": "Mark all read",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Authorization", "value": "Bearer {{memberToken}}" }],
+            "url": { "raw": "{{baseUrl}}/notifications/me/read-all", "host": ["{{baseUrl}}"], "path": ["notifications", "me", "read-all"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "8 Admin Dashboard & Members",
+      "item": [
+        {
+          "name": "Dashboard aggregates",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }],
+            "url": { "raw": "{{baseUrl}}/admin/dashboard", "host": ["{{baseUrl}}"], "path": ["admin", "dashboard"] }
+          }
+        },
+        {
+          "name": "Member list (search/filters)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }],
+            "url": { "raw": "{{baseUrl}}/admin/members?page=1&limit=10", "host": ["{{baseUrl}}"], "path": ["admin", "members"], "query": [{ "key": "page", "value": "1" }, { "key": "limit", "value": "10" }] }
+          }
+        },
+        {
+          "name": "Member 360 view",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }],
+            "url": { "raw": "{{baseUrl}}/admin/members/{{userId}}", "host": ["{{baseUrl}}"], "path": ["admin", "members", "{{userId}}"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "9 Receipts (Credit Entry)",
+      "item": [
+        {
+          "name": "Record income receipt (admin)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }, { "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"receiptDate\": \"2026-09-28\",\n  \"receivedFrom\": \"Abdul Karim\",\n  \"incomeAccount\": \"Membership Fees\",\n  \"receivedInAccount\": \"Cash Box\",\n  \"amount\": 5000,\n  \"method\": \"CASH\",\n  \"remarks\": \"Monthly membership fee\"\n}" },
+            "url": { "raw": "{{baseUrl}}/admin/receipts", "host": ["{{baseUrl}}"], "path": ["admin", "receipts"] }
+          }
+        },
+        {
+          "name": "List receipts (filters)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }],
+            "url": { "raw": "{{baseUrl}}/admin/receipts?page=1&limit=10&fromDate=2026-09-01&toDate=2026-09-30", "host": ["{{baseUrl}}"], "path": ["admin", "receipts"], "query": [{ "key": "page", "value": "1" }, { "key": "limit", "value": "10" }, { "key": "fromDate", "value": "2026-09-01" }, { "key": "toDate", "value": "2026-09-30" }] }
+          }
+        },
+        {
+          "name": "Get receipt",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }],
+            "url": { "raw": "{{baseUrl}}/admin/receipts/{{receiptId}}", "host": ["{{baseUrl}}"], "path": ["admin", "receipts", "{{receiptId}}"] }
+          }
+        },
+        {
+          "name": "Attach file to receipt (multipart)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                { "key": "file", "type": "file", "src": [] },
+                { "key": "documentName", "value": "Cash slip", "type": "text" }
+              ]
+            },
+            "url": { "raw": "{{baseUrl}}/admin/receipts/{{receiptId}}/attachment", "host": ["{{baseUrl}}"], "path": ["admin", "receipts", "{{receiptId}}", "attachment"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "10 Donations",
+      "item": [
+        {
+          "name": "Guest donation (public)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"donorName\": \"Rafiq Mahmood\",\n  \"donorEmail\": \"rafiq@example.com\",\n  \"amount\": 2500,\n  \"paymentMethod\": \"BANK_TRANSFER\",\n  \"cause\": \"Orphan Care\",\n  \"transactionId\": \"TRX-773410\"\n}" },
+            "url": { "raw": "{{baseUrl}}/donations/guest", "host": ["{{baseUrl}}"], "path": ["donations", "guest"] }
+          }
+        },
+        {
+          "name": "Linked donation (donor logged in)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{donorToken}}" }, { "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"amount\": 1000,\n  \"paymentMethod\": \"MOBILE_WALLET\",\n  \"cause\": \"Flood Relief\"\n}" },
+            "url": { "raw": "{{baseUrl}}/donations", "host": ["{{baseUrl}}"], "path": ["donations"] }
+          }
+        },
+        {
+          "name": "My donations",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{donorToken}}" }],
+            "url": { "raw": "{{baseUrl}}/donations/me?page=1&limit=10", "host": ["{{baseUrl}}"], "path": ["donations", "me"], "query": [{ "key": "page", "value": "1" }, { "key": "limit", "value": "10" }] }
+          }
+        },
+        {
+          "name": "Admin list donations (search/filters)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }],
+            "url": { "raw": "{{baseUrl}}/donations?page=1&limit=10", "host": ["{{baseUrl}}"], "path": ["donations"], "query": [{ "key": "page", "value": "1" }, { "key": "limit", "value": "10" }] }
+          }
+        },
+        {
+          "name": "Get donation (admin or linked donor)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }],
+            "url": { "raw": "{{baseUrl}}/donations/{{donationId}}", "host": ["{{baseUrl}}"], "path": ["donations", "{{donationId}}"] }
+          }
+        },
+        {
+          "name": "Admin: update status + receipt ref",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }, { "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"status\": \"RECEIVED\",\n  \"receiptNumber\": \"RCV-2026-0001\",\n  \"remarks\": \"Bank slip verified\"\n}" },
+            "url": { "raw": "{{baseUrl}}/donations/{{donationId}}/status", "host": ["{{baseUrl}}"], "path": ["donations", "{{donationId}}", "status"] }
+          }
+        }
+      ]
+    }
+  ]
+}
