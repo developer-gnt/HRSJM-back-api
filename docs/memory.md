@@ -101,8 +101,8 @@ HRSJM — Digital Membership & Donation Platform backend. The backend is the **s
 
 ### In progress / Next
 - Phase 10/11 verified 2026-09-28 (with date-filter fix): Trial Balance + P&L e2e suites passing (TC-TB-001–005, TC-PL-001–005); dedicated date-filter verification (`test/verify-date-filters.sh`) and hand-computed reconciliation (`test/cross-check-reports.js`) PASS. A real bug was found and fixed: report date filters sat inside the entry LEFT JOIN's ON clause and never filtered rows (future-dated entries leaked into as-of/period reports); fixed in all three report services (TB, P&L, Balance Sheet) by moving the date condition to a WHERE row filter.
-- Phase 12 (Balance Sheet) is IMPLEMENTED (service + spec + DTOs + controller routes) but NOT yet verified — no e2e suite yet; tracker still ⬜.
-- Next: **Phase 12 — Balance Sheet verification** (write `test/e2e-balance-sheet.sh`, cross-check Assets = Liabilities + Equity against hand-computed figures), then Phase 13 (Integration, QA & Handoff).
+- Phase 12 verified 2026-09-28: Balance Sheet e2e passing (TC-BS-001–004), `balance_sheet.read` permission migration applied, cross-check reconciles Assets = Liabilities + Equity against hand-computed entry-line sums and ties surplus to the cumulative P&L. The full three-report consistency suite now lives in `test/cross-check-reports.js` (TB + P&L + BS in one run).
+- Next: **Phase 13 — Integration, QA & Handoff** per `phases.md` (end-to-end flows, report consistency across TB/P&L/BS, Swagger completeness for all 74 APIs, production config verification, API handoff contract).
 
 ### Progress tracker status (from phases.md)
 - Phase 0: ✅ done (verified 2026-09-26)
@@ -115,6 +115,7 @@ HRSJM — Digital Membership & Donation Platform backend. The backend is the **s
 - Phase 7: ✅ done (verified 2026-09-28)
 - Phase 8: ✅ done (verified 2026-09-28)
 - Phase 9: ✅ done (verified 2026-09-28)
+- Phase 12: ✅ done (verified 2026-09-28)
 - Phases 9–13: ⬜ not started
 
 ---

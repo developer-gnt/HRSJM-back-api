@@ -372,6 +372,8 @@ GET /api/v1/reports/balance-sheet/summary
 
 **Exit criteria:** Balance sheet equation holds on seeded data; cross-checks with Trial Balance and P&L.
 
+> **Verified 2026-09-28:** 2 APIs verified (report + summary) with `balance_sheet.read` permission (migration `CreateBalanceSheetPermissionsSchema1790640000000` applied — permission was pending). Assets are debit-natural, liabilities/equity credit-natural, and the current surplus/deficit (cumulative income − expenses) is folded into equity so the equation `Assets = Liabilities + Equity` holds and ties to the P&L. Carries the same LEFT JOIN ON-clause date-filter fix as Phases 10/11. E2E `test/e2e-balance-sheet.sh` passed TC-BS-001–004; cross-check (`test/cross-check-reports.js`) reconciles assets/liabilities/equity/surplus against hand-computed entry-line sums — PASS (assets 3169 = liabilities 0 + equity 3169, surplus 3169 = cumulative P&L net), and the as-of filter provably shifts totals between 2026-09-28 (5500) and 2030 (3169) with both dates balancing.
+
 ---
 
 ## Phase 13 — Integration, QA & Handoff

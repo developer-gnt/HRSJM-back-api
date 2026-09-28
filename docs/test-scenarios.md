@@ -355,6 +355,21 @@ Every response must use the standard envelopes:
 **Date-filter bug found & fixed 2026-09-28:** same LEFT JOIN ON-clause pattern as Phase 10; additionally the date condition must use `.andWhere` after the account-type `.where` — a later `.where()` call replaces the entire WHERE clause.
 
 ---
+## Phase 12 — Balance Sheet (2 APIs)
+
+> **Executed 2026-09-28 (unit + E2E suite `test/e2e-balance-sheet.sh` + cross-check `test/cross-check-reports.js`):** PASS — TC-BS-001 through TC-BS-007. Unit test suite: `balance-sheet.service.spec.ts` — passing (carries the Phase 10/11 date-filter fix).
+
+| ID | Scenario | Steps | Expected |
+|---|---|---|---|
+| TC-BS-001 | Non-admin denied | GET `/api/v1/reports/balance-sheet` as authenticated non-admin | 403 `PERMISSION_DENIED` |
+| TC-BS-002 | Balance sheet report | GET `/api/v1/reports/balance-sheet` | 200 with ASSET/LIABILITY/FUND_EQUITY breakdowns; `Assets = Liabilities + Equity`, `is_balanced=true`, `difference=0` |
+| TC-BS-003 | Balance sheet summary | GET `/api/v1/reports/balance-sheet/summary` | 200 with totals and equation check |
+| TC-BS-004 | Zero-balance handling | GET with `include_zero_balances=true` | 200; zero-activity accounts included when requested |
+| TC-BS-005 | Hand-computed reconciliation | Compare assets/liabilities/equity/surplus against sums computed directly from `accounting_entry_lines` | Identical (assets 3169 = liabilities 0 + equity 3169); negative asset balance (bank overdraft from test activity) handled correctly |
+| TC-BS-006 | Surplus ties to P&L | Compare `equity.current_surplus_deficit` with the cumulative P&L net result over the same span | Identical (3169 = 3169); a sub-period P&L legitimately differs (2026-only P&L = 5500 excludes 2027-dated vouchers) |
+| TC-BS-007 | As-of-date filter shifts totals | GET `as_of_date=2026-09-28` vs `2030-01-01` | Totals differ (future-dated vouchers move assets 5500 → 3169) and BOTH dates balance — entry-level date filtering keeps the equation intact |
+
+---
 ## Template — every future module adds a section here
 
 Minimum coverage per module (rule.md §6):

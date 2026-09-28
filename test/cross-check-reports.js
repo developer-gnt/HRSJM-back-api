@@ -105,6 +105,52 @@ async function getAdminToken() {
   console.log(`   expected income=${income / 100} expense=${expense / 100} net=${(income - expense) / 100}`);
   console.log(`   api      income=${plApi.data.total_income} expense=${plApi.data.total_expenses} net=${plApi.data.net_result} (${plApi.data.result_type})`);
 
+  // ---- 4. Balance sheet vs hand-computed (all data, as_of far future) ----
+  const bsQ = await db.query(`
+    SELECT a.id, a.account_code, a.account_type,
+           COALESCE(SUM(l.debit_amount), 0) AS gd,
+           COALESCE(SUM(l.credit_amount), 0) AS gc
+    FROM accounts a
+    LEFT JOIN accounting_entry_lines l ON l.account_id = a.id
+    GROUP BY a.id, a.account_code, a.account_type`);
+  let expAssets = 0, expLiab = 0, expEquityAccts = 0, expIncome = 0, expExpense = 0;
+  const expPerAccount = new Map();
+  for (const r of bsQ.rows) {
+    const gd = toPaise(r.gd), gc = toPaise(r.gc);
+    let bucket;
+    if (r.account_type === 'ASSET') { bucket = expAssets += gd - gc; expPerAccount.set(r.id, ['assets', (gd - gc) / 100]); }
+    else if (r.account_type === 'LIABILITY') { bucket = expLiab += gc - gd; expPerAccount.set(r.id, ['liabilities', (gc - gd) / 100]); }
+    else if (r.account_type === 'FUND_EQUITY') { bucket = expEquityAccts += gc - gd; expPerAccount.set(r.id, ['equity.fund_accounts', (gc - gd) / 100]); }
+    else if (r.account_type === 'INCOME') { bucket = expIncome += gc - gd; }
+    else { bucket = expExpense += gd - gc; }
+  }
+  const expSurplus = expIncome - expExpense;
+  const expEquity = expEquityAccts + expSurplus;
+  const bs = await fetch(`${BASE}/reports/balance-sheet?as_of_date=2030-01-01`, { headers: auth }).then((r) => r.json());
+  const bsOk =
+    toPaise(bs.data.assets.total) === expAssets &&
+    toPaise(bs.data.liabilities.total) === expLiab &&
+    toPaise(bs.data.equity.total_equity_accounts) === expEquityAccts &&
+    toPaise(bs.data.equity.current_surplus_deficit) === expSurplus &&
+    toPaise(bs.data.equity.total) === expEquity;
+  console.log(`4. Balance sheet vs hand-computed (as_of 2030): ${bsOk ? 'PASS' : 'FAIL'}`);
+  console.log(`   expected assets=${expAssets / 100} liab=${expLiab / 100} equity(accts+surplus)=${expEquityAccts / 100}+${expSurplus / 100}`);
+  console.log(`   api      assets=${bs.data.assets.total} liab=${bs.data.liabilities.total} equity=${bs.data.equity.total} surplus=${bs.data.equity.current_surplus_deficit}`);
+
+  // ---- 5. Balance sheet equation + tie-out ----
+  const eqOk = bs.data.is_balanced === true && toPaise(bs.data.assets.total) === toPaise(bs.data.liabilities.total) + toPaise(bs.data.equity.total);
+  // Surplus/deficit on the BS is cumulative since inception — it must equal
+  // the P&L net result over the SAME span (inception → as_of), not a sub-period.
+  const plCum = await fetch(`${BASE}/reports/profit-loss?from_date=2026-01-01&to_date=2030-01-01`, { headers: auth }).then((r) => r.json());
+  const surplusTies = toPaise(bs.data.equity.current_surplus_deficit) === toPaise(plCum.data.net_result);
+  console.log(`5. BS equation (assets = liab + equity, is_balanced=${bs.data.is_balanced}): ${eqOk ? 'PASS' : 'FAIL'}; surplus ties to cumulative P&L net (${plCum.data.net_result}): ${surplusTies ? 'PASS' : 'FAIL'}`);
+
+  // ---- 6. Balance sheet as-of-date filter (future vouchers excluded) ----
+  const bsPast = await fetch(`${BASE}/reports/balance-sheet?as_of_date=2026-09-28`, { headers: auth }).then((r) => r.json());
+  const bsFuture = await fetch(`${BASE}/reports/balance-sheet?as_of_date=2030-01-01`, { headers: auth }).then((r) => r.json());
+  const filterOk = toPaise(bsPast.data.assets.total) !== toPaise(bsFuture.data.assets.total) || toPaise(bsPast.data.equity.total) !== toPaise(bsFuture.data.equity.total);
+  console.log(`6. BS as-of-date filter (2026-09-28 assets=${bsPast.data.assets.total} vs 2030 assets=${bsFuture.data.assets.total} — future-dated vouchers shift totals): ${filterOk ? 'PASS' : 'FAIL'}`);
+
   await db.end();
   console.log('--- cross-check completed ---');
 })().catch((e) => { console.error('ERR', e.message); process.exit(1); });

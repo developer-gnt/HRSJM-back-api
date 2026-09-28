@@ -1,0 +1,949 @@
+{
+  "info": {
+    "_postman_id": "hrsjm-api-collection-v1",
+    "name": "HRSJM Backend API (All 74 Endpoints)",
+    "description": "Comprehensive Postman collection for HRSJM Digital Membership, Donation & Accounting Platform.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:3000/api/v1",
+      "type": "string"
+    },
+    {
+      "key": "adminToken",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "memberToken",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "01. Auth & Profile",
+      "item": [
+        {
+          "name": "Register",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"full_name\": \"John Doe\",\n  \"email\": \"john.doe@example.com\",\n  \"mobile_number\": \"9876543210\",\n  \"password\": \"Secret@123\",\n  \"confirm_password\": \"Secret@123\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/auth/register", "host": ["{{baseUrl}}"], "path": ["auth", "register"] }
+          }
+        },
+        {
+          "name": "Login (Admin/User)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const res = pm.response.json();",
+                  "if (res.data && res.data.access_token) {",
+                  "  pm.collectionVariables.set('adminToken', res.data.access_token);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"identifier\": \"admin@hrsjm.org\",\n  \"password\": \"AdminPass#1\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/auth/login", "host": ["{{baseUrl}}"], "path": ["auth", "login"] }
+          }
+        },
+        {
+          "name": "Refresh Token",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refresh_token\": \"<REFRESH_TOKEN>\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/auth/refresh", "host": ["{{baseUrl}}"], "path": ["auth", "refresh"] }
+          }
+        },
+        {
+          "name": "Logout",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{adminToken}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refresh_token\": \"<REFRESH_TOKEN>\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/auth/logout", "host": ["{{baseUrl}}"], "path": ["auth", "logout"] }
+          }
+        },
+        {
+          "name": "Forgot Password",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"john.doe@example.com\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/auth/forgot-password", "host": ["{{baseUrl}}"], "path": ["auth", "forgot-password"] }
+          }
+        },
+        {
+          "name": "Reset Password",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"token\": \"<RESET_TOKEN>\",\n  \"new_password\": \"NewSecret#123\",\n  \"confirm_new_password\": \"NewSecret#123\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/auth/reset-password", "host": ["{{baseUrl}}"], "path": ["auth", "reset-password"] }
+          }
+        },
+        {
+          "name": "Get Profile (Me)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }],
+            "url": { "raw": "{{baseUrl}}/auth/me", "host": ["{{baseUrl}}"], "path": ["auth", "me"] }
+          }
+        },
+        {
+          "name": "Change Password",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{adminToken}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"current_password\": \"Secret@123\",\n  \"new_password\": \"NewSecret#123\",\n  \"confirm_new_password\": \"NewSecret#123\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/auth/change-password", "host": ["{{baseUrl}}"], "path": ["auth", "change-password"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "02. Users, Roles & Permissions",
+      "item": [
+        {
+          "name": "List Users",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/users?page=1&limit=20&status=ACTIVE",
+              "host": ["{{baseUrl}}"],
+              "path": ["users"],
+              "query": [
+                { "key": "page", "value": "1" },
+                { "key": "limit", "value": "20" },
+                { "key": "status", "value": "ACTIVE" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get User by ID",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }],
+            "url": { "raw": "{{baseUrl}}/users/:id", "host": ["{{baseUrl}}"], "path": ["users", ":id"] }
+          }
+        },
+        {
+          "name": "Update User",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{adminToken}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": { "mode": "raw", "raw": "{\n  \"full_name\": \"John Updated\"\n}" },
+            "url": { "raw": "{{baseUrl}}/users/:id", "host": ["{{baseUrl}}"], "path": ["users", ":id"] }
+          }
+        },
+        {
+          "name": "Update User Status",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{adminToken}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": { "mode": "raw", "raw": "{\n  \"status\": \"BLOCKED\",\n  \"reason\": \"Policy violation\"\n}" },
+            "url": { "raw": "{{baseUrl}}/users/:id/status", "host": ["{{baseUrl}}"], "path": ["users", ":id", "status"] }
+          }
+        },
+        {
+          "name": "Get User Roles",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }],
+            "url": { "raw": "{{baseUrl}}/users/:id/roles", "host": ["{{baseUrl}}"], "path": ["users", ":id", "roles"] }
+          }
+        },
+        {
+          "name": "Assign Role to User",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{adminToken}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": { "mode": "raw", "raw": "{\n  \"role_id\": \"<ROLE_UUID>\"\n}" },
+            "url": { "raw": "{{baseUrl}}/users/:id/roles", "host": ["{{baseUrl}}"], "path": ["users", ":id", "roles"] }
+          }
+        },
+        {
+          "name": "Remove Role from User",
+          "request": {
+            "method": "DELETE",
+            "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }],
+            "url": { "raw": "{{baseUrl}}/users/:id/roles/:roleId", "host": ["{{baseUrl}}"], "path": ["users", ":id", "roles", ":roleId"] }
+          }
+        },
+        {
+          "name": "List Roles",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }],
+            "url": { "raw": "{{baseUrl}}/roles", "host": ["{{baseUrl}}"], "path": ["roles"] }
+          }
+        },
+        {
+          "name": "Create Role",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{adminToken}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": { "mode": "raw", "raw": "{\n  \"name\": \"ACCOUNTANT\",\n  \"description\": \"Handles finances and reports\"\n}" },
+            "url": { "raw": "{{baseUrl}}/roles", "host": ["{{baseUrl}}"], "path": ["roles"] }
+          }
+        },
+        {
+          "name": "Get Role by ID",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }],
+            "url": { "raw": "{{baseUrl}}/roles/:id", "host": ["{{baseUrl}}"], "path": ["roles", ":id"] }
+          }
+        },
+        {
+          "name": "Update Role",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{adminToken}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": { "mode": "raw", "raw": "{\n  \"description\": \"Senior finance manager\"\n}" },
+            "url": { "raw": "{{baseUrl}}/roles/:id", "host": ["{{baseUrl}}"], "path": ["roles", ":id"] }
+          }
+        },
+        {
+          "name": "Delete Role",
+          "request": {
+            "method": "DELETE",
+            "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }],
+            "url": { "raw": "{{baseUrl}}/roles/:id", "host": ["{{baseUrl}}"], "path": ["roles", ":id"] }
+          }
+        },
+        {
+          "name": "Assign Permissions to Role",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{adminToken}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": { "mode": "raw", "raw": "{\n  \"permission_ids\": [\"<PERMISSION_UUID>\"]\n}" },
+            "url": { "raw": "{{baseUrl}}/roles/:id/permissions", "host": ["{{baseUrl}}"], "path": ["roles", ":id", "permissions"] }
+          }
+        },
+        {
+          "name": "Remove Permission from Role",
+          "request": {
+            "method": "DELETE",
+            "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }],
+            "url": { "raw": "{{baseUrl}}/roles/:id/permissions/:permissionId", "host": ["{{baseUrl}}"], "path": ["roles", ":id", "permissions", ":permissionId"] }
+          }
+        },
+        {
+          "name": "List All Permissions",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }],
+            "url": { "raw": "{{baseUrl}}/permissions", "host": ["{{baseUrl}}"], "path": ["permissions"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "03. Membership Categories",
+      "item": [
+        {
+          "name": "List Categories",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/membership-categories", "host": ["{{baseUrl}}"], "path": ["membership-categories"] }
+          }
+        },
+        {
+          "name": "Get Category by ID",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/membership-categories/:id", "host": ["{{baseUrl}}"], "path": ["membership-categories", ":id"] }
+          }
+        },
+        {
+          "name": "Create Category",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{adminToken}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Gold Member\",\n  \"description\": \"Annual gold tier\",\n  \"fee\": 1200.00,\n  \"duration_in_months\": 12,\n  \"is_active\": true\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/membership-categories", "host": ["{{baseUrl}}"], "path": ["membership-categories"] }
+          }
+        },
+        {
+          "name": "Update Category",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{adminToken}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": { "mode": "raw", "raw": "{\n  \"fee\": 1500.00\n}" },
+            "url": { "raw": "{{baseUrl}}/membership-categories/:id", "host": ["{{baseUrl}}"], "path": ["membership-categories", ":id"] }
+          }
+        },
+        {
+          "name": "Update Category Status",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{adminToken}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": { "mode": "raw", "raw": "{\n  \"is_active\": false\n}" },
+            "url": { "raw": "{{baseUrl}}/membership-categories/:id/status", "host": ["{{baseUrl}}"], "path": ["membership-categories", ":id", "status"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "04. Memberships & Cards",
+      "item": [
+        {
+          "name": "Apply for Membership",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{memberToken}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"category_id\": \"<CATEGORY_UUID>\",\n  \"personal_details\": {\n    \"dob\": \"1990-01-01\",\n    \"gender\": \"MALE\",\n    \"address\": \"123 Main St, New Delhi\"\n  }\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/memberships/apply", "host": ["{{baseUrl}}"], "path": ["memberships", "apply"] }
+          }
+        },
+        {
+          "name": "Get My Memberships",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{memberToken}}" }],
+            "url": { "raw": "{{baseUrl}}/memberships/my", "host": ["{{baseUrl}}"], "path": ["memberships", "my"] }
+          }
+        },
+        {
+          "name": "List All Memberships (Admin)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/memberships?page=1&limit=20&status=PENDING",
+              "host": ["{{baseUrl}}"],
+              "path": ["memberships"],
+              "query": [
+                { "key": "page", "value": "1" },
+                { "key": "limit", "value": "20" },
+                { "key": "status", "value": "PENDING" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get Membership by ID",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }],
+            "url": { "raw": "{{baseUrl}}/memberships/:id", "host": ["{{baseUrl}}"], "path": ["memberships", ":id"] }
+          }
+        },
+        {
+          "name": "Verify Documents",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }],
+            "url": { "raw": "{{baseUrl}}/memberships/:id/verify", "host": ["{{baseUrl}}"], "path": ["memberships", ":id", "verify"] }
+          }
+        },
+        {
+          "name": "Approve Membership",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }],
+            "url": { "raw": "{{baseUrl}}/memberships/:id/approve", "host": ["{{baseUrl}}"], "path": ["memberships", ":id", "approve"] }
+          }
+        },
+        {
+          "name": "Reject Membership",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{adminToken}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": { "mode": "raw", "raw": "{\n  \"rejection_reason\": \"Incomplete identification proof\"\n}" },
+            "url": { "raw": "{{baseUrl}}/memberships/:id/reject", "host": ["{{baseUrl}}"], "path": ["memberships", ":id", "reject"] }
+          }
+        },
+        {
+          "name": "Update Membership Status",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{adminToken}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": { "mode": "raw", "raw": "{\n  \"status\": \"SUSPENDED\",\n  \"notes\": \"Under review\"\n}" },
+            "url": { "raw": "{{baseUrl}}/memberships/:id/status", "host": ["{{baseUrl}}"], "path": ["memberships", ":id", "status"] }
+          }
+        },
+        {
+          "name": "Get Digital ID Card",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{memberToken}}" }],
+            "url": { "raw": "{{baseUrl}}/memberships/:id/card", "host": ["{{baseUrl}}"], "path": ["memberships", ":id", "card"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "05. Membership Payments",
+      "item": [
+        {
+          "name": "Initiate Payment",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{memberToken}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"membership_id\": \"<MEMBERSHIP_UUID>\",\n  \"payment_method\": \"ONLINE\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/membership-payments", "host": ["{{baseUrl}}"], "path": ["membership-payments"] }
+          }
+        },
+        {
+          "name": "Verify Gateway Payment",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{memberToken}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"payment_id\": \"<PAYMENT_UUID>\",\n  \"gateway_payment_id\": \"pay_123456789\",\n  \"gateway_order_id\": \"order_987654321\",\n  \"gateway_signature\": \"valid_sig_hash\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/membership-payments/verify", "host": ["{{baseUrl}}"], "path": ["membership-payments", "verify"] }
+          }
+        },
+        {
+          "name": "Get My Payments",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{memberToken}}" }],
+            "url": { "raw": "{{baseUrl}}/membership-payments/my", "host": ["{{baseUrl}}"], "path": ["membership-payments", "my"] }
+          }
+        },
+        {
+          "name": "List All Payments (Admin)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }],
+            "url": { "raw": "{{baseUrl}}/membership-payments", "host": ["{{baseUrl}}"], "path": ["membership-payments"] }
+          }
+        },
+        {
+          "name": "Get Payment by ID",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }],
+            "url": { "raw": "{{baseUrl}}/membership-payments/:id", "host": ["{{baseUrl}}"], "path": ["membership-payments", ":id"] }
+          }
+        },
+        {
+          "name": "Get Payment Receipt",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{memberToken}}" }],
+            "url": { "raw": "{{baseUrl}}/membership-payments/:id/receipt", "host": ["{{baseUrl}}"], "path": ["membership-payments", ":id", "receipt"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "06. Accounting Foundation & Ledger",
+      "item": [
+        {
+          "name": "List Chart of Accounts",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }],
+            "url": { "raw": "{{baseUrl}}/accounts", "host": ["{{baseUrl}}"], "path": ["accounts"] }
+          }
+        },
+        {
+          "name": "Create Account",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{adminToken}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"account_name\": \"Office Rent Expense\",\n  \"account_code\": \"5002\",\n  \"account_type\": \"EXPENSE\",\n  \"description\": \"Monthly office rental\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/accounts", "host": ["{{baseUrl}}"], "path": ["accounts"] }
+          }
+        },
+        {
+          "name": "Get Account by ID",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }],
+            "url": { "raw": "{{baseUrl}}/accounts/:id", "host": ["{{baseUrl}}"], "path": ["accounts", ":id"] }
+          }
+        },
+        {
+          "name": "Update Account",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{adminToken}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": { "mode": "raw", "raw": "{\n  \"description\": \"Updated description\"\n}" },
+            "url": { "raw": "{{baseUrl}}/accounts/:id", "host": ["{{baseUrl}}"], "path": ["accounts", ":id"] }
+          }
+        },
+        {
+          "name": "Update Account Status",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{adminToken}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": { "mode": "raw", "raw": "{\n  \"is_active\": false\n}" },
+            "url": { "raw": "{{baseUrl}}/accounts/:id/status", "host": ["{{baseUrl}}"], "path": ["accounts", ":id", "status"] }
+          }
+        },
+        {
+          "name": "Get Account Ledger (Running Balance)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/accounts/:id/ledger?from_date=2026-01-01&to_date=2026-12-31",
+              "host": ["{{baseUrl}}"],
+              "path": ["accounts", ":id", "ledger"],
+              "query": [
+                { "key": "from_date", "value": "2026-01-01" },
+                { "key": "to_date", "value": "2026-12-31" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "List Journal Entries",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }],
+            "url": { "raw": "{{baseUrl}}/accounting/entries", "host": ["{{baseUrl}}"], "path": ["accounting", "entries"] }
+          }
+        },
+        {
+          "name": "Get Journal Entry by ID",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }],
+            "url": { "raw": "{{baseUrl}}/accounting/entries/:id", "host": ["{{baseUrl}}"], "path": ["accounting", "entries", ":id"] }
+          }
+        },
+        {
+          "name": "Reverse Journal Entry",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }],
+            "url": { "raw": "{{baseUrl}}/accounting/entries/:id/reverse", "host": ["{{baseUrl}}"], "path": ["accounting", "entries", ":id", "reverse"] }
+          }
+        },
+        {
+          "name": "Global Ledger Report",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/accounting/ledger?from_date=2026-01-01&to_date=2026-12-31",
+              "host": ["{{baseUrl}}"],
+              "path": ["accounting", "ledger"],
+              "query": [
+                { "key": "from_date", "value": "2026-01-01" },
+                { "key": "to_date", "value": "2026-12-31" }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "07. Expense Entries",
+      "item": [
+        {
+          "name": "Create Expense Entry",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{adminToken}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"expense_date\": \"2026-09-28\",\n  \"paid_to\": \"City Office Stationary Supplies\",\n  \"expense_account_id\": \"<EXPENSE_ACCOUNT_UUID>\",\n  \"paid_from_account_id\": \"<BANK_OR_CASH_ACCOUNT_UUID>\",\n  \"amount\": 750.00,\n  \"payment_method\": \"BANK_TRANSFER\",\n  \"reference_number\": \"REF-TXN-001\",\n  \"description\": \"Office paper and ink supplies\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/expense-entries", "host": ["{{baseUrl}}"], "path": ["expense-entries"] }
+          }
+        },
+        {
+          "name": "List Expense Entries",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }],
+            "url": { "raw": "{{baseUrl}}/expense-entries", "host": ["{{baseUrl}}"], "path": ["expense-entries"] }
+          }
+        },
+        {
+          "name": "Get Expense Entry by ID",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }],
+            "url": { "raw": "{{baseUrl}}/expense-entries/:id", "host": ["{{baseUrl}}"], "path": ["expense-entries", ":id"] }
+          }
+        },
+        {
+          "name": "Update Expense Entry",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{adminToken}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": { "mode": "raw", "raw": "{\n  \"description\": \"Updated description notes\"\n}" },
+            "url": { "raw": "{{baseUrl}}/expense-entries/:id", "host": ["{{baseUrl}}"], "path": ["expense-entries", ":id"] }
+          }
+        },
+        {
+          "name": "Cancel Expense Entry (Reverses Ledger)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{adminToken}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": { "mode": "raw", "raw": "{\n  \"cancellation_reason\": \"Duplicate voucher entered in error\"\n}" },
+            "url": { "raw": "{{baseUrl}}/expense-entries/:id/cancel", "host": ["{{baseUrl}}"], "path": ["expense-entries", ":id", "cancel"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "08. Receipt Entries (Manual Receipts)",
+      "item": [
+        {
+          "name": "Create Receipt Entry",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{adminToken}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"receipt_date\": \"2026-09-28\",\n  \"received_from\": \"XYZ Foundation Support\",\n  \"income_account_id\": \"<INCOME_ACCOUNT_UUID>\",\n  \"deposited_to_account_id\": \"<BANK_ACCOUNT_UUID>\",\n  \"amount\": 5000.00,\n  \"payment_method\": \"BANK_TRANSFER\",\n  \"reference_number\": \"NEFT-12345\",\n  \"description\": \"Miscellaneous donation support\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/receipt-entries", "host": ["{{baseUrl}}"], "path": ["receipt-entries"] }
+          }
+        },
+        {
+          "name": "List Receipt Entries",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }],
+            "url": { "raw": "{{baseUrl}}/receipt-entries", "host": ["{{baseUrl}}"], "path": ["receipt-entries"] }
+          }
+        },
+        {
+          "name": "Get Receipt Entry by ID",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }],
+            "url": { "raw": "{{baseUrl}}/receipt-entries/:id", "host": ["{{baseUrl}}"], "path": ["receipt-entries", ":id"] }
+          }
+        },
+        {
+          "name": "Update Receipt Entry",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{adminToken}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": { "mode": "raw", "raw": "{\n  \"description\": \"Updated notes\"\n}" },
+            "url": { "raw": "{{baseUrl}}/receipt-entries/:id", "host": ["{{baseUrl}}"], "path": ["receipt-entries", ":id"] }
+          }
+        },
+        {
+          "name": "Cancel Receipt Entry (Reverses Ledger)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{adminToken}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": { "mode": "raw", "raw": "{\n  \"cancellation_reason\": \"Cheque bounced / cancelled\"\n}" },
+            "url": { "raw": "{{baseUrl}}/receipt-entries/:id/cancel", "host": ["{{baseUrl}}"], "path": ["receipt-entries", ":id", "cancel"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "09. Donations & Payments",
+      "item": [
+        {
+          "name": "Create Donation Intent",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"donor_name\": \"Jane Donor\",\n  \"email\": \"jane.donor@example.com\",\n  \"mobile_number\": \"9876501234\",\n  \"amount\": 2500.00,\n  \"campaign\": \"General Medical Aid\",\n  \"is_anonymous\": false\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/donations", "host": ["{{baseUrl}}"], "path": ["donations"] }
+          }
+        },
+        {
+          "name": "List Donations (Admin)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }],
+            "url": { "raw": "{{baseUrl}}/donations", "host": ["{{baseUrl}}"], "path": ["donations"] }
+          }
+        },
+        {
+          "name": "Get Donation by ID",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }],
+            "url": { "raw": "{{baseUrl}}/donations/:id", "host": ["{{baseUrl}}"], "path": ["donations", ":id"] }
+          }
+        },
+        {
+          "name": "Initiate Donation Payment",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"donation_id\": \"<DONATION_UUID>\",\n  \"amount\": 2500.00,\n  \"payment_method\": \"ONLINE\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/donation-payments", "host": ["{{baseUrl}}"], "path": ["donation-payments"] }
+          }
+        },
+        {
+          "name": "Verify Donation Payment (Posts Dr Bank, Cr Donation Income)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"payment_id\": \"<PAYMENT_UUID>\",\n  \"gateway_payment_id\": \"pay_don_12345\",\n  \"gateway_order_id\": \"order_don_98765\",\n  \"gateway_signature\": \"valid_signature_hash\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/donation-payments/verify", "host": ["{{baseUrl}}"], "path": ["donation-payments", "verify"] }
+          }
+        },
+        {
+          "name": "List Donation Payments (Admin)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }],
+            "url": { "raw": "{{baseUrl}}/donation-payments", "host": ["{{baseUrl}}"], "path": ["donation-payments"] }
+          }
+        },
+        {
+          "name": "Refund Donation Payment (Posts Reversal Entry)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{adminToken}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"Donor requested refund within grace period\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/donation-payments/:id/refund", "host": ["{{baseUrl}}"], "path": ["donation-payments", ":id", "refund"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "10. Trial Balance Reports",
+      "item": [
+        {
+          "name": "Get Detailed Trial Balance",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/reports/trial-balance?as_of_date=2026-09-28&include_zero_balances=false",
+              "host": ["{{baseUrl}}"],
+              "path": ["reports", "trial-balance"],
+              "query": [
+                { "key": "as_of_date", "value": "2026-09-28" },
+                { "key": "include_zero_balances", "value": "false" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get Trial Balance Summary",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/reports/trial-balance/summary?as_of_date=2026-09-28",
+              "host": ["{{baseUrl}}"],
+              "path": ["reports", "trial-balance", "summary"],
+              "query": [{ "key": "as_of_date", "value": "2026-09-28" }]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "11. Profit & Loss Reports",
+      "item": [
+        {
+          "name": "Get Detailed Profit & Loss Report",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/reports/profit-loss?from_date=2026-04-01&to_date=2027-03-31&include_zero_balances=false",
+              "host": ["{{baseUrl}}"],
+              "path": ["reports", "profit-loss"],
+              "query": [
+                { "key": "from_date", "value": "2026-04-01" },
+                { "key": "to_date", "value": "2027-03-31" },
+                { "key": "include_zero_balances", "value": "false" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get Profit & Loss Summary",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/reports/profit-loss/summary?from_date=2026-04-01&to_date=2027-03-31",
+              "host": ["{{baseUrl}}"],
+              "path": ["reports", "profit-loss", "summary"],
+              "query": [
+                { "key": "from_date", "value": "2026-04-01" },
+                { "key": "to_date", "value": "2027-03-31" }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "12. Balance Sheet Reports",
+      "item": [
+        {
+          "name": "Get Detailed Balance Sheet Report",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/reports/balance-sheet?as_of_date=2026-09-28&include_zero_balances=false",
+              "host": ["{{baseUrl}}"],
+              "path": ["reports", "balance-sheet"],
+              "query": [
+                { "key": "as_of_date", "value": "2026-09-28" },
+                { "key": "include_zero_balances", "value": "false" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get Balance Sheet Summary",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/reports/balance-sheet/summary?as_of_date=2026-09-28",
+              "host": ["{{baseUrl}}"],
+              "path": ["reports", "balance-sheet", "summary"],
+              "query": [{ "key": "as_of_date", "value": "2026-09-28" }]
+            }
+          }
+        }
+      ]
+    }
+  ]
+}
