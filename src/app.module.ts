@@ -23,6 +23,9 @@ import { ReportsModule } from './modules/reports/reports.module';
 import { DonationsModule } from './modules/donations/donations.module';
 import { DonationPaymentsModule } from './modules/donation-payments/donation-payments.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
+import { RenewalsModule } from './modules/renewals/renewals.module';
+import { AdminModule } from './modules/admin/admin.module';
+import { ReceiptsModule } from './modules/receipts/receipts.module';
 import paymentConfig from './config/payment.config';
 
 @Module({
@@ -45,6 +48,7 @@ import paymentConfig from './config/payment.config';
     MembershipCategoriesModule,
     MembershipsModule,
     MembershipPaymentsModule,
+    RenewalsModule,
     AccountingModule,
     ExpenseEntriesModule,
     ReceiptEntriesModule,
@@ -55,6 +59,8 @@ import paymentConfig from './config/payment.config';
     SupportModule,
     ReportsModule,
     NotificationsModule,
+    AdminModule,
+    ReceiptsModule,
   ],
 })
 export class AppModule {}

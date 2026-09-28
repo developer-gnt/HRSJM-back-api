@@ -22,6 +22,8 @@ import { AuditService } from '../../audit/services/audit.service';
 import { DocumentsService } from '../../documents/services/documents.service';
 import { RelatedEntityType } from '../../documents/entities/document.entity';
 
+import { RenewalRequestEntity } from '../../renewals/entities/renewal-request.entity';
+
 @Injectable()
 export class MembershipsService {
   constructor(
@@ -31,6 +33,8 @@ export class MembershipsService {
     private readonly categories: Repository<MembershipCategoryEntity>,
     @InjectRepository(MembershipPaymentEntity)
     private readonly payments: Repository<MembershipPaymentEntity>,
+    @InjectRepository(RenewalRequestEntity)
+    private readonly renewals: Repository<RenewalRequestEntity>,
     private readonly audit: AuditService,
     private readonly documentsService: DocumentsService,
     private readonly usersService: UsersService,
@@ -399,16 +403,72 @@ export class MembershipsService {
     };
   }
 
+  async getDigitalId(membershipNumber: string): Promise<Record<string, unknown>> {
+    const membership = await this.findByMembershipNumber(membershipNumber);
+    return {
+      membershipNumber: membership.membership_number,
+      category: membership.category ? { id: membership.category.id, name: membership.category.name, code: membership.category.code } : null,
+      status: membership.status,
+      startDate: membership.start_date,
+      expiryDate: membership.expiry_date,
+      memberName: membership.user?.full_name || 'Member',
+      mobileNumber: membership.user?.mobile_number,
+      email: membership.user?.email,
+      personalDetails: (membership.application_data as Record<string, unknown>)?.personal_details || null,
+    };
+  }
+
+  async validateMembership(membershipNumber: string): Promise<Record<string, unknown>> {
+    const membership = await this.findByMembershipNumber(membershipNumber);
+    const valid = this.isCurrentlyValid(membership);
+    return {
+      valid,
+      status: membership.status,
+      category: membership.category?.name || 'Standard',
+      expiryDate: membership.expiry_date,
+      memberName: membership.user?.full_name || 'Member',
+      checkedAt: new Date().toISOString(),
+    };
+  }
+
+  async findByMembershipNumber(membershipNumber: string): Promise<MembershipEntity> {
+    const membership = await this.memberships.findOne({
+      where: { membership_number: membershipNumber },
+      relations: ['category', 'user'],
+    });
+    if (!membership) {
+      throw new NotFoundException({
+        message: `Membership ${membershipNumber} not found`,
+        code: 'MEMBERSHIP_NOT_FOUND',
+        details: { membership_number: membershipNumber },
+      });
+    }
+    return membership;
+  }
+
+  private isCurrentlyValid(membership: MembershipEntity): boolean {
+    if (membership.status !== MembershipStatus.ACTIVE) {
+      return false;
+    }
+    if (!membership.expiry_date) {
+      return true; // Lifetime
+    }
+    return new Date(membership.expiry_date) >= new Date();
+  }
+
   async getRenewalHistory(
     id: string,
     actingUserId: string,
     isAdmin = false,
-  ): Promise<{ membership_id: string; renewals: unknown[] }> {
+  ): Promise<{ membership_id: string; renewals: RenewalRequestEntity[] }> {
     await this.getById(id, actingUserId, isAdmin);
-    // Junior dev Arshad integration hook
+    const history = await this.renewals.find({
+      where: { membership_id: id },
+      order: { created_at: 'DESC' },
+    });
     return {
       membership_id: id,
-      renewals: [],
+      renewals: history,
     };
   }
 }

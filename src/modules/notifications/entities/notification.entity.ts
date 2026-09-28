@@ -7,6 +7,7 @@ import {
 import { BaseEntity } from '../../../common/entities/base.entity';
 import { NotificationRecipientEntity } from './notification-recipient.entity';
 
+
 export enum NotificationAudience {
   ALL_USERS = 'ALL_USERS',
   MEMBERS = 'MEMBERS',

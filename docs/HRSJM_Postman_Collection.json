@@ -1029,6 +1029,189 @@
           }
         }
       ]
+    },
+    {
+      "name": "17. Renewals",
+      "item": [
+        {
+          "name": "Submit Renewal Request",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{memberToken}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"membership_id\": \"<membership-uuid>\",\n  \"period_years\": 1,\n  \"payment_method\": \"CASH\",\n  \"member_note\": \"Renewing for another year\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/renewals", "host": ["{{baseUrl}}"], "path": ["renewals"] }
+          }
+        },
+        {
+          "name": "Get My Renewal Requests",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{memberToken}}" }],
+            "url": { "raw": "{{baseUrl}}/renewals/me", "host": ["{{baseUrl}}"], "path": ["renewals", "me"] }
+          }
+        },
+        {
+          "name": "Get Renewals for Membership Number",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{memberToken}}" }],
+            "url": { "raw": "{{baseUrl}}/renewals/membership/:membershipNumber", "host": ["{{baseUrl}}"], "path": ["renewals", "membership", ":membershipNumber"] }
+          }
+        },
+        {
+          "name": "Get Renewal Request by ID",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{memberToken}}" }],
+            "url": { "raw": "{{baseUrl}}/renewals/:id", "host": ["{{baseUrl}}"], "path": ["renewals", ":id"] }
+          }
+        },
+        {
+          "name": "List All Renewals (Admin)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }],
+            "url": { "raw": "{{baseUrl}}/admin/renewals?page=1&limit=20", "host": ["{{baseUrl}}"], "path": ["admin", "renewals"] }
+          }
+        },
+        {
+          "name": "Approve Renewal Request (Admin)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{adminToken}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"admin_remark\": \"Renewal approved\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/admin/renewals/:id/approve", "host": ["{{baseUrl}}"], "path": ["admin", "renewals", ":id", "approve"] }
+          }
+        },
+        {
+          "name": "Reject Renewal Request (Admin)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{adminToken}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"admin_remark\": \"Renewal rejected\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/admin/renewals/:id/reject", "host": ["{{baseUrl}}"], "path": ["admin", "renewals", ":id", "reject"] }
+          }
+        },
+        {
+          "name": "Update Renewal Payment Status (Admin)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{adminToken}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"payment_status\": \"SUCCESS\",\n  \"transaction_id\": \"TXN-12345\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/admin/renewals/:id/payment", "host": ["{{baseUrl}}"], "path": ["admin", "renewals", ":id", "payment"] }
+          }
+        },
+        {
+          "name": "Activate Renewal (Admin)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }],
+            "url": { "raw": "{{baseUrl}}/admin/renewals/:id/activate", "host": ["{{baseUrl}}"], "path": ["admin", "renewals", ":id", "activate"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "18. Digital Membership ID & Public QR",
+      "item": [
+        {
+          "name": "Validate Digital ID (Public QR Scan)",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/membership-id/:membershipNumber/validate", "host": ["{{baseUrl}}"], "path": ["membership-id", ":membershipNumber", "validate"] }
+          }
+        },
+        {
+          "name": "Lookup Digital ID Card Details",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{memberToken}}" }],
+            "url": { "raw": "{{baseUrl}}/membership-id/:membershipNumber", "host": ["{{baseUrl}}"], "path": ["membership-id", ":membershipNumber"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "19. Direct Receipts",
+      "item": [
+        {
+          "name": "Get Receipt by Membership Payment ID",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{memberToken}}" }],
+            "url": { "raw": "{{baseUrl}}/receipts/membership/:paymentId", "host": ["{{baseUrl}}"], "path": ["receipts", "membership", ":paymentId"] }
+          }
+        },
+        {
+          "name": "Get Receipt by Donation Payment ID",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{memberToken}}" }],
+            "url": { "raw": "{{baseUrl}}/receipts/donation/:donationId", "host": ["{{baseUrl}}"], "path": ["receipts", "donation", ":donationId"] }
+          }
+        },
+        {
+          "name": "List All Issued Receipts (Admin)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }],
+            "url": { "raw": "{{baseUrl}}/admin/receipts?page=1&limit=20", "host": ["{{baseUrl}}"], "path": ["admin", "receipts"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "20. Admin Dashboard & 360 View",
+      "item": [
+        {
+          "name": "Get Dashboard KPI Aggregates",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }],
+            "url": { "raw": "{{baseUrl}}/admin/dashboard", "host": ["{{baseUrl}}"], "path": ["admin", "dashboard"] }
+          }
+        },
+        {
+          "name": "List Members with Latest Membership",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }],
+            "url": { "raw": "{{baseUrl}}/admin/members?page=1&limit=10", "host": ["{{baseUrl}}"], "path": ["admin", "members"] }
+          }
+        },
+        {
+          "name": "Get Member 360-Degree View",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }],
+            "url": { "raw": "{{baseUrl}}/admin/members/:id/360", "host": ["{{baseUrl}}"], "path": ["admin", "members", ":id", "360"] }
+          }
+        }
+      ]
     }
   ]
 }

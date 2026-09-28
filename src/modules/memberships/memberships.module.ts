@@ -9,18 +9,22 @@ import { DocumentsModule } from '../documents/documents.module';
 import { AuditModule } from '../audit/audit.module';
 import { UsersModule } from '../users/users.module';
 
+import { RenewalRequestEntity } from '../renewals/entities/renewal-request.entity';
+import { MembershipIdController } from './controllers/membership-id.controller';
+
 @Module({
   imports: [
     TypeOrmModule.forFeature([
       MembershipEntity,
       MembershipCategoryEntity,
       MembershipPaymentEntity,
+      RenewalRequestEntity,
     ]),
     DocumentsModule,
     AuditModule,
     UsersModule,
   ],
-  controllers: [MembershipsController],
+  controllers: [MembershipsController, MembershipIdController],
   providers: [MembershipsService],
   exports: [MembershipsService],
 })

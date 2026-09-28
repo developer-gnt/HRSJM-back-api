@@ -61,10 +61,15 @@ describe('MembershipsService', () => {
       createUserWithRole: jest.fn().mockResolvedValue({ id: 'new-user-1' }),
     };
 
+    const renewalsRepo = {
+      find: jest.fn().mockResolvedValue([]),
+    };
+
     service = new MembershipsService(
       membershipsRepo as never,
       categoriesRepo as never,
       paymentsRepo as never,
+      renewalsRepo as never,
       audit as never,
       documentsService as never,
       usersService as never,
