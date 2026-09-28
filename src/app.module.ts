@@ -8,6 +8,7 @@ import { HealthModule } from './health/health.module';
 import { AssistanceModule } from './modules/assistance/assistance.module';
 import { AuditModule } from './modules/audit/audit.module';
 import { AuthModule } from './modules/auth/auth.module';
+import { AccountingModule } from './modules/accounting/accounting.module';
 import { DocumentsModule } from './modules/documents/documents.module';
 import { MembershipCategoriesModule } from './modules/membership-categories/membership-categories.module';
 import { MembershipsModule } from './modules/memberships/memberships.module';
@@ -37,6 +38,7 @@ import { UsersModule } from './modules/users/users.module';
     MembershipCategoriesModule,
     MembershipsModule,
     MembershipPaymentsModule,
+    AccountingModule,
     DocumentsModule,
     AssistanceModule,
     SupportModule,
