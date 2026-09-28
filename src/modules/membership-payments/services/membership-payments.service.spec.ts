@@ -56,6 +56,11 @@ describe('MembershipPaymentsService', () => {
         .mockResolvedValue({ id: 'je-1', entry_number: 'JE-20260101-00001' }),
     };
 
+    const notifications = {
+      sendToUser: jest.fn().mockResolvedValue(undefined),
+      sendToAdmins: jest.fn().mockResolvedValue(undefined),
+    };
+
     service = new MembershipPaymentsService(
       paymentsRepo as never,
       receiptsRepo as never,
@@ -64,6 +69,7 @@ describe('MembershipPaymentsService', () => {
       dataSource as never,
       audit as never,
       posting as never,
+      notifications as never,
     );
   });
 

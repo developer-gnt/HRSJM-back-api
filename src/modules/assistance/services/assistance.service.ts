@@ -40,6 +40,8 @@ const ALLOWED_TRANSITIONS: Record<
   [AssistanceRequestStatus.CLOSED]: [],
 };
 
+import { NotificationsService } from '../../notifications/services/notifications.service';
+
 @Injectable()
 export class AssistanceService {
   constructor(
@@ -47,6 +49,7 @@ export class AssistanceService {
     private readonly assistance: Repository<AssistanceRequestEntity>,
     private readonly documentsService: DocumentsService,
     private readonly audit: AuditService,
+    private readonly notifications: NotificationsService,
   ) {}
 
   async create(
@@ -78,6 +81,19 @@ export class AssistanceService {
         reason: saved.reason,
       },
     });
+
+    // Real-time notifications to applicant and admins
+    await this.notifications.sendToUser(
+      actingUserId,
+      'Assistance Request Submitted',
+      `Your request for ₹${saved.requested_amount} (${saved.reason}) has been received and is pending review.`,
+      actingUserId,
+    );
+    await this.notifications.sendToAdmins(
+      'New Assistance Request',
+      `Assistance request for ₹${saved.requested_amount} submitted by ${saved.full_name}.`,
+      actingUserId,
+    );
 
     return saved;
   }
@@ -222,6 +238,14 @@ export class AssistanceService {
       entityId: saved.id,
       metadata: { status: saved.status, adminRemark: saved.admin_remark },
     });
+
+    // Real-time notification to applicant
+    await this.notifications.sendToUser(
+      saved.user_id,
+      'Assistance Request Status Updated',
+      `Your assistance request status has been updated to ${saved.status}.${saved.admin_remark ? ' Remarks: ' + saved.admin_remark : ''}`,
+      actingUserId,
+    );
 
     return saved;
   }

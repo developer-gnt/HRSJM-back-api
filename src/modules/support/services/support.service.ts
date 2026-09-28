@@ -33,6 +33,8 @@ const ALLOWED_TRANSITIONS: Record<TicketStatus, TicketStatus[]> = {
   [TicketStatus.CLOSED]: [],
 };
 
+import { NotificationsService } from '../../notifications/services/notifications.service';
+
 @Injectable()
 export class SupportService {
   constructor(
@@ -42,6 +44,7 @@ export class SupportService {
     private readonly messages: Repository<SupportTicketMessageEntity>,
     private readonly documentsService: DocumentsService,
     private readonly audit: AuditService,
+    private readonly notifications: NotificationsService,
   ) {}
 
   async create(
@@ -66,6 +69,19 @@ export class SupportService {
       entityId: saved.id,
       metadata: { subject: saved.subject },
     });
+
+    // Real-time notifications to user and admins
+    await this.notifications.sendToUser(
+      actingUserId,
+      'Support Ticket Created',
+      `Your support ticket "${saved.subject}" has been submitted and assigned for review.`,
+      actingUserId,
+    );
+    await this.notifications.sendToAdmins(
+      'New Support Ticket',
+      `Support ticket submitted: "${saved.subject}".`,
+      actingUserId,
+    );
 
     return saved;
   }
@@ -221,6 +237,14 @@ export class SupportService {
       metadata: { status: saved.status },
     });
 
+    // Real-time notification to ticket owner
+    await this.notifications.sendToUser(
+      saved.user_id,
+      'Support Ticket Status Updated',
+      `Your support ticket "${saved.subject}" is now ${saved.status}.`,
+      actingUserId,
+    );
+
     return saved;
   }
 
@@ -247,6 +271,22 @@ export class SupportService {
       ticket.status = TicketStatus.UNDER_REVIEW;
       ticket.updated_by = actingUserId;
       await this.tickets.save(ticket);
+    }
+
+    // Real-time notification: if admin replied, notify user; if user replied, notify admins
+    if (isAdmin) {
+      await this.notifications.sendToUser(
+        ticket.user_id,
+        'Support Ticket Update',
+        `An administrator replied to your ticket: "${ticket.subject}".`,
+        actingUserId,
+      );
+    } else {
+      await this.notifications.sendToAdmins(
+        'New Ticket Message',
+        `New reply on ticket: "${ticket.subject}".`,
+        actingUserId,
+      );
     }
 
     return saved;

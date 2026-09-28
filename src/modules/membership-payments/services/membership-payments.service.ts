@@ -21,6 +21,8 @@ import { AccountingPostingService } from '../../accounting/services/accounting-p
 import { ACCOUNT_CODES } from '../../accounting/accounting.constants';
 import { ReferenceType } from '../../accounting/enums/accounting.enums';
 
+import { NotificationsService } from '../../notifications/services/notifications.service';
+
 @Injectable()
 export class MembershipPaymentsService {
   constructor(
@@ -35,6 +37,7 @@ export class MembershipPaymentsService {
     private readonly dataSource: DataSource,
     private readonly audit: AuditService,
     private readonly posting: AccountingPostingService,
+    private readonly notifications: NotificationsService,
   ) {}
 
   async create(
@@ -356,6 +359,14 @@ export class MembershipPaymentsService {
         gatewayPaymentId: dto.gateway_payment_id,
       },
     });
+
+    // Real-time notification to payer
+    await this.notifications.sendToUser(
+      result.payment.user_id,
+      'Payment Received & Receipt Generated 🧾',
+      `Payment of ₹${result.payment.amount} was verified successfully. Receipt #${result.receipt.receipt_number} has been issued.`,
+      actingUserId,
+    );
 
     return result;
   }

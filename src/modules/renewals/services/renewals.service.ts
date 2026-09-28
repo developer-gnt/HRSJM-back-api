@@ -21,6 +21,8 @@ import {
   UpdateRenewalPaymentDto,
 } from '../dto/renewal.dto';
 
+import { NotificationsService } from '../../notifications/services/notifications.service';
+
 @Injectable()
 export class RenewalsService {
   constructor(
@@ -29,6 +31,7 @@ export class RenewalsService {
     @InjectRepository(MembershipEntity)
     private readonly membershipsRepo: Repository<MembershipEntity>,
     private readonly audit: AuditService,
+    private readonly notifications: NotificationsService,
   ) {}
 
   async apply(dto: CreateRenewalDto, requestedBy: string): Promise<RenewalRequestEntity> {
@@ -91,6 +94,19 @@ export class RenewalsService {
         periodYears,
       },
     });
+
+    // Real-time notifications to member and admins
+    await this.notifications.sendToUser(
+      requestedBy,
+      'Renewal Request Submitted',
+      `Your renewal request for membership #${membership.membership_number || ''} has been submitted for ${periodYears} year(s).`,
+      requestedBy,
+    );
+    await this.notifications.sendToAdmins(
+      'New Renewal Request',
+      `Member #${membership.membership_number || ''} submitted a renewal request for ₹${amount}.`,
+      requestedBy,
+    );
 
     return saved;
   }
@@ -219,7 +235,16 @@ export class RenewalsService {
     renewal.reviewed_at = new Date();
     renewal.updated_by = actingUserId;
 
-    return this.renewalsRepo.save(renewal);
+    const saved = await this.renewalsRepo.save(renewal);
+
+    await this.notifications.sendToUser(
+      renewal.requested_by,
+      'Renewal Request Approved',
+      `Your membership renewal request has been approved. Remarks: ${renewal.admin_remark || 'Approved by Admin'}.`,
+      actingUserId,
+    );
+
+    return saved;
   }
 
   async reject(
@@ -248,7 +273,16 @@ export class RenewalsService {
     renewal.reviewed_at = new Date();
     renewal.updated_by = actingUserId;
 
-    return this.renewalsRepo.save(renewal);
+    const saved = await this.renewalsRepo.save(renewal);
+
+    await this.notifications.sendToUser(
+      renewal.requested_by,
+      'Renewal Request Rejected',
+      `Your renewal request was not approved. Remarks: ${renewal.admin_remark || 'Rejected by Admin'}.`,
+      actingUserId,
+    );
+
+    return saved;
   }
 
   async updatePayment(
@@ -325,7 +359,16 @@ export class RenewalsService {
     renewal.reviewed_at = now;
     renewal.updated_by = actingUserId;
 
-    return this.renewalsRepo.save(renewal);
+    const saved = await this.renewalsRepo.save(renewal);
+
+    await this.notifications.sendToUser(
+      renewal.requested_by,
+      'Membership Renewal Activated! 🎉',
+      `Your membership #${membership.membership_number} has been renewed and is now valid until ${newExpiry.toISOString().slice(0, 10)}. Receipt #${renewal.receipt_number}.`,
+      actingUserId,
+    );
+
+    return saved;
   }
 
   async getRenewalsByMembershipId(membershipId: string): Promise<RenewalRequestEntity[]> {

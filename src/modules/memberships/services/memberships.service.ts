@@ -23,6 +23,7 @@ import { DocumentsService } from '../../documents/services/documents.service';
 import { RelatedEntityType } from '../../documents/entities/document.entity';
 
 import { RenewalRequestEntity } from '../../renewals/entities/renewal-request.entity';
+import { NotificationsService } from '../../notifications/services/notifications.service';
 
 @Injectable()
 export class MembershipsService {
@@ -38,6 +39,7 @@ export class MembershipsService {
     private readonly audit: AuditService,
     private readonly documentsService: DocumentsService,
     private readonly usersService: UsersService,
+    private readonly notifications: NotificationsService,
   ) {}
 
   async apply(
@@ -133,6 +135,19 @@ export class MembershipsService {
         fee: category.fee,
       },
     });
+
+    // Send real-time notification to applicant and administrators
+    await this.notifications.sendToUser(
+      targetUserId,
+      'Membership Application Received',
+      `Your application for ${category.name} has been received and is pending verification.`,
+      actingUserId,
+    );
+    await this.notifications.sendToAdmins(
+      'New Membership Application',
+      `New membership application submitted by ${dto.full_name || 'Applicant'} (${dto.mobile_number || targetUserId}) for ${category.name}.`,
+      actingUserId,
+    );
 
     return saved;
   }
@@ -362,6 +377,23 @@ export class MembershipsService {
         rejectionReason: saved.rejection_reason,
       },
     });
+
+    // Real-time notification on status change
+    if (saved.status === MembershipStatus.APPROVED || saved.status === MembershipStatus.ACTIVE) {
+      await this.notifications.sendToUser(
+        saved.user_id,
+        'Membership Approved! 🎉',
+        `Congratulations! Your membership #${saved.membership_number} has been approved and is now active.`,
+        actingUserId,
+      );
+    } else if (saved.status === MembershipStatus.REJECTED) {
+      await this.notifications.sendToUser(
+        saved.user_id,
+        'Membership Application Update',
+        `Your membership application was not approved. Reason: ${saved.rejection_reason || 'Incomplete details'}.`,
+        actingUserId,
+      );
+    }
 
     if (saved.user) {
       delete (saved.user as { password_hash?: string }).password_hash;

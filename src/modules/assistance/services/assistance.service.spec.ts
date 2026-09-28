@@ -16,7 +16,16 @@ describe('AssistanceService', () => {
     };
     docs = { upload: jest.fn().mockResolvedValue({ id: 'doc-1' }) };
     audit = { record: jest.fn().mockResolvedValue(undefined) };
-    service = new AssistanceService(repo as never, docs as never, audit as never);
+    const notifications = {
+      sendToUser: jest.fn().mockResolvedValue(undefined),
+      sendToAdmins: jest.fn().mockResolvedValue(undefined),
+    };
+    service = new AssistanceService(
+      repo as never,
+      docs as never,
+      audit as never,
+      notifications as never,
+    );
   });
 
   describe('create', () => {

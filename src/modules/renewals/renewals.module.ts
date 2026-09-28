@@ -5,12 +5,14 @@ import { RenewalsController } from './controllers/renewals.controller';
 import { AdminRenewalsController } from './controllers/admin-renewals.controller';
 import { RenewalsService } from './services/renewals.service';
 import { MembershipEntity } from '../memberships/entities/membership.entity';
+import { NotificationsModule } from '../notifications/notifications.module';
 import { AuditModule } from '../audit/audit.module';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([RenewalRequestEntity, MembershipEntity]),
     AuditModule,
+    NotificationsModule,
   ],
   controllers: [RenewalsController, AdminRenewalsController],
   providers: [RenewalsService],

@@ -5,6 +5,7 @@ import { RenewalRequestEntity, RenewalStatus } from '../entities/renewal-request
 import { MembershipEntity } from '../../memberships/entities/membership.entity';
 import { AuditService } from '../../audit/services/audit.service';
 import { MembershipStatus } from '../../../common/enums/membership-status.enum';
+import { NotificationsService } from '../../notifications/services/notifications.service';
 
 describe('RenewalsService', () => {
   let service: RenewalsService;
@@ -41,6 +42,13 @@ describe('RenewalsService', () => {
         {
           provide: AuditService,
           useValue: mockAudit,
+        },
+        {
+          provide: NotificationsService,
+          useValue: {
+            sendToUser: jest.fn().mockResolvedValue(undefined),
+            sendToAdmins: jest.fn().mockResolvedValue(undefined),
+          },
         },
       ],
     }).compile();

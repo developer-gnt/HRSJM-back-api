@@ -65,6 +65,11 @@ describe('MembershipsService', () => {
       find: jest.fn().mockResolvedValue([]),
     };
 
+    const notificationsService = {
+      sendToUser: jest.fn().mockResolvedValue(undefined),
+      sendToAdmins: jest.fn().mockResolvedValue(undefined),
+    };
+
     service = new MembershipsService(
       membershipsRepo as never,
       categoriesRepo as never,
@@ -73,6 +78,7 @@ describe('MembershipsService', () => {
       audit as never,
       documentsService as never,
       usersService as never,
+      notificationsService as never,
     );
   });
 

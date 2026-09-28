@@ -21,12 +21,17 @@ describe('SupportService', () => {
     };
     docsService = { upload: jest.fn().mockResolvedValue({ id: 'doc-1' }) };
     audit = { record: jest.fn().mockResolvedValue(undefined) };
+    const notifications = {
+      sendToUser: jest.fn().mockResolvedValue(undefined),
+      sendToAdmins: jest.fn().mockResolvedValue(undefined),
+    };
 
     service = new SupportService(
       ticketsRepo as never,
       messagesRepo as never,
       docsService as never,
       audit as never,
+      notifications as never,
     );
   });
 

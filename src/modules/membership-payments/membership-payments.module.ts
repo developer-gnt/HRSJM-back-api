@@ -8,6 +8,7 @@ import { MembershipPaymentsController } from './controllers/membership-payments.
 import { MembershipPaymentsService } from './services/membership-payments.service';
 import { AuditModule } from '../audit/audit.module';
 import { AccountingModule } from '../accounting/accounting.module';
+import { NotificationsModule } from '../notifications/notifications.module';
 
 @Module({
   imports: [
@@ -19,6 +20,7 @@ import { AccountingModule } from '../accounting/accounting.module';
     ]),
     AccountingModule,
     AuditModule,
+    NotificationsModule,
   ],
   controllers: [MembershipPaymentsController],
   providers: [MembershipPaymentsService],

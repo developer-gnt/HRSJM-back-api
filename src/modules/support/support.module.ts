@@ -7,6 +7,8 @@ import { SupportService } from './services/support.service';
 import { DocumentsModule } from '../documents/documents.module';
 import { AuditModule } from '../audit/audit.module';
 
+import { NotificationsModule } from '../notifications/notifications.module';
+
 @Module({
   imports: [
     TypeOrmModule.forFeature([
@@ -15,6 +17,7 @@ import { AuditModule } from '../audit/audit.module';
     ]),
     DocumentsModule,
     AuditModule,
+    NotificationsModule,
   ],
   controllers: [SupportController],
   providers: [SupportService],

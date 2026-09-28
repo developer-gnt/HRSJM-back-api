@@ -44,6 +44,93 @@ export class NotificationsService {
     private readonly audit: AuditService,
   ) {}
 
+  async sendToUser(
+    userId: string,
+    title: string,
+    body: string,
+    actingUserId?: string,
+  ): Promise<void> {
+    try {
+      const user = await this.usersRepo.findOne({ where: { id: userId } });
+      if (!user) return;
+
+      const actor = actingUserId || userId;
+      const notification = this.notificationsRepo.create({
+        title: title.trim(),
+        body: body.trim(),
+        target_audience: NotificationAudience.SPECIFIC_USER,
+        status: NotificationStatus.SENT,
+        scheduled_at: null,
+        sent_at: new Date(),
+        created_by: actor,
+        updated_by: actor,
+      });
+
+      const saved = await this.notificationsRepo.save(notification);
+
+      const recipient = this.recipientsRepo.create({
+        notification_id: saved.id,
+        user_id: user.id,
+        delivery_status: DeliveryStatus.SENT,
+        created_by: actor,
+        updated_by: actor,
+      });
+      await this.recipientsRepo.save(recipient);
+
+      this.logger.log(`Real-time notification sent to user ${userId}: ${title}`);
+    } catch (err) {
+      this.logger.error(`Failed to send notification to user ${userId}: ${(err as Error).message}`);
+    }
+  }
+
+  async sendToAdmins(
+    title: string,
+    body: string,
+    actingUserId?: string,
+  ): Promise<void> {
+    try {
+      const adminRole = await this.rolesRepo.findOne({ where: { name: 'ADMIN' } });
+      if (!adminRole) return;
+
+      const userRoles = await this.userRolesRepo.find({
+        where: { role_id: adminRole.id },
+        select: ['user_id'],
+      });
+
+      const adminUserIds = userRoles.map((ur) => ur.user_id);
+      if (adminUserIds.length === 0) return;
+
+      const actor = actingUserId || adminUserIds[0];
+      const notification = this.notificationsRepo.create({
+        title: title.trim(),
+        body: body.trim(),
+        target_audience: NotificationAudience.SPECIFIC_USER,
+        status: NotificationStatus.SENT,
+        scheduled_at: null,
+        sent_at: new Date(),
+        created_by: actor,
+        updated_by: actor,
+      });
+
+      const saved = await this.notificationsRepo.save(notification);
+
+      const recipients = adminUserIds.map((adminId) =>
+        this.recipientsRepo.create({
+          notification_id: saved.id,
+          user_id: adminId,
+          delivery_status: DeliveryStatus.SENT,
+          created_by: actor,
+          updated_by: actor,
+        }),
+      );
+      await this.recipientsRepo.save(recipients);
+
+      this.logger.log(`Real-time notification sent to ${adminUserIds.length} admins: ${title}`);
+    } catch (err) {
+      this.logger.error(`Failed to send notification to admins: ${(err as Error).message}`);
+    }
+  }
+
   async create(dto: CreateNotificationDto, actingUserId: string) {
     const scheduledAt = dto.scheduled_at ? new Date(dto.scheduled_at) : null;
     if (scheduledAt && isNaN(scheduledAt.getTime())) {

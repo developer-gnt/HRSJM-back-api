@@ -12,6 +12,8 @@ import { UsersModule } from '../users/users.module';
 import { RenewalRequestEntity } from '../renewals/entities/renewal-request.entity';
 import { MembershipIdController } from './controllers/membership-id.controller';
 
+import { NotificationsModule } from '../notifications/notifications.module';
+
 @Module({
   imports: [
     TypeOrmModule.forFeature([
@@ -23,6 +25,7 @@ import { MembershipIdController } from './controllers/membership-id.controller';
     DocumentsModule,
     AuditModule,
     UsersModule,
+    NotificationsModule,
   ],
   controllers: [MembershipsController, MembershipIdController],
   providers: [MembershipsService],
