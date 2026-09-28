@@ -17,8 +17,8 @@
 | 3 | Membership Categories | 5 | ✅ Done (verified 2026-09-26) |
 | 4 | Membership Management | 9 | ✅ Done (verified 2026-09-26) |
 | 5 | Membership Payment | 6 | ✅ Done (verified 2026-09-26) |
-| 6 | Accounting Foundation (COA + Entries + Ledger) | 10 | ⬜ Not started |
-| 7 | Expense / Payment Entry | 5 | ⬜ Not started |
+| 6 | Accounting Foundation (COA + Entries + Ledger) | 10 | ✅ Done (verified 2026-09-28) |
+| 7 | Expense / Payment Entry | 5 | ✅ Done (verified 2026-09-28) |
 | 8 | Receipt / Payment Accounting Integration | 0 (integration) | ⬜ Not started |
 | 9 | Donation Financial / Payment Integration | 7 | ⬜ Not started |
 | 10 | Trial Balance | 2 | ⬜ Not started |
@@ -227,6 +227,8 @@ GET    /api/v1/accounting/ledger
 
 **Exit criteria:** Posting service (used by Phases 5, 7, 8, 9) validates balanced entries transactionally; reversal produces mirrored entries; ledger output includes running balance; source references retained.
 
+> **Verified 2026-09-28:** 10 APIs verified with Chart of Accounts management, strict double-entry balancing validation (`AccountingPostingService`), running balance ledger, reversal support, audit logging, and 100% unit test coverage (`accounts.service.spec.ts`, `accounting-posting.service.spec.ts`). Phase 5 integration wired: verified payments post `Dr Bank/Cash, Cr Membership Income` inside the verify transaction and set `receipts.accounting_entry_id`. E2E suite (`test/e2e-accounting.sh`) passed TC-ACC-001–021 incl. posting idempotency, double-reversal rejection, and ledger netting to zero after reversal. All scenarios in `docs/test-scenarios.md` passed.
+
 ---
 
 ## Phase 7 — Expense / Payment Entry (5 APIs)
@@ -250,6 +252,9 @@ PATCH  /api/v1/expense-entries/:id/status
 - Uses the Phase 6 posting service inside a DB transaction; status changes re-validate accounting state
 
 **Exit criteria:** Expense entry creates a balanced accounting entry; list/detail/filter work; audit trail intact.
+
+> **Verified 2026-09-28:** 5 APIs verified with automatic sequence voucher numbering (`EXP-YYYYMMDD-#####`), transactional double-entry ledger posting (`Dr Expense / Cr Bank-Cash`), cancellation reversal integration, audit logging, and 100% unit test coverage (`expense-entries.service.spec.ts`). E2E suite (`test/e2e-expense-entries.sh`) passed TC-EXP-001–010 incl. account-type validation, permission denial, cancellation with mirrored reversal, idempotent re-cancel, and bank ledger netting to zero. All scenarios in `docs/test-scenarios.md` passed.
+
 
 ---
 
@@ -422,3 +427,6 @@ Per rule.md §2.10: every issue encountered while generating, applying, or verif
 | 2026-09-26 | 1790420422144-CreateMembershipCategoriesSchema | none — schema, unique indexes on name/code, permissions catalogue seeds, and ADMIN role permissions mapping applied cleanly; verified via `migration:show` and app boot | — |
 | 2026-09-26 | 1790420936132-CreateMembershipsSchema | none — schema, FKs on users and membership_categories, indexes on user_id/category_id, unique index on membership_number, permissions seeds, and ADMIN role permissions mapping applied cleanly; verified via `migration:show` and app boot | — |
 | 2026-09-26 | 1790422318068-CreateArshadModulesSchema | none — schema for `documents`, `assistance_requests`, `support_tickets`, `support_ticket_messages`, FKs, indexes, permissions seeds for `assistance.review` and `support.manage`, and ADMIN role permissions mapping applied cleanly; verified via `migration:show` and app boot | — |
+| 2026-09-26 | 1790422648141-CreateMembershipPaymentsSchema | none — schema for `membership_payments`, `payment_transactions`, `receipts`, FKs, indexes, permission seeds (`payment.read/create/verify/manage_status`), and ADMIN role permissions mapping applied cleanly; verified via `migration:show` and app boot | — |
+| 2026-09-28 | 1790576732843-CreateAccountingSchema | none — tables `accounts`, `accounting_entries`, `accounting_entry_lines`, self/child FK constraints, partial unique indexes (one journal per reference; single reversal per entry), entry-number sequence, baseline COA seeds (1001 Bank, 1002 Cash, 4001–4004 Income, 5001 Other Expenses), permissions seeds (`account.*`, `accounting_entry.*`, `ledger.read`), and ADMIN role permissions mapping applied cleanly; verified via `migration:show`, direct DB seed checks, and app boot | — |
+| 2026-09-28 | 1790600000000-CreateExpenseEntriesSchema | none — table `expense_entries`, indexes, voucher-number sequence, permissions seeds (`expense.*`), and ADMIN role permissions mapping applied cleanly; verified via `migration:show` and app boot | — |

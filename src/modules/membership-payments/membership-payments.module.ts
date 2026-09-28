@@ -7,6 +7,7 @@ import { MembershipEntity } from '../memberships/entities/membership.entity';
 import { MembershipPaymentsController } from './controllers/membership-payments.controller';
 import { MembershipPaymentsService } from './services/membership-payments.service';
 import { AuditModule } from '../audit/audit.module';
+import { AccountingModule } from '../accounting/accounting.module';
 
 @Module({
   imports: [
@@ -16,6 +17,7 @@ import { AuditModule } from '../audit/audit.module';
       PaymentTransactionEntity,
       MembershipEntity,
     ]),
+    AccountingModule,
     AuditModule,
   ],
   controllers: [MembershipPaymentsController],

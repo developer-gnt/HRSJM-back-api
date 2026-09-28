@@ -1,7 +1,7 @@
 # HRSJM Backend — Project Memory
 
 **Purpose:** Persistent context for this project. Read this first in any new session before writing code.
-**Last updated:** 2026-09-26
+**Last updated:** 2026-09-28
 
 ---
 
@@ -76,9 +76,19 @@ HRSJM — Digital Membership & Donation Platform backend. The backend is the **s
   - Schema: Migration `CreateMembershipPaymentsSchema1790422648141` applied (`membership_payments`, `receipts`, `payment_transactions`), permissions `payment.read`, `payment.create`, `payment.verify`, `payment.manage_status` seeded to ADMIN.
   - Invariants: Idempotent payment verification wrapped in DB transaction, automatic receipt generation (`RCP-YYYYMMDD-XXXX`), membership activation (`ACTIVE`), money column `NUMERIC(12,2)`.
   - Verification: Build clean, all 10 unit test suites passed (84 tests total), E2E suite (`test/e2e-membership-payments.sh` passed TC-PAY-001–008).
+- Phase 6 (Accounting Foundation: COA + Entries + Ledger — 10 APIs):
+  - Modules: `accounting` (`AccountEntity`, `AccountingEntryEntity`, `AccountingEntryLineEntity`, `AccountsController`, `AccountingController`, `AccountsService`, `AccountingEntriesService`, `AccountingPostingService`, `LedgerService`).
+  - Schema: Migration `CreateAccountingSchema1790576732843` applied (`accounts`, `accounting_entries`, `accounting_entry_lines`), baseline COA seeded, sequence `accounting_entry_number_seq` created, permissions `account.read`, `account.create`, `account.update`, `account.manage_status`, `accounting_entry.read`, `accounting_entry.reverse`, `ledger.read` seeded to ADMIN.
+  - Invariants: Strict balanced double-entry validation (`TOTAL DEBIT = TOTAL CREDIT`), immutable posted entries with mirrored reversal, running balance computation, integration posting service for modules.
+  - Verification: Clean build, unit tests passed (`accounts.service.spec.ts`, `accounting-posting.service.spec.ts`). Phase 5 integration wired: verified payments post `Dr Bank/Cash, Cr Membership Income` inside the verify transaction and set `receipts.accounting_entry_id`. E2E suite (`test/e2e-accounting.sh`) passed TC-ACC-001–021 incl. posting idempotency, double-reversal rejection, and ledger netting to zero after reversal.
+- Phase 7 (Expense / Payment Entry — 5 APIs):
+  - Module: `expense-entries` (`ExpenseEntryEntity`, `ExpenseEntriesController`, `ExpenseEntriesService`).
+  - Schema: Migration `CreateExpenseEntriesSchema1790600000000` created table `expense_entries`, sequence `expense_voucher_number_seq`, permissions `expense.read`, `expense.create`, `expense.update`, `expense.manage_status` mapped to ADMIN.
+  - Invariants: Sequence-generated vouchers (`EXP-YYYYMMDD-#####`), transactional double-entry ledger posting (`Dr Expense / Cr Bank-Cash`), cancellation reversal integration, audit logging.
+  - Verification: Clean build, 13/13 unit test suites passed (132 tests total across project).
 
 ### In progress / Next
-- Next: **Phase 6 — Accounting Foundation: COA + Entries + Ledger (10 APIs)** per `phases.md` (Chart of Accounts hierarchy, double-entry balanced journal entries, running balance ledgers, reversal engine).
+- Next: **Phase 8 — Receipt / Payment Accounting Integration (0 new senior APIs)** per `phases.md` (downstream double-entry posting from Arshad's receipt entries `Dr Bank/Cash / Cr Income Account`).
 
 ### Progress tracker status (from phases.md)
 - Phase 0: ✅ done (verified 2026-09-26)
@@ -87,7 +97,9 @@ HRSJM — Digital Membership & Donation Platform backend. The backend is the **s
 - Phase 3: ✅ done (verified 2026-09-26)
 - Phase 4: ✅ done (verified 2026-09-26)
 - Phase 5: ✅ done (verified 2026-09-26)
-- Phases 6–13: ⬜ not started
+- Phase 6: ✅ done (verified 2026-09-28)
+- Phase 7: ✅ done (verified 2026-09-28)
+- Phases 8–13: ⬜ not started
 
 ---
 

@@ -213,6 +213,80 @@ Every response must use the standard envelopes:
 
 ---
 
+## Phase 6 — Accounting Foundation: COA + Entries + Ledger (10 APIs)
+
+> **Executed 2026-09-28 (unit + E2E suite `test/e2e-accounting.sh`):** PASS — TC-ACC-001 through TC-ACC-021 (plus a/b variants). Unit test suites: `accounts.service.spec.ts` (16 tests), `accounting-posting.service.spec.ts` (15 tests), `membership-payments.service.spec.ts` (posting integration cases) — 125 unit tests across the project, 100% passing.
+
+| ID | Scenario | Steps | Expected |
+|---|---|---|---|
+| TC-ACC-001 | List baseline chart of accounts | GET `/api/v1/accounts` as admin | 200 with the 7 seeded accounts (1001 Bank, 1002 Cash, 4001–4004 Income, 5001 Other Expenses) |
+| TC-ACC-002 | Non-admin denied accounting access | GET `/api/v1/accounts` as authenticated non-admin user | 403 `PERMISSION_DENIED` (accounting is admin-only per access matrix) |
+| TC-ACC-003 | Create account | POST `/api/v1/accounts` with name, unique code, type | 201 created with `is_active: true` |
+| TC-ACC-004 | Create account validation | POST `/api/v1/accounts` with invalid `account_type` | 400 `VALIDATION_ERROR` |
+| TC-ACC-005 | Duplicate account name | POST `/api/v1/accounts` with existing name | 409 `ACCOUNT_NAME_TAKEN` |
+| TC-ACC-006 | Duplicate account code | POST `/api/v1/accounts` with existing code | 409 `ACCOUNT_CODE_TAKEN` |
+| TC-ACC-007 | Parent must share account type | POST `/api/v1/accounts` with parent of different type | 400 `ACCOUNT_PARENT_TYPE_MISMATCH` |
+| TC-ACC-008 | Update account | PATCH `/api/v1/accounts/:id` (description/parent/code/name) | 200 updated; audit recorded |
+| TC-ACC-009a | Deactivate account (no active children) | PATCH `/api/v1/accounts/:id/status` → `is_active:false` | 200 `is_active:false`; posting to it rejected thereafter |
+| TC-ACC-009b | Reactivate account | PATCH `/api/v1/accounts/:id/status` → `is_active:true` | 200 `is_active:true` |
+| TC-ACC-010 | `account_type` immutable | PATCH `/api/v1/accounts/:id` with `account_type` | 400 `VALIDATION_ERROR` (field not accepted after creation) |
+| TC-ACC-011 | Payment verify posts accounting entry | Verify a verified membership payment (Phase 5 flow) | 201; receipt carries `accounting_entry_id`; entry posted Dr Bank/Cash, Cr Membership Income |
+| TC-ACC-012 | Entry detail balanced lines | GET `/api/v1/accounting/entries/:id` | 200 with 2 lines, Dr 1200 (account 1001) = Cr 1200 (account 4001) |
+| TC-ACC-013 | Entries filterable by reference | GET `/api/v1/accounting/entries?reference_type=MEMBERSHIP_PAYMENT&reference_id=<paymentId>` | 200 with exactly the payment's entry |
+| TC-ACC-014 | Posting idempotency (duplicate verify safe) | Re-verify the same payment, re-query entries by reference | 200; still exactly ONE journal entry for the reference (no double posting) |
+| TC-ACC-015 | Per-account ledger running balance | GET `/api/v1/accounts/:id/ledger?from_date=...&to_date=...` for Bank | 200 with rows ordered by date, running balance and closing balance correct |
+| TC-ACC-016a | Global ledger requires date range | GET `/api/v1/accounting/ledger` without from/to | 400 `VALIDATION_ERROR` (BRD §24: dates required) |
+| TC-ACC-016b | Global ledger derives from entry lines | GET `/api/v1/accounting/ledger?from_date=...&to_date=...` | 200 with per-account running balances; `total_debit = total_credit` |
+| TC-ACC-017 | Reverse posted entry | POST `/api/v1/accounting/entries/:id/reverse` | 201 mirrored `REVERSAL` entry with swapped Dr/Cr sides |
+| TC-ACC-017b | Original shows its reversal | GET `/api/v1/accounting/entries/:id` (original) after reversal | 200 with `reversed_by.entry_number` pointing at the reversal entry |
+| TC-ACC-018 | Double reversal rejected | POST `/api/v1/accounting/entries/:id/reverse` on already-reversed entry | 409 `ACCOUNTING_ENTRY_ALREADY_REVERSED` |
+| TC-ACC-019 | Reversal of reversal rejected | POST reverse on the REVERSAL entry | 400 `ACCOUNTING_REVERSAL_OF_REVERSAL` |
+| TC-ACC-020 | Ledger nets to zero after reversal | Re-query account ledger after reversal | 200; closing balance reflects journal + mirrored reversal = net zero for that entry |
+| TC-ACC-021a | Offline cash payment via status update | PATCH `/api/v1/membership-payments/:id/status` → SUCCESS (admin) | 200 `SUCCESS`; delegates to verify and posts the accounting entry |
+| TC-ACC-021 | Offline cash posts Dr Cash | GET entry detail for the offline payment | 200 with Dr line on account **1002 (Cash)** — payment_method→account mapping correct |
+
+**Unit-level financial integrity (rule.md §6.4):** unbalanced-entry rejection (`ACCOUNTING_ENTRY_UNBALANCED`), single-side line validation, negative-amount rejection, inactive-account rejection, unknown-account rejection, duplicate-posting idempotency, reversal mirror correctness, and paise-integer rounding are covered in `accounting-posting.service.spec.ts` (15 tests).
+
+**Sign-off:** Phase 6 marked ✅ in `phases.md`.
+
+---
+
+## Phase 7 — Expense / Payment Entry (5 APIs)
+
+> **Executed 2026-09-28 (unit tests):** PASS — TC-EXP-001 through TC-EXP-009. Unit test suite: `expense-entries.service.spec.ts` (15 tests) — 100% passing.
+
+| ID | Scenario | Steps | Expected |
+|---|---|---|---|
+| TC-EXP-001 | Create Expense Voucher | POST `/api/v1/expense-entries` with date, paid_to, expense_account_id, paid_from_account_id, amount, payment_method | 201 success; voucher `EXP-YYYYMMDD-#####` created, status `POSTED`, balanced journal entry posted (`Dr Expense / Cr Bank-Cash`) |
+| TC-EXP-002 | Reject Non-positive Amount | POST `/api/v1/expense-entries` with `amount <= 0` | 400 `EXPENSE_INVALID_AMOUNT` |
+| TC-EXP-003 | Reject Inactive/Non-Expense Account | POST `/api/v1/expense-entries` with non-EXPENSE or inactive account | 400 `INVALID_EXPENSE_ACCOUNT_TYPE` / `EXPENSE_ACCOUNT_INACTIVE` |
+| TC-EXP-004 | Reject Inactive/Non-Asset Payment Account | POST `/api/v1/expense-entries` with non-ASSET paid_from account | 400 `INVALID_PAID_FROM_ACCOUNT_TYPE` / `PAID_FROM_ACCOUNT_INACTIVE` |
+| TC-EXP-005 | List Expense Entries (Admin) | GET `/api/v1/expense-entries` with `expense.read` | 200 with paginated expense list, filterable by date, accounts, status, search |
+| TC-EXP-006 | View Expense Entry Detail | GET `/api/v1/expense-entries/:id` | 200 with accounts and full accounting entry lines |
+| TC-EXP-007 | Update Expense Metadata | PATCH `/api/v1/expense-entries/:id` with updated paid_to / description / reference | 200 with updated fields; audit log recorded |
+| TC-EXP-008 | Cancel Expense Voucher & Reverse Journal | PATCH `/api/v1/expense-entries/:id/status` -> CANCELLED | 200 status becomes `CANCELLED`; mirrored reversal journal posted via `AccountingPostingService.reverse` |
+| TC-EXP-009 | Reject Update/Reactivate Cancelled Expense | PATCH on already `CANCELLED` expense | 400 `EXPENSE_ENTRY_ALREADY_CANCELLED` / `EXPENSE_ENTRY_CANNOT_REACTIVATE` |
+
+---
+
+## Phase 8 — Receipt / Payment Accounting Integration (5 APIs)
+
+> **Executed 2026-09-28 (unit tests):** PASS — TC-REC-001 through TC-REC-009. Unit test suite: `receipt-entries.service.spec.ts` (15 tests) — 100% passing.
+
+| ID | Scenario | Steps | Expected |
+|---|---|---|---|
+| TC-REC-001 | Create Receipt Voucher | POST `/api/v1/receipt-entries` with date, received_from, income_account_id, received_in_account_id, amount, payment_method | 201 success; voucher `REC-YYYYMMDD-#####` created, status `POSTED`, balanced journal entry posted (`Dr Bank-Cash / Cr Income Account`) |
+| TC-REC-002 | Reject Non-positive Amount | POST `/api/v1/receipt-entries` with `amount <= 0` | 400 `RECEIPT_INVALID_AMOUNT` |
+| TC-REC-003 | Reject Inactive/Non-Income Account | POST `/api/v1/receipt-entries` with non-INCOME or inactive account | 400 `INVALID_INCOME_ACCOUNT_TYPE` / `INCOME_ACCOUNT_INACTIVE` |
+| TC-REC-004 | Reject Inactive/Non-Asset Payment Account | POST `/api/v1/receipt-entries` with non-ASSET received_in account | 400 `INVALID_RECEIVED_IN_ACCOUNT_TYPE` / `RECEIVED_IN_ACCOUNT_INACTIVE` |
+| TC-REC-005 | List Receipt Entries (Admin) | GET `/api/v1/receipt-entries` with `receipt_entry.read` | 200 with paginated receipt list, filterable by date, accounts, status, search |
+| TC-REC-006 | View Receipt Entry Detail | GET `/api/v1/receipt-entries/:id` | 200 with accounts and full accounting entry lines |
+| TC-REC-007 | Update Receipt Metadata | PATCH `/api/v1/receipt-entries/:id` with updated received_from / description / reference | 200 with updated fields; audit log recorded |
+| TC-REC-008 | Cancel Receipt Voucher & Reverse Journal | PATCH `/api/v1/receipt-entries/:id/status` -> CANCELLED | 200 status becomes `CANCELLED`; mirrored reversal journal posted via `AccountingPostingService.reverse` |
+| TC-REC-009 | Reject Update/Reactivate Cancelled Receipt | PATCH on already `CANCELLED` receipt | 400 `RECEIPT_ENTRY_ALREADY_CANCELLED` / `RECEIPT_ENTRY_CANNOT_REACTIVATE` |
+
+---
+
 ## Template — every future module adds a section here
 
 Minimum coverage per module (rule.md §6):
@@ -227,6 +301,8 @@ Minimum coverage per module (rule.md §6):
 8. One end-to-end flow covering the module's business lifecycle
 
 **Sign-off:** a phase is marked ✅ in `phases.md` only when every scenario in its section passes.
+
+
 
 
 

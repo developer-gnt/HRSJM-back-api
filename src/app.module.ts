@@ -17,6 +17,8 @@ import { PermissionsModule } from './modules/permissions/permissions.module';
 import { RolesModule } from './modules/roles/roles.module';
 import { SupportModule } from './modules/support/support.module';
 import { UsersModule } from './modules/users/users.module';
+import { ExpenseEntriesModule } from './modules/expense-entries/expense-entries.module';
+import { ReceiptEntriesModule } from './modules/receipt-entries/receipt-entries.module';
 
 @Module({
   imports: [
@@ -39,6 +41,8 @@ import { UsersModule } from './modules/users/users.module';
     MembershipsModule,
     MembershipPaymentsModule,
     AccountingModule,
+    ExpenseEntriesModule,
+    ReceiptEntriesModule,
     DocumentsModule,
     AssistanceModule,
     SupportModule,

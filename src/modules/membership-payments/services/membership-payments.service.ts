@@ -17,6 +17,9 @@ import { ListMembershipPaymentsDto } from '../dto/list-membership-payments.dto';
 import { PaymentStatus } from '../../../common/enums/payment-status.enum';
 import { MembershipStatus } from '../../../common/enums/membership-status.enum';
 import { AuditService } from '../../audit/services/audit.service';
+import { AccountingPostingService } from '../../accounting/services/accounting-posting.service';
+import { ACCOUNT_CODES } from '../../accounting/accounting.constants';
+import { ReferenceType } from '../../accounting/enums/accounting.enums';
 
 @Injectable()
 export class MembershipPaymentsService {
@@ -31,6 +34,7 @@ export class MembershipPaymentsService {
     private readonly memberships: Repository<MembershipEntity>,
     private readonly dataSource: DataSource,
     private readonly audit: AuditService,
+    private readonly posting: AccountingPostingService,
   ) {}
 
   async create(
@@ -269,6 +273,32 @@ export class MembershipPaymentsService {
       const rand = Math.floor(10000 + Math.random() * 90000);
       const receiptNumber = `HRSJM-REC-${year}-${rand}`;
 
+      // Post accounting entry: Dr Bank/Cash, Cr Membership Income (same tx)
+      const entry = await this.posting.postEntry(manager, {
+        entry_date: now,
+        reference_type: ReferenceType.MEMBERSHIP_PAYMENT,
+        reference_id: payment.id,
+        description: `Membership payment verified via ${payment.payment_method}`,
+        lines: [
+          {
+            account_code:
+              payment.payment_method === 'CASH'
+                ? ACCOUNT_CODES.CASH
+                : ACCOUNT_CODES.BANK,
+            debit_amount: payment.amount,
+            credit_amount: 0,
+            line_description: `Membership payment received (${payment.payment_method})`,
+          },
+          {
+            account_code: ACCOUNT_CODES.MEMBERSHIP_INCOME,
+            debit_amount: 0,
+            credit_amount: payment.amount,
+            line_description: 'Membership fee income',
+          },
+        ],
+        acting_user_id: actingUserId,
+      });
+
       const receipt = manager.create(ReceiptEntity, {
         receipt_number: receiptNumber,
         receipt_date: now,
@@ -279,6 +309,7 @@ export class MembershipPaymentsService {
         receipt_type: 'MEMBERSHIP',
         issued_to: payment.user?.full_name ?? 'Member',
         notes: `Payment verified via ${payment.payment_method}`,
+        accounting_entry_id: entry.id,
         created_by: actingUserId,
         updated_by: actingUserId,
       });

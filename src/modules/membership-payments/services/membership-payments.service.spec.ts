@@ -15,6 +15,7 @@ describe('MembershipPaymentsService', () => {
   let membershipsRepo: Record<string, jest.Mock>;
   let dataSource: { transaction: jest.Mock };
   let audit: Record<string, jest.Mock>;
+  let posting: Record<string, jest.Mock>;
 
   const mockMembership = {
     id: 'mem-1',
@@ -49,6 +50,11 @@ describe('MembershipPaymentsService', () => {
     audit = {
       record: jest.fn().mockResolvedValue(undefined),
     };
+    posting = {
+      postEntry: jest
+        .fn()
+        .mockResolvedValue({ id: 'je-1', entry_number: 'JE-20260101-00001' }),
+    };
 
     service = new MembershipPaymentsService(
       paymentsRepo as never,
@@ -57,6 +63,7 @@ describe('MembershipPaymentsService', () => {
       membershipsRepo as never,
       dataSource as never,
       audit as never,
+      posting as never,
     );
   });
 
@@ -203,6 +210,92 @@ describe('MembershipPaymentsService', () => {
       expect(audit.record).toHaveBeenCalledWith(
         expect.objectContaining({ event: 'membership_payment.verified' }),
       );
+    });
+
+    it('posts a balanced accounting entry (Dr Bank, Cr Membership Income) and links it to the receipt', async () => {
+      const pendingPayment = {
+        id: 'pay-1',
+        user_id: 'user-1',
+        membership_id: 'mem-1',
+        amount: 1000,
+        payment_method: 'ONLINE',
+        payment_status: PaymentStatus.PENDING,
+        user: { full_name: 'Test Member' },
+      };
+      paymentsRepo.findOne.mockResolvedValue(pendingPayment);
+      receiptsRepo.findOne.mockResolvedValue(null);
+
+      dataSource.transaction.mockImplementation(async (callback) => {
+        const mockManager = {
+          save: jest.fn().mockImplementation(async (entity) => entity),
+          create: jest.fn((entityClass, data) => ({ id: 'mock-id', ...data })),
+          findOne: jest.fn().mockResolvedValue({
+            id: 'mem-1',
+            status: MembershipStatus.PENDING,
+            category: { validity_days: 365 },
+          }),
+        };
+        return callback(mockManager);
+      });
+
+      const result = await service.verify(
+        'pay-1',
+        { gateway_payment_id: 'pay_gateway_002' },
+        'user-1',
+        false,
+      );
+
+      expect(posting.postEntry).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          reference_type: 'MEMBERSHIP_PAYMENT',
+          reference_id: 'pay-1',
+        }),
+      );
+      const call = posting.postEntry.mock.calls[0][1];
+      expect(call.lines).toEqual([
+        expect.objectContaining({ account_code: '1001', debit_amount: 1000, credit_amount: 0 }),
+        expect.objectContaining({ account_code: '4001', debit_amount: 0, credit_amount: 1000 }),
+      ]);
+      // Receipt is linked to the posted entry
+      expect(result.receipt.accounting_entry_id).toBe('je-1');
+    });
+
+    it('propagates posting failure so the transaction rolls back', async () => {
+      paymentsRepo.findOne.mockResolvedValue({
+        id: 'pay-1',
+        user_id: 'user-1',
+        membership_id: 'mem-1',
+        amount: 1000,
+        payment_method: 'ONLINE',
+        payment_status: PaymentStatus.PENDING,
+        user: { full_name: 'Test Member' },
+      });
+      posting.postEntry.mockRejectedValue(
+        new BadRequestException({
+          message: 'Accounting entry is not balanced',
+          code: 'ACCOUNTING_ENTRY_UNBALANCED',
+          details: null,
+        }),
+      );
+
+      // Real DataSource.transaction rejects when the callback throws.
+      dataSource.transaction.mockImplementation(async (callback) => {
+        const mockManager = {
+          save: jest.fn().mockImplementation(async (entity) => entity),
+          create: jest.fn((entityClass, data) => ({ id: 'mock-id', ...data })),
+        };
+        return callback(mockManager);
+      });
+
+      await expect(
+        service.verify(
+          'pay-1',
+          { gateway_payment_id: 'pay_gateway_003' },
+          'user-1',
+          false,
+        ),
+      ).rejects.toThrow(BadRequestException);
     });
   });
 
