@@ -68,7 +68,7 @@ ends with a working, committed, testable increment before moving on.
 - Status display + receipt reference display only (financials stay senior-owned)
 - **Done when:** donation created → status visible → receipt ref shown; committed
 
-## Phase 11 — Hardening & Handoff
+## Phase 11 — Hardening & Handoff (completed)
 - Unit + integration tests for every module (BRD §18)
 - Full Swagger/OpenAPI documentation (BRD §19)
 - Seed data, env audit, no production synchronize, final QA

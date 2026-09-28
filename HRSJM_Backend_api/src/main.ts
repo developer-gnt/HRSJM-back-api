@@ -11,6 +11,13 @@ async function bootstrap(): Promise<void> {
   const app = await NestFactory.create(AppModule);
   const config = app.get(ApiConfigService);
 
+  // Hardening: refuse to boot production with default credentials (BRD §18)
+  if (config.isProduction) {
+    if (config.jwtSecret === "changeme-dev-secret" || config.jwtSecret === "mysupersecretjwt") {
+      throw new Error("Refusing to start production with a default JWT_SECRET. Set JWT_SECRET in the environment.");
+    }
+  }
+
   if (config.corsEnabled) {
     app.enableCors({
       origin: true,
@@ -35,9 +42,11 @@ async function bootstrap(): Promise<void> {
   const swaggerConfig = new DocumentBuilder()
     .setTitle("HRSJM Backend API")
     .setDescription(
-      "HRSJM NGO backend - member registration, events, donations, news and media management",
+      "HRSJM NGO backend API - auth & users (RBAC), memberships & digital ID, renewals, " +
+        "documents, assistance requests, support tickets, notifications, admin dashboard, " +
+        "income receipts (credit entry) and donations.",
     )
-    .setVersion("0.1")
+    .setVersion("1.0.0")
     .addBearerAuth()
     .build();
   const document = SwaggerModule.createDocument(app, swaggerConfig);
