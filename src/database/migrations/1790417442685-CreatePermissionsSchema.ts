@@ -11,18 +11,21 @@ export class CreatePermissionsSchema1790417442685 implements MigrationInterface 
         await queryRunner.query(`ALTER TABLE "role_permissions" ADD CONSTRAINT "FK_17022daf3f885f7d35423e9971e" FOREIGN KEY ("permission_id") REFERENCES "permissions"("id") ON DELETE CASCADE ON UPDATE NO ACTION`);
         // Seed the permissions used by the RBAC endpoints (module.action format)
         await queryRunner.query(`INSERT INTO "permissions" ("id", "name", "description") VALUES
-            ('00000000-0000-4000-8000-000000000101', 'user.read', 'View and list users'),
-            ('00000000-0000-4000-8000-000000000102', 'user.update', 'Update user profile fields'),
-            ('00000000-0000-4000-8000-000000000103', 'user.manage_status', 'Activate/deactivate user accounts'),
-            ('00000000-0000-4000-8000-000000000104', 'role.read', 'View roles and permissions catalog'),
-            ('00000000-0000-4000-8000-000000000105', 'role.create', 'Create roles'),
-            ('00000000-0000-4000-8000-000000000106', 'role.update', 'Update roles and role-permission mappings'),
-            ('00000000-0000-4000-8000-000000000107', 'role.delete', 'Delete roles'),
-            ('00000000-0000-4000-8000-000000000108', 'role.assign', 'Assign/remove roles to users'),
-            ('00000000-0000-4000-8000-000000000109', 'permission.read', 'List permissions')`);
-        // Grant every admin permission to the baseline ADMIN role (fixed UUID from the Phase 1 seed)
+            (uuid_generate_v4(), 'user.read', 'View and list users'),
+            (uuid_generate_v4(), 'user.update', 'Update user profile fields'),
+            (uuid_generate_v4(), 'user.manage_status', 'Activate/deactivate user accounts'),
+            (uuid_generate_v4(), 'role.read', 'View roles and permissions catalog'),
+            (uuid_generate_v4(), 'role.create', 'Create roles'),
+            (uuid_generate_v4(), 'role.update', 'Update roles and role-permission mappings'),
+            (uuid_generate_v4(), 'role.delete', 'Delete roles'),
+            (uuid_generate_v4(), 'role.assign', 'Assign/remove roles to users'),
+            (uuid_generate_v4(), 'permission.read', 'List permissions')
+            ON CONFLICT ("name") DO NOTHING`);
+        // Grant every admin permission to the baseline ADMIN role (dynamically resolved)
         await queryRunner.query(`INSERT INTO "role_permissions" ("role_id", "permission_id")
-            SELECT '00000000-0000-4000-8000-000000000004', "id" FROM "permissions"`);
+            SELECT r.id, p.id FROM "roles" r, "permissions" p
+            WHERE r.name = 'ADMIN'
+            ON CONFLICT ("role_id", "permission_id") DO NOTHING`);
     }
 
     public async down(queryRunner: QueryRunner): Promise<void> {

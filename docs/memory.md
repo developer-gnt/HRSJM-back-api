@@ -102,7 +102,15 @@ HRSJM — Digital Membership & Donation Platform backend. The backend is the **s
 ### In progress / Next
 - Phase 10/11 verified 2026-09-28 (with date-filter fix): Trial Balance + P&L e2e suites passing (TC-TB-001–005, TC-PL-001–005); dedicated date-filter verification (`test/verify-date-filters.sh`) and hand-computed reconciliation (`test/cross-check-reports.js`) PASS. A real bug was found and fixed: report date filters sat inside the entry LEFT JOIN's ON clause and never filtered rows (future-dated entries leaked into as-of/period reports); fixed in all three report services (TB, P&L, Balance Sheet) by moving the date condition to a WHERE row filter.
 - Phase 12 verified 2026-09-28: Balance Sheet e2e passing (TC-BS-001–004), `balance_sheet.read` permission migration applied, cross-check reconciles Assets = Liabilities + Equity against hand-computed entry-line sums and ties surplus to the cumulative P&L. The full three-report consistency suite now lives in `test/cross-check-reports.js` (TB + P&L + BS in one run).
-- Next: **Phase 13 — Integration, QA & Handoff** per `phases.md` (end-to-end flows, report consistency across TB/P&L/BS, Swagger completeness for all 74 APIs, production config verification, API handoff contract).
+- Phase 13 verified 2026-09-28 — ALL PHASES COMPLETE (0–13):
+  - Integration flows `test/e2e-phase13-flows.sh` 21/21 (membership lifecycle, donation lifecycle + refund, expense, manual receipt, post-flow report reconciliation, DB balanced-entries).
+  - Financial integrity `test/verify-financial-integrity.js` ALL PASS (balanced entries, orphan lines, entry numbers, line shapes, reversal mirrors, receipt↔journal 1:1 for SUCCESS payments, reference catalogue, NUMERIC(12,2)). Legacy gap fixed: 5 pre-Phase-6 payments backfilled via the production posting service (`test/backfill-legacy-payments.ts`).
+  - RBAC sweep `test/verify-rbac-sweep.js` 94/94 (every Swagger operation rejects unauthenticated with 401; public list documented in the script).
+  - Report consistency `test/cross-check-reports.js` 6/6 (TB/P&L/BS vs hand-computed entry-line sums; equation; surplus tie-out; as-of filters).
+  - Swagger: 71 paths / 94 operations fully documented (health summary added). Postman collection matches.
+  - Production config: all 17 env vars in .env.example; synchronize:false everywhere; **all 14 migrations run clean from zero** on a scratch DB — CreateDonationsSchema FK-rename block was from-zero-unsafe and is now to_regclass-guarded (issue log).
+  - Handoff: `docs/API_HANDOFF.md` generated from the live Swagger doc + permission catalogue + error codes + frontend conventions + TBC list. Postman collection at `docs/HRSJM_Postman_Collection.json`.
+- Next: **production launch actions** — provision the production DB and run `migration:run` from zero; set real `PAYMENT_GATEWAY_*` (provider TBC) and rotate `JWT_SECRET`; agree final COA / opening balances / partial-refund policy / 80G with HRSJM; hand docs/API_HANDOFF.md + Postman collection to frontend + Arshad; Arshad builds donations CRUD + his remaining modules against the seeded `donation.*` permissions.
 
 ### Progress tracker status (from phases.md)
 - Phase 0: ✅ done (verified 2026-09-26)
@@ -116,6 +124,7 @@ HRSJM — Digital Membership & Donation Platform backend. The backend is the **s
 - Phase 8: ✅ done (verified 2026-09-28)
 - Phase 9: ✅ done (verified 2026-09-28)
 - Phase 12: ✅ done (verified 2026-09-28)
+- Phase 13: ✅ done (verified 2026-09-28)
 - Phases 9–13: ⬜ not started
 
 ---

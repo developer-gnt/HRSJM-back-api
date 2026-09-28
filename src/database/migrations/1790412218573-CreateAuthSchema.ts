@@ -26,10 +26,11 @@ export class CreateAuthSchema1790412218573 implements MigrationInterface {
         await queryRunner.query(`ALTER TABLE "password_reset_tokens" ADD CONSTRAINT "FK_52ac39dd8a28730c63aeb428c9c" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE NO ACTION`);
         // Baseline role seeds (Phase 2 integration point — registration assigns MEMBER)
         await queryRunner.query(`INSERT INTO "roles" ("id", "name", "description") VALUES
-            ('00000000-0000-4000-8000-000000000001', 'MEMBER', 'Applies for and manages HRSJM membership'),
-            ('00000000-0000-4000-8000-000000000002', 'DONOR', 'Makes donations'),
-            ('00000000-0000-4000-8000-000000000003', 'DONATION_SEEKER', 'Submits and tracks assistance requests'),
-            ('00000000-0000-4000-8000-000000000004', 'ADMIN', 'HRSJM administrator')`);
+            (uuid_generate_v4(), 'MEMBER', 'Applies for and manages HRSJM membership'),
+            (uuid_generate_v4(), 'DONOR', 'Makes donations'),
+            (uuid_generate_v4(), 'DONATION_SEEKER', 'Submits and tracks assistance requests'),
+            (uuid_generate_v4(), 'ADMIN', 'HRSJM administrator')
+            ON CONFLICT ("name") DO NOTHING`);
     }
 
     public async down(queryRunner: QueryRunner): Promise<void> {

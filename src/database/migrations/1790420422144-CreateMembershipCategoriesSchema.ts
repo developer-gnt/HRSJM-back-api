@@ -10,36 +10,39 @@ export class CreateMembershipCategoriesSchema1790420422144 implements MigrationI
 
         // Seed permissions for membership categories
         await queryRunner.query(`INSERT INTO "permissions" ("id", "name", "description") VALUES
-            ('00000000-0000-4000-8000-000000000201', 'membership_category.read', 'View and list membership categories'),
-            ('00000000-0000-4000-8000-000000000202', 'membership_category.create', 'Create membership categories'),
-            ('00000000-0000-4000-8000-000000000203', 'membership_category.update', 'Update membership categories'),
-            ('00000000-0000-4000-8000-000000000204', 'membership_category.manage_status', 'Activate/deactivate membership categories')
+            (uuid_generate_v4(), 'membership_category.read', 'View and list membership categories'),
+            (uuid_generate_v4(), 'membership_category.create', 'Create membership categories'),
+            (uuid_generate_v4(), 'membership_category.update', 'Update membership categories'),
+            (uuid_generate_v4(), 'membership_category.manage_status', 'Activate/deactivate membership categories')
             ON CONFLICT ("name") DO NOTHING`);
 
         // Grant newly added permissions to the baseline ADMIN role
         await queryRunner.query(`INSERT INTO "role_permissions" ("role_id", "permission_id")
-            SELECT '00000000-0000-4000-8000-000000000004', "id" FROM "permissions"
-            WHERE "id" IN (
-                '00000000-0000-4000-8000-000000000201',
-                '00000000-0000-4000-8000-000000000202',
-                '00000000-0000-4000-8000-000000000203',
-                '00000000-0000-4000-8000-000000000204'
+            SELECT r.id, p.id FROM "roles" r, "permissions" p
+            WHERE r.name = 'ADMIN'
+              AND p.name IN (
+                'membership_category.read',
+                'membership_category.create',
+                'membership_category.update',
+                'membership_category.manage_status'
             )
             ON CONFLICT ("role_id", "permission_id") DO NOTHING`);
     }
 
     public async down(queryRunner: QueryRunner): Promise<void> {
         await queryRunner.query(`DELETE FROM "role_permissions" WHERE "permission_id" IN (
-            '00000000-0000-4000-8000-000000000201',
-            '00000000-0000-4000-8000-000000000202',
-            '00000000-0000-4000-8000-000000000203',
-            '00000000-0000-4000-8000-000000000204'
+            SELECT "id" FROM "permissions" WHERE "name" IN (
+                'membership_category.read',
+                'membership_category.create',
+                'membership_category.update',
+                'membership_category.manage_status'
+            )
         )`);
-        await queryRunner.query(`DELETE FROM "permissions" WHERE "id" IN (
-            '00000000-0000-4000-8000-000000000201',
-            '00000000-0000-4000-8000-000000000202',
-            '00000000-0000-4000-8000-000000000203',
-            '00000000-0000-4000-8000-000000000204'
+        await queryRunner.query(`DELETE FROM "permissions" WHERE "name" IN (
+            'membership_category.read',
+            'membership_category.create',
+            'membership_category.update',
+            'membership_category.manage_status'
         )`);
         await queryRunner.query(`DROP INDEX "public"."uq_membership_categories_code"`);
         await queryRunner.query(`DROP INDEX "public"."uq_membership_categories_name"`);

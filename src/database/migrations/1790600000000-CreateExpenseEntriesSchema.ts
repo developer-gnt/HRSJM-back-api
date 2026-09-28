@@ -76,22 +76,23 @@ export class CreateExpenseEntriesSchema1790600000000
     // Seed permissions for the expense entries module
     await queryRunner.query(`
       INSERT INTO "permissions" ("id", "name", "description") VALUES
-        ('00000000-0000-4000-8000-000000000801', 'expense.read', 'View and list expense vouchers'),
-        ('00000000-0000-4000-8000-000000000802', 'expense.create', 'Create expense vouchers and post ledger journals'),
-        ('00000000-0000-4000-8000-000000000803', 'expense.update', 'Update expense voucher details'),
-        ('00000000-0000-4000-8000-000000000804', 'expense.manage_status', 'Cancel/void expense vouchers and reverse ledger entries')
+        (uuid_generate_v4(), 'expense.read', 'View and list expense vouchers'),
+        (uuid_generate_v4(), 'expense.create', 'Create expense vouchers and post ledger journals'),
+        (uuid_generate_v4(), 'expense.update', 'Update expense voucher details'),
+        (uuid_generate_v4(), 'expense.manage_status', 'Cancel/void expense vouchers and reverse ledger entries')
       ON CONFLICT ("name") DO NOTHING
     `);
 
     // Grant newly added permissions to the baseline ADMIN role
     await queryRunner.query(`
       INSERT INTO "role_permissions" ("role_id", "permission_id")
-      SELECT '00000000-0000-4000-8000-000000000004', "id" FROM "permissions"
-      WHERE "id" IN (
-        '00000000-0000-4000-8000-000000000801',
-        '00000000-0000-4000-8000-000000000802',
-        '00000000-0000-4000-8000-000000000803',
-        '00000000-0000-4000-8000-000000000804'
+      SELECT r.id, p.id FROM "roles" r, "permissions" p
+      WHERE r.name = 'ADMIN'
+        AND p.name IN (
+        'expense.read',
+        'expense.create',
+        'expense.update',
+        'expense.manage_status'
       )
       ON CONFLICT ("role_id", "permission_id") DO NOTHING
     `);
@@ -100,19 +101,21 @@ export class CreateExpenseEntriesSchema1790600000000
   public async down(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(`
       DELETE FROM "role_permissions" WHERE "permission_id" IN (
-        '00000000-0000-4000-8000-000000000801',
-        '00000000-0000-4000-8000-000000000802',
-        '00000000-0000-4000-8000-000000000803',
-        '00000000-0000-4000-8000-000000000804'
+        SELECT "id" FROM "permissions" WHERE "name" IN (
+          'expense.read',
+          'expense.create',
+          'expense.update',
+          'expense.manage_status'
+        )
       )
     `);
 
     await queryRunner.query(`
-      DELETE FROM "permissions" WHERE "id" IN (
-        '00000000-0000-4000-8000-000000000801',
-        '00000000-0000-4000-8000-000000000802',
-        '00000000-0000-4000-8000-000000000803',
-        '00000000-0000-4000-8000-000000000804'
+      DELETE FROM "permissions" WHERE "name" IN (
+        'expense.read',
+        'expense.create',
+        'expense.update',
+        'expense.manage_status'
       )
     `);
 

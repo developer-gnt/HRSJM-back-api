@@ -76,22 +76,23 @@ export class CreateReceiptEntriesSchema1790610000000
     // Seed permissions for the receipt entries module
     await queryRunner.query(`
       INSERT INTO "permissions" ("id", "name", "description") VALUES
-        ('00000000-0000-4000-8000-000000000811', 'receipt_entry.read', 'View and list receipt vouchers'),
-        ('00000000-0000-4000-8000-000000000812', 'receipt_entry.create', 'Create receipt vouchers and post ledger journals'),
-        ('00000000-0000-4000-8000-000000000813', 'receipt_entry.update', 'Update receipt voucher details'),
-        ('00000000-0000-4000-8000-000000000814', 'receipt_entry.manage_status', 'Cancel/void receipt vouchers and reverse ledger entries')
+        (uuid_generate_v4(), 'receipt_entry.read', 'View and list receipt vouchers'),
+        (uuid_generate_v4(), 'receipt_entry.create', 'Create receipt vouchers and post ledger journals'),
+        (uuid_generate_v4(), 'receipt_entry.update', 'Update receipt voucher details'),
+        (uuid_generate_v4(), 'receipt_entry.manage_status', 'Cancel/void receipt vouchers and reverse ledger entries')
       ON CONFLICT ("name") DO NOTHING
     `);
 
     // Grant newly added permissions to the baseline ADMIN role
     await queryRunner.query(`
       INSERT INTO "role_permissions" ("role_id", "permission_id")
-      SELECT '00000000-0000-4000-8000-000000000004', "id" FROM "permissions"
-      WHERE "id" IN (
-        '00000000-0000-4000-8000-000000000811',
-        '00000000-0000-4000-8000-000000000812',
-        '00000000-0000-4000-8000-000000000813',
-        '00000000-0000-4000-8000-000000000814'
+      SELECT r.id, p.id FROM "roles" r, "permissions" p
+      WHERE r.name = 'ADMIN'
+        AND p.name IN (
+        'receipt_entry.read',
+        'receipt_entry.create',
+        'receipt_entry.update',
+        'receipt_entry.manage_status'
       )
       ON CONFLICT ("role_id", "permission_id") DO NOTHING
     `);
@@ -100,19 +101,21 @@ export class CreateReceiptEntriesSchema1790610000000
   public async down(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(`
       DELETE FROM "role_permissions" WHERE "permission_id" IN (
-        '00000000-0000-4000-8000-000000000811',
-        '00000000-0000-4000-8000-000000000812',
-        '00000000-0000-4000-8000-000000000813',
-        '00000000-0000-4000-8000-000000000814'
+        SELECT "id" FROM "permissions" WHERE "name" IN (
+          'receipt_entry.read',
+          'receipt_entry.create',
+          'receipt_entry.update',
+          'receipt_entry.manage_status'
+        )
       )
     `);
 
     await queryRunner.query(`
-      DELETE FROM "permissions" WHERE "id" IN (
-        '00000000-0000-4000-8000-000000000811',
-        '00000000-0000-4000-8000-000000000812',
-        '00000000-0000-4000-8000-000000000813',
-        '00000000-0000-4000-8000-000000000814'
+      DELETE FROM "permissions" WHERE "name" IN (
+        'receipt_entry.read',
+        'receipt_entry.create',
+        'receipt_entry.update',
+        'receipt_entry.manage_status'
       )
     `);
 

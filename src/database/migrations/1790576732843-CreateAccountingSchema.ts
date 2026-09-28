@@ -28,72 +28,73 @@ export class CreateAccountingSchema1790576732843 implements MigrationInterface {
         // Sequence backing entry numbers (JE-YYYYMMDD-#####)
         await queryRunner.query(`CREATE SEQUENCE IF NOT EXISTS "accounting_entry_number_seq" START 1`);
 
-        // Baseline Chart of Accounts (minimal money-flow set — the final
-        // HRSJM chart is TBC; see memory.md open questions). Fixed UUIDs,
-        // 7xx ID block: permissions 701-707, accounts 751-757.
+        // Baseline Chart of Accounts (minimal money-flow set)
         await queryRunner.query(`INSERT INTO "accounts" ("id", "account_code", "account_name", "account_type", "description", "is_active") VALUES
-            ('00000000-0000-4000-8000-000000000751', '1001', 'Bank', 'ASSET', 'Bank account for all online/gateway receipts and payments', true),
-            ('00000000-0000-4000-8000-000000000752', '1002', 'Cash', 'ASSET', 'Cash-in-hand account for offline receipts and payments', true),
-            ('00000000-0000-4000-8000-000000000753', '4001', 'Membership Income', 'INCOME', 'Income from new membership fees', true),
-            ('00000000-0000-4000-8000-000000000754', '4002', 'Renewal Income', 'INCOME', 'Income from membership renewal fees', true),
-            ('00000000-0000-4000-8000-000000000755', '4003', 'Donation Income', 'INCOME', 'Income from donations', true),
-            ('00000000-0000-4000-8000-000000000756', '4004', 'Other Income', 'INCOME', 'Miscellaneous income (manual receipts)', true),
-            ('00000000-0000-4000-8000-000000000757', '5001', 'Other Expenses', 'EXPENSE', 'General operational expenses', true)
-            ON CONFLICT ("id") DO NOTHING`);
+            (uuid_generate_v4(), '1001', 'Bank', 'ASSET', 'Bank account for all online/gateway receipts and payments', true),
+            (uuid_generate_v4(), '1002', 'Cash', 'ASSET', 'Cash-in-hand account for offline receipts and payments', true),
+            (uuid_generate_v4(), '4001', 'Membership Income', 'INCOME', 'Income from new membership fees', true),
+            (uuid_generate_v4(), '4002', 'Renewal Income', 'INCOME', 'Income from membership renewal fees', true),
+            (uuid_generate_v4(), '4003', 'Donation Income', 'INCOME', 'Income from donations', true),
+            (uuid_generate_v4(), '4004', 'Other Income', 'INCOME', 'Miscellaneous income (manual receipts)', true),
+            (uuid_generate_v4(), '5001', 'Other Expenses', 'EXPENSE', 'General operational expenses', true)
+            ON CONFLICT ("account_code") DO NOTHING`);
 
         // Seed permissions for the accounting module
         await queryRunner.query(`INSERT INTO "permissions" ("id", "name", "description") VALUES
-            ('00000000-0000-4000-8000-000000000701', 'account.read', 'View and list chart of accounts'),
-            ('00000000-0000-4000-8000-000000000702', 'account.create', 'Create accounts in the chart of accounts'),
-            ('00000000-0000-4000-8000-000000000703', 'account.update', 'Update chart of accounts details'),
-            ('00000000-0000-4000-8000-000000000704', 'account.manage_status', 'Activate/deactivate accounts'),
-            ('00000000-0000-4000-8000-000000000705', 'accounting_entry.read', 'View accounting entries and their lines'),
-            ('00000000-0000-4000-8000-000000000706', 'accounting_entry.reverse', 'Reverse posted accounting entries'),
-            ('00000000-0000-4000-8000-000000000707', 'ledger.read', 'View ledger reports with running balances')
+            (uuid_generate_v4(), 'account.read', 'View and list chart of accounts'),
+            (uuid_generate_v4(), 'account.create', 'Create accounts in the chart of accounts'),
+            (uuid_generate_v4(), 'account.update', 'Update chart of accounts details'),
+            (uuid_generate_v4(), 'account.manage_status', 'Activate/deactivate accounts'),
+            (uuid_generate_v4(), 'accounting_entry.read', 'View accounting entries and their lines'),
+            (uuid_generate_v4(), 'accounting_entry.reverse', 'Reverse posted accounting entries'),
+            (uuid_generate_v4(), 'ledger.read', 'View ledger reports with running balances')
             ON CONFLICT ("name") DO NOTHING`);
 
         // Grant newly added permissions to the baseline ADMIN role
         await queryRunner.query(`INSERT INTO "role_permissions" ("role_id", "permission_id")
-            SELECT '00000000-0000-4000-8000-000000000004', "id" FROM "permissions"
-            WHERE "id" IN (
-                '00000000-0000-4000-8000-000000000701',
-                '00000000-0000-4000-8000-000000000702',
-                '00000000-0000-4000-8000-000000000703',
-                '00000000-0000-4000-8000-000000000704',
-                '00000000-0000-4000-8000-000000000705',
-                '00000000-0000-4000-8000-000000000706',
-                '00000000-0000-4000-8000-000000000707'
+            SELECT r.id, p.id FROM "roles" r, "permissions" p
+            WHERE r.name = 'ADMIN'
+              AND p.name IN (
+                'account.read',
+                'account.create',
+                'account.update',
+                'account.manage_status',
+                'accounting_entry.read',
+                'accounting_entry.reverse',
+                'ledger.read'
             )
             ON CONFLICT ("role_id", "permission_id") DO NOTHING`);
     }
 
     public async down(queryRunner: QueryRunner): Promise<void> {
         await queryRunner.query(`DELETE FROM "role_permissions" WHERE "permission_id" IN (
-            '00000000-0000-4000-8000-000000000701',
-            '00000000-0000-4000-8000-000000000702',
-            '00000000-0000-4000-8000-000000000703',
-            '00000000-0000-4000-8000-000000000704',
-            '00000000-0000-4000-8000-000000000705',
-            '00000000-0000-4000-8000-000000000706',
-            '00000000-0000-4000-8000-000000000707'
+            SELECT "id" FROM "permissions" WHERE "name" IN (
+                'account.read',
+                'account.create',
+                'account.update',
+                'account.manage_status',
+                'accounting_entry.read',
+                'accounting_entry.reverse',
+                'ledger.read'
+            )
         )`);
-        await queryRunner.query(`DELETE FROM "permissions" WHERE "id" IN (
-            '00000000-0000-4000-8000-000000000701',
-            '00000000-0000-4000-8000-000000000702',
-            '00000000-0000-4000-8000-000000000703',
-            '00000000-0000-4000-8000-000000000704',
-            '00000000-0000-4000-8000-000000000705',
-            '00000000-0000-4000-8000-000000000706',
-            '00000000-0000-4000-8000-000000000707'
+        await queryRunner.query(`DELETE FROM "permissions" WHERE "name" IN (
+            'account.read',
+            'account.create',
+            'account.update',
+            'account.manage_status',
+            'accounting_entry.read',
+            'accounting_entry.reverse',
+            'ledger.read'
         )`);
-        await queryRunner.query(`DELETE FROM "accounts" WHERE "id" IN (
-            '00000000-0000-4000-8000-000000000751',
-            '00000000-0000-4000-8000-000000000752',
-            '00000000-0000-4000-8000-000000000753',
-            '00000000-0000-4000-8000-000000000754',
-            '00000000-0000-4000-8000-000000000755',
-            '00000000-0000-4000-8000-000000000756',
-            '00000000-0000-4000-8000-000000000757'
+        await queryRunner.query(`DELETE FROM "accounts" WHERE "account_code" IN (
+            '1001',
+            '1002',
+            '4001',
+            '4002',
+            '4003',
+            '4004',
+            '5001'
         )`);
         await queryRunner.query(`DROP SEQUENCE IF EXISTS "accounting_entry_number_seq"`);
         await queryRunner.query(`ALTER TABLE "accounting_entries" DROP CONSTRAINT "FK_f2c1ae43d3811b48aeccf038500"`);

@@ -23,36 +23,39 @@ export class CreateMembershipPaymentsSchema1790422648141 implements MigrationInt
 
         // Seed permissions for payments
         await queryRunner.query(`INSERT INTO "permissions" ("id", "name", "description") VALUES
-            ('00000000-0000-4000-8000-000000000601', 'payment.read', 'View and list membership and donation payments'),
-            ('00000000-0000-4000-8000-000000000602', 'payment.create', 'Initiate payment orders'),
-            ('00000000-0000-4000-8000-000000000603', 'payment.verify', 'Verify gateway signatures and complete payments'),
-            ('00000000-0000-4000-8000-000000000604', 'payment.manage_status', 'Update payment status, offline marks, or notes')
+            (uuid_generate_v4(), 'payment.read', 'View and list membership and donation payments'),
+            (uuid_generate_v4(), 'payment.create', 'Initiate payment orders'),
+            (uuid_generate_v4(), 'payment.verify', 'Verify gateway signatures and complete payments'),
+            (uuid_generate_v4(), 'payment.manage_status', 'Update payment status, offline marks, or notes')
             ON CONFLICT ("name") DO NOTHING`);
 
         // Grant newly added permissions to the baseline ADMIN role
         await queryRunner.query(`INSERT INTO "role_permissions" ("role_id", "permission_id")
-            SELECT '00000000-0000-4000-8000-000000000004', "id" FROM "permissions"
-            WHERE "id" IN (
-                '00000000-0000-4000-8000-000000000601',
-                '00000000-0000-4000-8000-000000000602',
-                '00000000-0000-4000-8000-000000000603',
-                '00000000-0000-4000-8000-000000000604'
+            SELECT r.id, p.id FROM "roles" r, "permissions" p
+            WHERE r.name = 'ADMIN'
+              AND p.name IN (
+                'payment.read',
+                'payment.create',
+                'payment.verify',
+                'payment.manage_status'
             )
             ON CONFLICT ("role_id", "permission_id") DO NOTHING`);
     }
 
     public async down(queryRunner: QueryRunner): Promise<void> {
         await queryRunner.query(`DELETE FROM "role_permissions" WHERE "permission_id" IN (
-            '00000000-0000-4000-8000-000000000601',
-            '00000000-0000-4000-8000-000000000602',
-            '00000000-0000-4000-8000-000000000603',
-            '00000000-0000-4000-8000-000000000604'
+            SELECT "id" FROM "permissions" WHERE "name" IN (
+                'payment.read',
+                'payment.create',
+                'payment.verify',
+                'payment.manage_status'
+            )
         )`);
-        await queryRunner.query(`DELETE FROM "permissions" WHERE "id" IN (
-            '00000000-0000-4000-8000-000000000601',
-            '00000000-0000-4000-8000-000000000602',
-            '00000000-0000-4000-8000-000000000603',
-            '00000000-0000-4000-8000-000000000604'
+        await queryRunner.query(`DELETE FROM "permissions" WHERE "name" IN (
+            'payment.read',
+            'payment.create',
+            'payment.verify',
+            'payment.manage_status'
         )`);
         await queryRunner.query(`ALTER TABLE "receipts" DROP CONSTRAINT "FK_12861fb78713bfc251ed9e466e6"`);
         await queryRunner.query(`ALTER TABLE "receipts" DROP CONSTRAINT "FK_6f5a711d2591ddf19f9519900e9"`);

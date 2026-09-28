@@ -25,28 +25,31 @@ export class CreateArshadModulesSchema1790422318068 implements MigrationInterfac
 
         // Seed permissions for assistance and support
         await queryRunner.query(`INSERT INTO "permissions" ("id", "name", "description") VALUES
-            ('00000000-0000-4000-8000-000000000401', 'assistance.review', 'Review and manage assistance requests'),
-            ('00000000-0000-4000-8000-000000000501', 'support.manage', 'Manage and resolve support tickets')
+            (uuid_generate_v4(), 'assistance.review', 'Review and manage assistance requests'),
+            (uuid_generate_v4(), 'support.manage', 'Manage and resolve support tickets')
             ON CONFLICT ("name") DO NOTHING`);
 
         // Grant newly added permissions to the baseline ADMIN role
         await queryRunner.query(`INSERT INTO "role_permissions" ("role_id", "permission_id")
-            SELECT '00000000-0000-4000-8000-000000000004', "id" FROM "permissions"
-            WHERE "id" IN (
-                '00000000-0000-4000-8000-000000000401',
-                '00000000-0000-4000-8000-000000000501'
+            SELECT r.id, p.id FROM "roles" r, "permissions" p
+            WHERE r.name = 'ADMIN'
+              AND p.name IN (
+                'assistance.review',
+                'support.manage'
             )
             ON CONFLICT ("role_id", "permission_id") DO NOTHING`);
     }
 
     public async down(queryRunner: QueryRunner): Promise<void> {
         await queryRunner.query(`DELETE FROM "role_permissions" WHERE "permission_id" IN (
-            '00000000-0000-4000-8000-000000000401',
-            '00000000-0000-4000-8000-000000000501'
+            SELECT "id" FROM "permissions" WHERE "name" IN (
+                'assistance.review',
+                'support.manage'
+            )
         )`);
-        await queryRunner.query(`DELETE FROM "permissions" WHERE "id" IN (
-            '00000000-0000-4000-8000-000000000401',
-            '00000000-0000-4000-8000-000000000501'
+        await queryRunner.query(`DELETE FROM "permissions" WHERE "name" IN (
+            'assistance.review',
+            'support.manage'
         )`);
         await queryRunner.query(`ALTER TABLE "assistance_requests" DROP CONSTRAINT "FK_7f96e66653e1a0360318ba295dd"`);
         await queryRunner.query(`ALTER TABLE "assistance_requests" DROP CONSTRAINT "FK_bc923e7678f65eb3a2ec9d83cc1"`);

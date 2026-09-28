@@ -13,40 +13,43 @@ export class CreateMembershipsSchema1790420936132 implements MigrationInterface 
 
         // Seed permissions for memberships
         await queryRunner.query(`INSERT INTO "permissions" ("id", "name", "description") VALUES
-            ('00000000-0000-4000-8000-000000000301', 'membership.read', 'View and list memberships'),
-            ('00000000-0000-4000-8000-000000000302', 'membership.create', 'Create membership applications'),
-            ('00000000-0000-4000-8000-000000000303', 'membership.update', 'Update membership details'),
-            ('00000000-0000-4000-8000-000000000304', 'membership.manage_status', 'Approve, reject, or change membership status'),
-            ('00000000-0000-4000-8000-000000000305', 'membership.approve', 'Approve membership applications')
+            (uuid_generate_v4(), 'membership.read', 'View and list memberships'),
+            (uuid_generate_v4(), 'membership.create', 'Create membership applications'),
+            (uuid_generate_v4(), 'membership.update', 'Update membership details'),
+            (uuid_generate_v4(), 'membership.manage_status', 'Approve, reject, or change membership status'),
+            (uuid_generate_v4(), 'membership.approve', 'Approve membership applications')
             ON CONFLICT ("name") DO NOTHING`);
 
         // Grant newly added permissions to the baseline ADMIN role
         await queryRunner.query(`INSERT INTO "role_permissions" ("role_id", "permission_id")
-            SELECT '00000000-0000-4000-8000-000000000004', "id" FROM "permissions"
-            WHERE "id" IN (
-                '00000000-0000-4000-8000-000000000301',
-                '00000000-0000-4000-8000-000000000302',
-                '00000000-0000-4000-8000-000000000303',
-                '00000000-0000-4000-8000-000000000304',
-                '00000000-0000-4000-8000-000000000305'
+            SELECT r.id, p.id FROM "roles" r, "permissions" p
+            WHERE r.name = 'ADMIN'
+              AND p.name IN (
+                'membership.read',
+                'membership.create',
+                'membership.update',
+                'membership.manage_status',
+                'membership.approve'
             )
             ON CONFLICT ("role_id", "permission_id") DO NOTHING`);
     }
 
     public async down(queryRunner: QueryRunner): Promise<void> {
         await queryRunner.query(`DELETE FROM "role_permissions" WHERE "permission_id" IN (
-            '00000000-0000-4000-8000-000000000301',
-            '00000000-0000-4000-8000-000000000302',
-            '00000000-0000-4000-8000-000000000303',
-            '00000000-0000-4000-8000-000000000304',
-            '00000000-0000-4000-8000-000000000305'
+            SELECT "id" FROM "permissions" WHERE "name" IN (
+                'membership.read',
+                'membership.create',
+                'membership.update',
+                'membership.manage_status',
+                'membership.approve'
+            )
         )`);
-        await queryRunner.query(`DELETE FROM "permissions" WHERE "id" IN (
-            '00000000-0000-4000-8000-000000000301',
-            '00000000-0000-4000-8000-000000000302',
-            '00000000-0000-4000-8000-000000000303',
-            '00000000-0000-4000-8000-000000000304',
-            '00000000-0000-4000-8000-000000000305'
+        await queryRunner.query(`DELETE FROM "permissions" WHERE "name" IN (
+            'membership.read',
+            'membership.create',
+            'membership.update',
+            'membership.manage_status',
+            'membership.approve'
         )`);
         await queryRunner.query(`ALTER TABLE "memberships" DROP CONSTRAINT "FK_78cdc9d01bf2bc3ec41a1bcb167"`);
         await queryRunner.query(`ALTER TABLE "memberships" DROP CONSTRAINT "FK_7c1e2fdfed4f6838e0c05ae5051"`);
