@@ -944,6 +944,91 @@
           }
         }
       ]
+    },
+    {
+      "name": "13. Notifications",
+      "item": [
+        {
+          "name": "Broadcast/Schedule Notification (Admin)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{adminToken}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Annual General Meeting Reminder\",\n  \"body\": \"The HRSJM AGM is scheduled for this Sunday at 10 AM.\",\n  \"target_audience\": \"ALL_USERS\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/notifications", "host": ["{{baseUrl}}"], "path": ["notifications"] }
+          }
+        },
+        {
+          "name": "List All Notifications (Admin)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/notifications?page=1&limit=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["notifications"],
+              "query": [
+                { "key": "page", "value": "1" },
+                { "key": "limit", "value": "20" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get My Notifications Inbox",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{memberToken}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/notifications/me?page=1&limit=20&unread_only=false",
+              "host": ["{{baseUrl}}"],
+              "path": ["notifications", "me"],
+              "query": [
+                { "key": "page", "value": "1" },
+                { "key": "limit", "value": "20" },
+                { "key": "unread_only", "value": "false" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Mark All My Notifications Read",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Authorization", "value": "Bearer {{memberToken}}" }],
+            "url": { "raw": "{{baseUrl}}/notifications/me/read-all", "host": ["{{baseUrl}}"], "path": ["notifications", "me", "read-all"] }
+          }
+        },
+        {
+          "name": "Get Notification by ID (Admin)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }],
+            "url": { "raw": "{{baseUrl}}/notifications/:id", "host": ["{{baseUrl}}"], "path": ["notifications", ":id"] }
+          }
+        },
+        {
+          "name": "List Notification Recipients (Admin)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }],
+            "url": { "raw": "{{baseUrl}}/notifications/:id/recipients", "host": ["{{baseUrl}}"], "path": ["notifications", ":id", "recipients"] }
+          }
+        },
+        {
+          "name": "Mark Single Notification as Read",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Authorization", "value": "Bearer {{memberToken}}" }],
+            "url": { "raw": "{{baseUrl}}/notifications/recipients/:recipientId/read", "host": ["{{baseUrl}}"], "path": ["notifications", "recipients", ":recipientId", "read"] }
+          }
+        }
+      ]
     }
   ]
 }

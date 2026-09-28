@@ -22,6 +22,7 @@ import { ReceiptEntriesModule } from './modules/receipt-entries/receipt-entries.
 import { ReportsModule } from './modules/reports/reports.module';
 import { DonationsModule } from './modules/donations/donations.module';
 import { DonationPaymentsModule } from './modules/donation-payments/donation-payments.module';
+import { NotificationsModule } from './modules/notifications/notifications.module';
 import paymentConfig from './config/payment.config';
 
 @Module({
@@ -53,6 +54,7 @@ import paymentConfig from './config/payment.config';
     AssistanceModule,
     SupportModule,
     ReportsModule,
+    NotificationsModule,
   ],
 })
 export class AppModule {}
