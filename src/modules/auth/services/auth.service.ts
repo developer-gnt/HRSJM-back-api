@@ -175,7 +175,10 @@ export class AuthService {
     // Rotation: the presented refresh token is revoked and replaced in one transaction.
     const rawToken = randomBytes(48).toString('hex');
     const profile = await this.profileOrThrow(user.id);
-    const access_token = await this.signAccessToken(user.id, profile.roles);
+    const access_token = await this.signAccessToken(
+      user.id,
+      profile.roles.map((r) => r.name),
+    );
 
     await this.dataSource.transaction(async (manager) => {
       const refreshTokenRepo = manager.getRepository(RefreshTokenEntity);
@@ -409,7 +412,10 @@ export class AuthService {
     userAgent: string | null,
   ): Promise<AuthTokens> {
     const profile = await this.profileOrThrow(user.id);
-    const access_token = await this.signAccessToken(user.id, profile.roles);
+    const access_token = await this.signAccessToken(
+      user.id,
+      profile.roles.map((r) => r.name),
+    );
 
     const rawToken = randomBytes(48).toString('hex');
     const saved = await this.refreshTokens.save(

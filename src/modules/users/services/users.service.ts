@@ -9,13 +9,18 @@ import { UserEntity } from '../entities/user.entity';
 import { UserRoleEntity } from '../entities/user-role.entity';
 import { RoleEntity } from '../../roles/entities/role.entity';
 
+export interface UserRoleInfo {
+  id: string;
+  name: string;
+}
+
 export interface UserProfile {
   id: string;
   full_name: string;
   mobile_number: string;
   email: string | null;
   status: string;
-  roles: string[];
+  roles: UserRoleInfo[];
   created_at: Date;
   updated_at: Date;
 }
@@ -58,8 +63,12 @@ export class UsersService {
       email: user.email,
       status: user.status,
       roles: (user.user_roles ?? [])
-        .map((userRole) => userRole.role?.name)
-        .filter((name): name is string => Boolean(name)),
+        .map((userRole) => userRole.role)
+        .filter((role): role is NonNullable<typeof role> => Boolean(role))
+        .map((role) => ({
+          id: role.id,
+          name: role.name,
+        })),
       created_at: user.created_at,
       updated_at: user.updated_at,
     };

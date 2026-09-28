@@ -41,8 +41,8 @@ describe('AuthService', () => {
       createUserWithRole: jest.fn().mockResolvedValue({ id: 'u1', status: 'ACTIVE' }),
       findByLoginIdentifier: jest.fn().mockResolvedValue(null),
       findById: jest.fn().mockResolvedValue(null),
-      getProfile: jest.fn().mockResolvedValue({ id: 'u1', roles: ['MEMBER'], status: 'ACTIVE' }),
-      toProfile: jest.fn().mockReturnValue({ id: 'u1', roles: ['MEMBER'] }),
+      getProfile: jest.fn().mockResolvedValue({ id: 'u1', roles: [{ id: 'r1', name: 'MEMBER' }], status: 'ACTIVE' }),
+      toProfile: jest.fn().mockReturnValue({ id: 'u1', roles: [{ id: 'r1', name: 'MEMBER' }] }),
     };
     jwtService = { signAsync: jest.fn().mockResolvedValue('access-token') };
     auditService = { record: jest.fn().mockResolvedValue(undefined) };
