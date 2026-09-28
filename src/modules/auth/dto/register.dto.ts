@@ -1,4 +1,12 @@
-import { IsEmail, IsOptional, IsString, MaxLength, MinLength, Validate } from 'class-validator';
+import {
+  IsEmail,
+  IsOptional,
+  IsString,
+  IsUUID,
+  MaxLength,
+  MinLength,
+  Validate,
+} from 'class-validator';
 import { MatchConstraint } from '../../../common/validators/match.constraint';
 
 export class RegisterDto {
@@ -26,4 +34,8 @@ export class RegisterDto {
   @MaxLength(72)
   @Validate(MatchConstraint, ['password'])
   confirm_password: string;
+
+  @IsOptional()
+  @IsUUID()
+  role_id?: string;
 }

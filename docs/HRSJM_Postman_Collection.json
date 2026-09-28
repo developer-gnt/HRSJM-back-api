@@ -33,7 +33,7 @@
             "header": [{ "key": "Content-Type", "value": "application/json" }],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"full_name\": \"John Doe\",\n  \"email\": \"john.doe@example.com\",\n  \"mobile_number\": \"9876543210\",\n  \"password\": \"Secret@123\",\n  \"confirm_password\": \"Secret@123\"\n}"
+              "raw": "{\n  \"full_name\": \"John Doe\",\n  \"email\": \"john.doe@example.com\",\n  \"mobile_number\": \"9876543210\",\n  \"password\": \"Secret@123\",\n  \"confirm_password\": \"Secret@123\",\n  \"role_id\": \"<optional-role-uuid>\"\n}"
             },
             "url": { "raw": "{{baseUrl}}/auth/register", "host": ["{{baseUrl}}"], "path": ["auth", "register"] }
           }

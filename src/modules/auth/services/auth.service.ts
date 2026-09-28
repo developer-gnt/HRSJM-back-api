@@ -62,7 +62,8 @@ export class AuthService {
       mobile_number: dto.mobile_number,
       email: dto.email ? dto.email.toLowerCase() : null,
       password_hash,
-      roleName: 'MEMBER',
+      roleId: dto.role_id,
+      roleName: dto.role_id ? undefined : 'MEMBER',
     });
 
     await this.auditService.record({

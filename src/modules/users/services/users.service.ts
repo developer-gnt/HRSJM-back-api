@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   Injectable,
   InternalServerErrorException,
@@ -80,6 +81,7 @@ export class UsersService {
     email: string | null;
     password_hash: string;
     roleName?: string;
+    roleId?: string;
   }): Promise<UserEntity> {
     return this.dataSource.transaction(async (manager) => {
       const user = await manager
@@ -93,15 +95,29 @@ export class UsersService {
           }),
         );
 
-      const role = await manager
-        .getRepository(RoleEntity)
-        .findOne({ where: { name: input.roleName ?? 'MEMBER' } });
-      if (!role) {
-        throw new InternalServerErrorException({
-          message: 'Baseline role is missing',
-          code: 'ROLE_NOT_FOUND',
-          details: null,
-        });
+      let role: RoleEntity | null = null;
+      if (input.roleId) {
+        role = await manager
+          .getRepository(RoleEntity)
+          .findOne({ where: { id: input.roleId } });
+        if (!role) {
+          throw new BadRequestException({
+            message: 'Specified role does not exist',
+            code: 'ROLE_NOT_FOUND',
+            details: null,
+          });
+        }
+      } else {
+        role = await manager
+          .getRepository(RoleEntity)
+          .findOne({ where: { name: input.roleName ?? 'MEMBER' } });
+        if (!role) {
+          throw new InternalServerErrorException({
+            message: 'Default role is missing',
+            code: 'ROLE_NOT_FOUND',
+            details: null,
+          });
+        }
       }
 
       await manager
