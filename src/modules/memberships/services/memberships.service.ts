@@ -1,14 +1,17 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Brackets, Repository } from 'typeorm';
+import * as bcrypt from 'bcryptjs';
 import { MembershipEntity } from '../entities/membership.entity';
 import { MembershipCategoryEntity } from '../../membership-categories/entities/membership-category.entity';
 import { MembershipPaymentEntity } from '../../membership-payments/entities/membership-payment.entity';
+import { UsersService } from '../../users/services/users.service';
 import { CreateMembershipDto } from '../dto/create-membership.dto';
 import { UpdateMembershipDto } from '../dto/update-membership.dto';
 import { ListMembershipsDto } from '../dto/list-memberships.dto';
@@ -30,6 +33,7 @@ export class MembershipsService {
     private readonly payments: Repository<MembershipPaymentEntity>,
     private readonly audit: AuditService,
     private readonly documentsService: DocumentsService,
+    private readonly usersService: UsersService,
   ) {}
 
   async apply(
@@ -37,8 +41,6 @@ export class MembershipsService {
     actingUserId: string,
     isAdmin = false,
   ): Promise<MembershipEntity> {
-    const targetUserId = isAdmin && dto.user_id ? dto.user_id : actingUserId;
-
     const category = await this.categories.findOne({
       where: { id: dto.category_id },
     });
@@ -59,11 +61,55 @@ export class MembershipsService {
       });
     }
 
+    let targetUserId: string;
+
+    if (dto.mobile_number) {
+      // Validate mobile number and optional email for applicant
+      const existingUser = await this.usersService.findByLoginIdentifier(dto.mobile_number);
+      if (existingUser) {
+        targetUserId = existingUser.id;
+      } else {
+        // Check email duplicate if email provided
+        if (dto.email) {
+          const emailUser = await this.usersService.findByLoginIdentifier(dto.email);
+          if (emailUser) {
+            throw new ConflictException({
+              message: 'Email is already registered by another account',
+              code: 'EMAIL_TAKEN',
+              details: { email: dto.email },
+            });
+          }
+        }
+
+        // Create new user with default password '123456' and role 'MEMBER'
+        const passwordHash = await bcrypt.hash('123456', 10);
+        const newUser = await this.usersService.createUserWithRole({
+          full_name: dto.full_name || 'Applicant',
+          mobile_number: dto.mobile_number,
+          email: dto.email ? dto.email.toLowerCase() : null,
+          password_hash: passwordHash,
+          roleName: 'MEMBER',
+        });
+        targetUserId = newUser.id;
+      }
+    } else {
+      targetUserId = isAdmin && dto.user_id ? dto.user_id : actingUserId;
+    }
+
+    // Merge personal_details and application_data
+    const appData = {
+      ...(dto.application_data ?? {}),
+      ...(dto.personal_details ? { personal_details: dto.personal_details } : {}),
+      ...(dto.full_name ? { full_name: dto.full_name } : {}),
+      ...(dto.mobile_number ? { mobile_number: dto.mobile_number } : {}),
+      ...(dto.email ? { email: dto.email } : {}),
+    };
+
     const membership = this.memberships.create({
       user_id: targetUserId,
       category_id: category.id,
       status: MembershipStatus.PENDING,
-      application_data: dto.application_data ?? null,
+      application_data: Object.keys(appData).length > 0 ? appData : null,
       admin_notes: dto.admin_notes ?? null,
       created_by: actingUserId,
       updated_by: actingUserId,

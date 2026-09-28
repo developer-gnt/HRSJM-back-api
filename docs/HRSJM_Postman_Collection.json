@@ -368,7 +368,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"category_id\": \"<CATEGORY_UUID>\",\n  \"personal_details\": {\n    \"dob\": \"1990-01-01\",\n    \"gender\": \"MALE\",\n    \"address\": \"123 Main St, New Delhi\"\n  }\n}"
+              "raw": "{\n  \"category_id\": \"<CATEGORY_UUID>\",\n  \"full_name\": \"Applicant Name\",\n  \"mobile_number\": \"9876543210\",\n  \"email\": \"applicant@example.com\",\n  \"personal_details\": {\n    \"dob\": \"1990-01-01\",\n    \"gender\": \"MALE\",\n    \"address\": \"123 Main St, New Delhi\"\n  }\n}"
             },
             "url": { "raw": "{{baseUrl}}/memberships/apply", "host": ["{{baseUrl}}"], "path": ["memberships", "apply"] }
           }

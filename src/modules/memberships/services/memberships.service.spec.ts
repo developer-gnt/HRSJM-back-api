@@ -56,12 +56,18 @@ describe('MembershipsService', () => {
       findByRelatedEntity: jest.fn().mockResolvedValue([]),
     };
 
+    const usersService = {
+      findByLoginIdentifier: jest.fn().mockResolvedValue(null),
+      createUserWithRole: jest.fn().mockResolvedValue({ id: 'new-user-1' }),
+    };
+
     service = new MembershipsService(
       membershipsRepo as never,
       categoriesRepo as never,
       paymentsRepo as never,
       audit as never,
       documentsService as never,
+      usersService as never,
     );
   });
 

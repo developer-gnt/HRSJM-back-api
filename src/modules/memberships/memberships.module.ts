@@ -7,6 +7,7 @@ import { MembershipCategoryEntity } from '../membership-categories/entities/memb
 import { MembershipPaymentEntity } from '../membership-payments/entities/membership-payment.entity';
 import { DocumentsModule } from '../documents/documents.module';
 import { AuditModule } from '../audit/audit.module';
+import { UsersModule } from '../users/users.module';
 
 @Module({
   imports: [
@@ -17,6 +18,7 @@ import { AuditModule } from '../audit/audit.module';
     ]),
     DocumentsModule,
     AuditModule,
+    UsersModule,
   ],
   controllers: [MembershipsController],
   providers: [MembershipsService],

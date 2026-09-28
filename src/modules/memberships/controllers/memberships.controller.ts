@@ -32,7 +32,7 @@ import { UpdateMembershipStatusDto } from '../dto/update-membership-status.dto';
 export class MembershipsController {
   constructor(private readonly membershipsService: MembershipsService) {}
 
-  @Post('memberships')
+  @Post(['memberships', 'memberships/apply'])
   @ApiOperation({ summary: 'Apply for membership' })
   apply(
     @Body() dto: CreateMembershipDto,
