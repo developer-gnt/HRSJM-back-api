@@ -69,8 +69,9 @@ ends with a working, committed, testable increment before moving on.
 - **Done when:** donation created → status visible → receipt ref shown; committed
 
 ## Phase 11 — Hardening & Handoff (completed)
-- Unit + integration tests for every module (BRD §18)
-- Full Swagger/OpenAPI documentation (BRD §19)
+- Unit tests: 143 Jest tests across 15 suites, every service + guards + envelopes covered
+- Integration smoke suite: `scripts/test-smoke.mjs` (132 cases, live HTTP + DB)
+- Full Swagger/OpenAPI documentation (BRD §19) at `/docs`
 - Seed data, env audit, no production synchronize, final QA
 - **Done when:** all modules documented, tested, and pass a full manual pass; committed
 

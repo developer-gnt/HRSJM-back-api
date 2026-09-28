@@ -53,16 +53,25 @@ Health check: `GET http://localhost:3000/api/v1/health` → `{"success":true,"da
 
 Swagger docs: http://localhost:3000/docs
 
-### 5. Run the smoke suite
+### 5. Run the tests
 
-Against a running dev server:
+Unit tests (no database needed, mocks all repositories):
+
+```bash
+npm test
+```
+
+143 unit tests across 15 suites cover every service (auth/RBAC, memberships,
+renewals, documents, assistance, support, notifications, admin aggregates,
+receipts, donations, accounting boundary), the guards, the response/error
+envelopes, and the JWT strategy. Coverage: `npm run test:cov`.
+
+Integration smoke suite (against a running dev server, exercises real
+HTTP + database behavior end to end):
 
 ```bash
 npm run test:smoke
 ```
-
-Creates fresh throw-away accounts/data per run and exercises every implemented
-phase end to end.
 
 ## API map (all routes under `/api/v1`)
 
