@@ -11,6 +11,7 @@ import { AssistanceModule } from "./modules/assistance/assistance.module";
 import { DocumentsModule } from "./modules/documents/documents.module";
 import { HealthModule } from "./modules/health/health.module";
 import { MembershipsModule } from "./modules/memberships/memberships.module";
+import { NotificationsModule } from "./modules/notifications/notifications.module";
 import { RenewalsModule } from "./modules/renewals/renewals.module";
 import { SupportModule } from "./modules/support/support.module";
 import { UsersModule } from "./modules/users/users.module";
@@ -43,6 +44,7 @@ import { UsersModule } from "./modules/users/users.module";
     DocumentsModule,
     AssistanceModule,
     SupportModule,
+    NotificationsModule,
     AuthModule,
   ],
   providers: [

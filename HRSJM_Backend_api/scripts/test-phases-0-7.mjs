@@ -1,5 +1,5 @@
 /**
- * HRSJM Backend API — integration smoke tests for Phases 0-6.
+ * HRSJM Backend API — integration smoke tests for Phases 0-7.
  *
  * Run against a live dev server:
  *   node scripts/test-phases-0-6.mjs
@@ -331,6 +331,121 @@ async function main() {
     check("owner attaches file to ticket", attach.status === 201 && attach.data?.data?.relatedEntityType === "SUPPORT_TICKET" && attach.data?.data?.relatedEntityId === ticketId);
   } catch (err) {
     check("phase 6 flow", false, err.message);
+  }
+
+  // ---------- PHASE 7 ----------
+  section("Phase 7 — Notifications");
+  const notifTitle = `Smoke broadcast ${suffix}`;
+  const specificTitle = `Smoke donor note ${suffix}`;
+  const scheduledTitle = `Smoke scheduled ping ${suffix}`;
+  const findInFeed = async (token, title, unreadOnly = false) => {
+    // Recipient rows are newest-first, so a recent broadcast lands on page 1
+    // unless earlier runs left a large unread backlog behind it.
+    for (let page = 1; page <= 4; page++) {
+      const feed = await api(`/notifications/me?page=${page}&limit=50${unreadOnly ? "&unreadOnly=true" : ""}`, { token });
+      const items = feed.data?.data?.items ?? [];
+      const hit = items.find((i) => i.notification?.title === title);
+      if (hit) return { hit, feed };
+      if (items.length < 50) return { hit: null, feed };
+    }
+    return { hit: null, feed: null };
+  };
+  try {
+    // RBAC
+    const memberSend = await api("/notifications", { method: "POST", token: memberToken, body: { title: "x", body: "y", targetAudience: "ALL_USERS" } });
+    check("member cannot send notification (403)", memberSend.status === 403, `status ${memberSend.status}`);
+    const memberListAll = await api("/notifications", { token: memberToken });
+    check("member cannot list all notifications (403)", memberListAll.status === 403, `status ${memberListAll.status}`);
+
+    // Audience fan-out to every active MEMBER
+    const beforeFeed = await api("/notifications/me?limit=1", { token: memberToken });
+    const beforeUnread = beforeFeed.data?.data?.unreadCount ?? 0;
+
+    const broadcast = await api("/notifications", {
+      method: "POST",
+      token: adminToken,
+      body: { title: notifTitle, body: "Broadcast to all members.", targetAudience: "MEMBERS" },
+    });
+    check("admin sends notification to MEMBERS (201)", broadcast.status === 201 && broadcast.data?.data?.status === "SENT", `status ${broadcast.status}`);
+    check("fan-out counted >= 2 members", broadcast.data?.data?.recipientCount >= 2, `got ${broadcast.data?.data?.recipientCount}`);
+
+    const { hit: feedHit, feed: afterFeedData } = await findInFeed(memberToken, notifTitle);
+    check("member feed contains the broadcast", !!feedHit);
+    check("feed item starts unread", feedHit?.isRead === false && feedHit?.readAt === null);
+    check("unreadCount grew by at least 1", (afterFeedData?.data?.data?.unreadCount ?? 0) >= beforeUnread + 1, `before ${beforeUnread}, after ${afterFeedData?.data?.data?.unreadCount}`);
+
+    const unreadOnly = await api("/notifications/me?limit=50&unreadOnly=true", { token: memberToken });
+    check("unreadOnly filter returns the broadcast", (unreadOnly.data?.data?.items ?? []).some((i) => i.notification?.title === notifTitle));
+
+    // Read state lifecycle
+    const markRead = await api(`/notifications/recipients/${feedHit.id}/read`, { method: "PATCH", token: memberToken });
+    check("mark one notification read", markRead.status === 200 && !!markRead.data?.data?.readAt);
+    const afterReadFeed = await api("/notifications/me?limit=1", { token: memberToken });
+    check("unreadCount dropped by 1 after read", afterReadFeed.data?.data?.unreadCount === afterFeedData.data.data.unreadCount - 1, `${afterFeedData.data.data.unreadCount - 1} vs ${afterReadFeed.data?.data?.unreadCount}`);
+    const crossRead = await api(`/notifications/recipients/${feedHit.id}/read`, { method: "PATCH", token: donorToken });
+    check("other user cannot mark my notification read (404)", crossRead.status === 404, `status ${crossRead.status}`);
+
+    // SPECIFIC_USER targeting
+    const donorUser = await login(DONOR);
+    const specific = await api("/notifications", {
+      method: "POST",
+      token: adminToken,
+      body: { title: specificTitle, body: "Personal donor message.", targetAudience: "SPECIFIC_USER", userIds: [donorUser.user.id] },
+    });
+    check("admin sends SPECIFIC_USER notification (201)", specific.status === 201 && specific.data?.data?.recipientCount === 1, `status ${specific.status}`);
+    const donorFeed = await findInFeed(donorToken, specificTitle);
+    check("donor feed contains targeted notification", !!donorFeed.hit);
+    const memberSees = await findInFeed(memberToken, specificTitle);
+    check("member feed does NOT contain targeted notification", !memberSees.hit);
+
+    const badSpecific = await api("/notifications", {
+      method: "POST",
+      token: adminToken,
+      body: { title: "No ids", body: "Should fail.", targetAudience: "SPECIFIC_USER" },
+    });
+    check("SPECIFIC_USER without userIds rejected (400)", badSpecific.status === 400, `status ${badSpecific.status}`);
+    const bogusSpecific = await api("/notifications", {
+      method: "POST",
+      token: adminToken,
+      body: { title: "Bogus ids", body: "Should fail.", targetAudience: "SPECIFIC_USER", userIds: ["00000000-0000-4000-8000-000000000000"] },
+    });
+    check("SPECIFIC_USER with unknown user rejected (400)", bogusSpecific.status === 400, `status ${bogusSpecific.status}`);
+
+    // Admin views + recipient read state
+    const adminList = await api("/notifications?page=1&limit=100", { token: adminToken });
+    const listed = (adminList.data?.data?.items ?? []).find((n) => n.title === notifTitle);
+    check("admin list shows notification with recipientCount", !!listed && listed.recipientCount >= 2, `status ${adminList.status}`);
+    const recipients = await api(`/notifications/${listed?.id}/recipients`, { token: adminToken });
+    check("admin views recipients with read state", recipients.status === 200 && (recipients.data?.data?.items ?? []).some((r) => r.readAt !== null) && (recipients.data?.data?.items ?? []).every((r) => r.user?.id));
+
+    // Scheduled sends (ticker picks up due notifications)
+    const scheduledAt = new Date(Date.now() + 3000).toISOString();
+    const scheduled = await api("/notifications", {
+      method: "POST",
+      token: adminToken,
+      body: { title: scheduledTitle, body: "Scheduled donor ping.", targetAudience: "DONORS", scheduledAt },
+    });
+    check("scheduling returns SCHEDULED with sentAt null", scheduled.status === 201 && scheduled.data?.data?.status === "SCHEDULED" && scheduled.data?.data?.sentAt === null, `status ${scheduled.status}`);
+    const donorEarly = await findInFeed(donorToken, scheduledTitle);
+    check("scheduled notification not in feed before send", !donorEarly.hit);
+
+    let sent = false;
+    for (let i = 0; i < 15 && !sent; i++) {
+      await new Promise((r) => setTimeout(r, 2000));
+      const list = await api("/notifications?page=1&limit=100&status=SENT", { token: adminToken });
+      sent = (list.data?.data?.items ?? []).some((n) => n.title === scheduledTitle && n.sentAt);
+    }
+    check("ticker dispatches scheduled notification", sent);
+    const donorLate = await findInFeed(donorToken, scheduledTitle);
+    check("scheduled notification lands in donor feed", !!donorLate.hit);
+
+    // Mark all read
+    const readAll = await api("/notifications/me/read-all", { method: "PATCH", token: memberToken });
+    check("mark all read returns updated count", readAll.status === 200);
+    const zeroFeed = await api("/notifications/me?limit=1", { token: memberToken });
+    check("unreadCount is 0 after read-all", zeroFeed.data?.data?.unreadCount === 0, `got ${zeroFeed.data?.data?.unreadCount}`);
+  } catch (err) {
+    check("phase 7 flow", false, err.message);
   }
 
   // ---------- SUMMARY ----------

@@ -21,7 +21,7 @@ ends with a working, committed, testable increment before moving on.
 - Validate membership endpoint
 - **Done when:** a member's digital ID can be fetched and validated; committed
 
-## Phase 3 — Membership Renewal
+## Phase 3 — Membership Renewal (completed)
 - Renewal flow: validate membership → eligibility → period → amount → payment method → submit
 - Statuses PENDING/APPROVED/REJECTED/ACTIVE, payment statuses PENDING/SUCCESS/FAILED/REFUNDED
 - Renewal history, expiry update, receipt reference
@@ -29,24 +29,24 @@ ends with a working, committed, testable increment before moving on.
 - Keep renewal policy configurable (BRD: do not hard-code until HRSJM confirms)
 - **Done when:** member can renew, admin can approve, expiry updates; committed
 
-## Phase 4 — Documents / File Management
+## Phase 4 — Documents / File Management (completed)
 - Secure upload with MIME/extension/size validation, safe filenames
 - Entity linking (related_entity_type + id), authorized download only
 - Soft delete/archive + audit
 - **Done when:** upload → authorized download works, unauthorized download rejected; committed
 
-## Phase 5 — Assistance Requests (Donation Seeker)
+## Phase 5 — Assistance Requests (Donation Seeker) (completed)
 - Create request: full name, mobile, email, amount, reason, description, supporting doc
 - Statuses PENDING/UNDER_REVIEW/APPROVED/REJECTED/CLOSED
 - User sees own requests; admin reviews with status changes + remarks
 - **Done when:** request lifecycle works end to end with ownership enforced; committed
 
-## Phase 6 — Support / Complaints
+## Phase 6 — Support / Complaints (completed)
 - Tickets: subject, description, attachment, status SUBMITTED/UNDER_REVIEW/RESOLVED/CLOSED
 - Ticket messages + attachments, admin response, resolved_at
 - **Done when:** user creates ticket, admin responds and closes; committed
 
-## Phase 7 — Notifications
+## Phase 7 — Notifications (completed)
 - Notifications with target audience ALL_USERS/MEMBERS/DONORS/DONATION_SEEKERS/SPECIFIC_USER
 - notification_recipients with read state + delivery status, mark-read endpoint
 - Scheduled sends
