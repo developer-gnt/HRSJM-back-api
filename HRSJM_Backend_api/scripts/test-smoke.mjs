@@ -1,5 +1,5 @@
 /**
- * HRSJM Backend API — integration smoke tests for Phases 0-7.
+ * HRSJM Backend API — HRSJM integration smoke suite (all implemented phases).
  *
  * Run against a live dev server:
  *   node scripts/test-phases-0-6.mjs
@@ -446,6 +446,51 @@ async function main() {
     check("unreadCount is 0 after read-all", zeroFeed.data?.data?.unreadCount === 0, `got ${zeroFeed.data?.data?.unreadCount}`);
   } catch (err) {
     check("phase 7 flow", false, err.message);
+  }
+
+  // ---------- PHASE 8 ----------
+  section("Phase 8 — Admin / Member Management");
+  try {
+    const memberLogin = await login(MEMBER);
+    const memberId = memberLogin.user.id;
+
+    const memberDash = await api("/admin/dashboard", { token: memberToken });
+    check("member cannot open dashboard (403)", memberDash.status === 403, `status ${memberDash.status}`);
+
+    const dash = await api("/admin/dashboard", { token: adminToken });
+    check("admin dashboard returns 200", dash.status === 200);
+    check("dashboard has all aggregate sections", !!dash.data?.data?.users?.byRole && !!dash.data?.data?.memberships?.byStatus && !!dash.data?.data?.renewals?.payments && !!dash.data?.data?.assistance?.byStatus && !!dash.data?.data?.tickets?.byStatus);
+    check("dashboard counts members >= 2", dash.data?.data?.users?.byRole?.MEMBER >= 2, `got ${dash.data?.data?.users?.byRole?.MEMBER}`);
+    check("dashboard counts donors >= 1", dash.data?.data?.users?.byRole?.DONOR >= 1, `got ${dash.data?.data?.users?.byRole?.DONOR}`);
+    check("dashboard memberships total >= 1", dash.data?.data?.memberships?.total >= 1, `got ${dash.data?.data?.memberships?.total}`);
+
+    const memberListForbidden = await api("/admin/members", { token: memberToken });
+    check("member cannot list members (403)", memberListForbidden.status === 403, `status ${memberListForbidden.status}`);
+
+    const searchSelf = await api(`/admin/members?search=${encodeURIComponent(freshMember.email)}`, { token: adminToken });
+    check("search finds fresh member with membership snapshot key", searchSelf.status === 200 && (searchSelf.data?.data?.items ?? []).some((u) => u.email === freshMember.email && "membership" in u));
+
+    const donorFilter = await api("/admin/members?role=DONOR", { token: adminToken });
+    check("role filter returns only donors", donorFilter.status === 200 && (donorFilter.data?.data?.items ?? []).length >= 1 && (donorFilter.data?.data?.items ?? []).every((u) => u.role === "DONOR"));
+
+    const memberFilter = await api("/admin/members?role=MEMBER", { token: adminToken });
+    check("role filter returns only members", memberFilter.status === 200 && (memberFilter.data?.data?.items ?? []).every((u) => u.role === "MEMBER") && (memberFilter.data?.data?.items ?? []).length >= 1);
+
+    const adminNotInList = await api("/admin/members?search=admin", { token: adminToken });
+    check("admin accounts excluded by default", (adminNotInList.data?.data?.items ?? []).every((u) => u.role !== "ADMIN"));
+
+    const view360 = await api(`/admin/members/${memberId}`, { token: adminToken });
+    check("member 360 view returns profile", view360.status === 200 && view360.data?.data?.profile?.email === MEMBER.email);
+    check("360 view has memberships/renewals/assistance/tickets/documents/notifications", !!view360.data?.data?.memberships && !!view360.data?.data?.renewals && !!view360.data?.data?.assistanceRequests && !!view360.data?.data?.tickets && !!view360.data?.data?.documents && !!view360.data?.data?.notifications);
+    check("360 view hides password hash", !("passwordHash" in (view360.data?.data?.profile ?? {})));
+
+    const notFound = await api("/admin/members/00000000-0000-4000-8000-000000000000", { token: adminToken });
+    check("360 view unknown member (404)", notFound.status === 404, `status ${notFound.status}`);
+
+    const memberViews = await api(`/admin/members/${memberId}`, { token: donorToken });
+    check("donor cannot open 360 view (403)", memberViews.status === 403, `status ${memberViews.status}`);
+  } catch (err) {
+    check("phase 8 flow", false, err.message);
   }
 
   // ---------- SUMMARY ----------

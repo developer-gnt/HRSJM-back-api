@@ -52,7 +52,7 @@ ends with a working, committed, testable increment before moving on.
 - Scheduled sends
 - **Done when:** targeted notification reaches the right users' feeds and read state works; committed
 
-## Phase 8 — Admin / Member Management
+## Phase 8 — Admin / Member Management (completed)
 - Admin dashboard aggregates (members, expiring, renewals, payments, donations, assistance, tickets)
 - Member list/search/filter, member detail 360° view
 - **Done when:** dashboard + member management endpoints live; committed
