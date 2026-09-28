@@ -86,9 +86,14 @@ HRSJM — Digital Membership & Donation Platform backend. The backend is the **s
   - Schema: Migration `CreateExpenseEntriesSchema1790600000000` created table `expense_entries`, sequence `expense_voucher_number_seq`, permissions `expense.read`, `expense.create`, `expense.update`, `expense.manage_status` mapped to ADMIN.
   - Invariants: Sequence-generated vouchers (`EXP-YYYYMMDD-#####`), transactional double-entry ledger posting (`Dr Expense / Cr Bank-Cash`), cancellation reversal integration, audit logging.
   - Verification: Clean build, 13/13 unit test suites passed (132 tests total across project).
+- Phase 8 (Receipt / Payment Accounting Integration — 5 APIs):
+  - Module: `receipt-entries` (`ReceiptEntryEntity`, `ReceiptEntriesController`, `ReceiptEntriesService`).
+  - Schema: Migration `CreateReceiptEntriesSchema1790610000000` created table `receipt_entries`, sequence `receipt_voucher_number_seq`, permissions `receipt_entry.read`, `receipt_entry.create`, `receipt_entry.update`, `receipt_entry.manage_status` mapped to ADMIN.
+  - Invariants: Sequence-generated vouchers (`REC-YYYYMMDD-#####`), transactional double-entry ledger posting (`Dr Bank-Cash / Cr Income Account`), cancellation reversal integration, audit logging.
+  - Verification: Clean build, 14/14 unit test suites passed (147 tests total across project).
 
 ### In progress / Next
-- Next: **Phase 8 — Receipt / Payment Accounting Integration (0 new senior APIs)** per `phases.md` (downstream double-entry posting from Arshad's receipt entries `Dr Bank/Cash / Cr Income Account`).
+- Next: **Phase 9 — Donation Financial / Payment Integration (7 APIs)** per `phases.md` (donation payments, gateway verification, 80G tax receipts, accounting entries `Dr Bank / Cr Donation Income`, refunds).
 
 ### Progress tracker status (from phases.md)
 - Phase 0: ✅ done (verified 2026-09-26)
@@ -99,7 +104,8 @@ HRSJM — Digital Membership & Donation Platform backend. The backend is the **s
 - Phase 5: ✅ done (verified 2026-09-26)
 - Phase 6: ✅ done (verified 2026-09-28)
 - Phase 7: ✅ done (verified 2026-09-28)
-- Phases 8–13: ⬜ not started
+- Phase 8: ✅ done (verified 2026-09-28)
+- Phases 9–13: ⬜ not started
 
 ---
 

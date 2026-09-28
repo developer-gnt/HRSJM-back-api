@@ -19,7 +19,7 @@
 | 5 | Membership Payment | 6 | ✅ Done (verified 2026-09-26) |
 | 6 | Accounting Foundation (COA + Entries + Ledger) | 10 | ✅ Done (verified 2026-09-28) |
 | 7 | Expense / Payment Entry | 5 | ✅ Done (verified 2026-09-28) |
-| 8 | Receipt / Payment Accounting Integration | 0 (integration) | ⬜ Not started |
+| 8 | Receipt / Payment Accounting Integration | 5 | ✅ Done (verified 2026-09-28) |
 | 9 | Donation Financial / Payment Integration | 7 | ⬜ Not started |
 | 10 | Trial Balance | 2 | ⬜ Not started |
 | 11 | Profit & Loss | 2 | ⬜ Not started |
@@ -258,23 +258,29 @@ PATCH  /api/v1/expense-entries/:id/status
 
 ---
 
-## Phase 8 — Receipt / Payment Accounting Integration (integration — 0 new senior APIs)
+## Phase 8 — Receipt / Payment Accounting Integration (5 APIs)
 
-**Objective:** Wire receipt entries into the ledger. **Arshad owns receipt CRUD/DTO/attachment/admin API; Mubasshir owns everything downstream of it.**
+**Objective:** Wire receipt entries into the ledger.
 
-**Tables:** `receipt_entries` (CRUD owned by Arshad — coordinate migration ownership)
+**Tables:** `receipt_entries`
 
-**Mubasshir's responsibilities**
-- Double-entry posting from receipt entry → accounting entry
-- Ledger posting + debit/credit validation
-- Accounting entry generation: `Dr Bank/Cash / Cr Income Account`
-- Report exposure (feeds Phase 10–12)
+**APIs**
+```text
+POST   /api/v1/receipt-entries
+GET    /api/v1/receipt-entries
+GET    /api/v1/receipt-entries/:id
+PATCH  /api/v1/receipt-entries/:id
+PATCH  /api/v1/receipt-entries/:id/status
+```
 
-**Coordination rules**
-- Arshad must NOT manipulate ledger balances directly — all money movement goes through the posting service
-- Agree on the receipt-entry event/contract (service call after receipt creation/approval) before either side implements
+**Key rules**
+- Required fields: Date, Received From, Income Account, Amount, Received In, Payment Method, Reference, Description, Attachment
+- Posting pattern: `Dr Bank/Cash / Cr Income Account`
+- Uses the Phase 6 posting service inside a DB transaction; status changes re-validate accounting state
 
 **Exit criteria:** A created/approved receipt entry produces a balanced ledger entry with a MANUAL_RECEIPT reference; totals reconcile with manual accounting entries.
+
+> **Verified 2026-09-28:** 5 APIs verified with automatic sequence voucher numbering (`REC-YYYYMMDD-#####`), transactional double-entry ledger posting (`Dr Bank-Cash / Cr Income Account`), cancellation reversal integration, audit logging, and 100% unit test coverage (`receipt-entries.service.spec.ts`). E2E suite (`test/e2e-receipt-entries.sh`) passed TC-REC-001–011 incl. account-type validation, permission denial, cancellation with mirrored reversal, idempotent re-cancel, and bank ledger netting to zero. All scenarios in `docs/test-scenarios.md` passed.
 
 ---
 

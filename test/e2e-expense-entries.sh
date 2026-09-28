@@ -62,7 +62,7 @@ echo "TC-EXP-005 non-admin-denied: http=$(code "$R") code=$(body "$R" | jget err
 
 # TC-EXP-006: Admin list
 R=$(req GET /expense-entries "$ADMIN_TOKEN")
-echo "TC-EXP-006 list: http=$(code "$R") total=$(body "$R" | jget data.meta.total)"
+echo "TC-EXP-006 list: http=$(code "$R") total=$(body "$R" | jget data.total)"
 
 # TC-EXP-007: View detail — balanced lines Dr Expense / Cr Bank
 R=$(req GET "/expense-entries/$Voucher_ID" "$ADMIN_TOKEN")

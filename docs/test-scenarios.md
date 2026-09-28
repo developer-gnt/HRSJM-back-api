@@ -271,7 +271,7 @@ Every response must use the standard envelopes:
 
 ## Phase 8 — Receipt / Payment Accounting Integration (5 APIs)
 
-> **Executed 2026-09-28 (unit tests):** PASS — TC-REC-001 through TC-REC-009. Unit test suite: `receipt-entries.service.spec.ts` (15 tests) — 100% passing.
+> **Executed 2026-09-28 (unit + E2E suite `test/e2e-receipt-entries.sh`):** PASS — TC-REC-001 through TC-REC-011 (plus a/b/c variants). Unit test suite: `receipt-entries.service.spec.ts` (15 tests) — 100% passing.
 
 | ID | Scenario | Steps | Expected |
 |---|---|---|---|
@@ -284,6 +284,10 @@ Every response must use the standard envelopes:
 | TC-REC-007 | Update Receipt Metadata | PATCH `/api/v1/receipt-entries/:id` with updated received_from / description / reference | 200 with updated fields; audit log recorded |
 | TC-REC-008 | Cancel Receipt Voucher & Reverse Journal | PATCH `/api/v1/receipt-entries/:id/status` -> CANCELLED | 200 status becomes `CANCELLED`; mirrored reversal journal posted via `AccountingPostingService.reverse` |
 | TC-REC-009 | Reject Update/Reactivate Cancelled Receipt | PATCH on already `CANCELLED` receipt | 400 `RECEIPT_ENTRY_ALREADY_CANCELLED` / `RECEIPT_ENTRY_CANNOT_REACTIVATE` |
+| TC-REC-009b | Reversal entry exists by reference | GET `/api/v1/accounting/entries?reference_type=MANUAL_RECEIPT&reference_id=<voucherId>` | 200 with exactly 2 entries — the journal and its mirrored reversal |
+| TC-REC-009c | Re-cancel is idempotent | PATCH status → `CANCELLED` again | 200, still `CANCELLED`; no duplicate reversal posted |
+| TC-REC-010 | Bank ledger nets to zero after cancellation | GET `/api/v1/accounts/:id/ledger` for Bank after cancel | 200; closing balance reflects journal + mirrored reversal = net zero |
+| TC-REC-011 | CASH receipt posts Dr Cash | Create receipt with `payment_method: CASH`, view entry detail | 200 with Dr line on account **1002 (Cash)** |
 
 ---
 
