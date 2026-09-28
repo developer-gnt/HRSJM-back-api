@@ -12,6 +12,7 @@ import { AssistanceModule } from "./modules/assistance/assistance.module";
 import { AccountingModule } from "./modules/accounting/accounting.module";
 import { ReceiptsModule } from "./modules/receipts/receipts.module";
 import { DocumentsModule } from "./modules/documents/documents.module";
+import { DonationsModule } from "./modules/donations/donations.module";
 import { HealthModule } from "./modules/health/health.module";
 import { MembershipsModule } from "./modules/memberships/memberships.module";
 import { NotificationsModule } from "./modules/notifications/notifications.module";
@@ -51,6 +52,7 @@ import { UsersModule } from "./modules/users/users.module";
     AdminModule,
     AccountingModule,
     ReceiptsModule,
+    DonationsModule,
     AuthModule,
   ],
   providers: [

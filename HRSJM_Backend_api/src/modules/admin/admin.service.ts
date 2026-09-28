@@ -18,6 +18,11 @@ import { AssistanceRequest, AssistanceRequestStatus } from "../assistance/entiti
 import { SupportTicket, TicketStatus } from "../support/entities/support-ticket.entity";
 import { Document } from "../documents/entities/document.entity";
 import { DeliveryStatus, NotificationRecipient } from "../notifications/entities/notification-recipient.entity";
+import {
+  Donation,
+  DonationMethod,
+  DonationStatus,
+} from "../donations/entities/donation.entity";
 import { ListMembersQueryDto } from "./dto/list-members.query.dto";
 
 // Roles surfaced in the member list when no role filter is given
@@ -49,6 +54,8 @@ export class AdminService {
     private readonly ticketsRepo: Repository<SupportTicket>,
     @InjectRepository(Document)
     private readonly documentsRepo: Repository<Document>,
+    @InjectRepository(Donation)
+    private readonly donationsRepo: Repository<Donation>,
     @InjectRepository(NotificationRecipient)
     private readonly recipientsRepo: Repository<NotificationRecipient>,
     private readonly usersService: UsersService,
@@ -66,6 +73,9 @@ export class AdminService {
       collectedRow,
       assistanceStatusRows,
       ticketStatusRows,
+      donationStatusRows,
+      donationMethodRows,
+      donationReceivedRow,
     ] = await Promise.all([
       this.usersRepo
         .createQueryBuilder("user")
@@ -126,6 +136,23 @@ export class AdminService {
         .addSelect("COUNT(*)", "count")
         .groupBy("t.status")
         .getRawMany(),
+      this.donationsRepo
+        .createQueryBuilder("d")
+        .select("d.status", "status")
+        .addSelect("COUNT(*)", "count")
+        .groupBy("d.status")
+        .getRawMany(),
+      this.donationsRepo
+        .createQueryBuilder("d")
+        .select("d.paymentMethod", "status")
+        .addSelect("COUNT(*)", "count")
+        .groupBy("d.paymentMethod")
+        .getRawMany(),
+      this.donationsRepo
+        .createQueryBuilder("d")
+        .select("COALESCE(SUM(d.amount), 0)", "total")
+        .where("d.status = :status", { status: DonationStatus.RECEIVED })
+        .getRawOne(),
     ]);
 
     const usersByRole = countMap(usersByRoleRows, Object.values(UserRole));
@@ -136,6 +163,8 @@ export class AdminService {
     const paymentsByStatus = countMap(renewalPaymentRows, Object.values(RenewalPaymentStatus));
     const assistanceByStatus = countMap(assistanceStatusRows, Object.values(AssistanceRequestStatus));
     const ticketsByStatus = countMap(ticketStatusRows, Object.values(TicketStatus));
+    const donationsByStatus = countMap(donationStatusRows, Object.values(DonationStatus));
+    const donationsByMethod = countMap(donationMethodRows, Object.values(DonationMethod));
 
     return {
       message: "Dashboard aggregates fetched",
@@ -169,7 +198,12 @@ export class AdminService {
           byStatus: ticketsByStatus,
           open: (ticketsByStatus[TicketStatus.SUBMITTED] ?? 0) + (ticketsByStatus[TicketStatus.UNDER_REVIEW] ?? 0),
         },
-        // Donations section lands here with Phase 10
+        donations: {
+          total: Object.values(donationsByStatus).reduce((a, b) => a + b, 0),
+          byStatus: donationsByStatus,
+          byMethod: donationsByMethod,
+          receivedAmount: Number(donationReceivedRow?.total ?? 0),
+        },
       },
     };
   }

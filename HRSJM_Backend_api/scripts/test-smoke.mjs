@@ -568,6 +568,67 @@ async function main() {
     check("phase 9 flow", false, err.message);
   }
 
+  // ---------- PHASE 10 ----------
+  section("Phase 10 — Donation Management");
+  try {
+    const guest = await api("/donations/guest", {
+      method: "POST",
+      body: { donorName: "Rafiq Mahmood", donorEmail: "rafiq@example.com", amount: 2500, paymentMethod: "BANK_TRANSFER", cause: "Orphan Care", transactionId: `TRX-${suffix}` },
+    });
+    check("guest donation recorded without account (201)", guest.status === 201 && guest.data?.data?.status === "PENDING", `status ${guest.status}`);
+    check("guest donation shows guest donor info", guest.data?.data?.donor?.linked === false && guest.data?.data?.donor?.fullName === "Rafiq Mahmood");
+
+    const guestBad = await api("/donations/guest", {
+      method: "POST",
+      body: { amount: 100, paymentMethod: "CASH" },
+    });
+    check("guest donation without donor name rejected (400)", guestBad.status === 400, `status ${guestBad.status}`);
+
+    const linked = await api("/donations", {
+      method: "POST",
+      token: donorToken,
+      body: { amount: 1000, paymentMethod: "MOBILE_WALLET", cause: "Flood Relief" },
+    });
+    check("donor records linked donation (201)", linked.status === 201 && linked.data?.data?.donor?.linked === true, `status ${linked.status}`);
+
+    const mine = await api("/donations/me", { token: donorToken });
+    check("donor sees own donations with receipt ref field", mine.status === 200 && (mine.data?.data?.items ?? []).some((d) => d.id === linked.data.data.id && "receiptNumber" in d));
+
+    const memberList = await api("/donations", { token: memberToken });
+    check("member cannot list all donations (403)", memberList.status === 403, `status ${memberList.status}`);
+
+    const crossView = await api(`/donations/${linked.data.data.id}`, { token: memberToken });
+    check("other user cannot view donation (404)", crossView.status === 404, `status ${crossView.status}`);
+
+    const adminList = await api(`/donations?search=${encodeURIComponent("Rafiq Mahmood")}`, { token: adminToken });
+    check("admin list finds guest donation by search", adminList.status === 200 && (adminList.data?.data?.items ?? []).some((d) => d.id === guest.data.data.id));
+
+    const badTransition = await api(`/donations/${guest.data.data.id}/status`, { method: "PATCH", token: adminToken, body: { status: "REFUNDED" } });
+    check("PENDING -> REFUNDED rejected (400)", badTransition.status === 400, `status ${badTransition.status}`);
+
+    const receive = await api(`/donations/${guest.data.data.id}/status`, {
+      method: "PATCH",
+      token: adminToken,
+      body: { status: "RECEIVED", receiptNumber: "RCV-2026-9999", remarks: "Bank slip verified" },
+    });
+    check("admin marks donation RECEIVED with receipt ref", receive.status === 200 && receive.data?.data?.status === "RECEIVED" && receive.data?.data?.receiptNumber === "RCV-2026-9999");
+
+    const refund = await api(`/donations/${guest.data.data.id}/status`, { method: "PATCH", token: adminToken, body: { status: "REFUNDED" } });
+    check("RECEIVED -> REFUNDED allowed", refund.status === 200 && refund.data?.data?.status === "REFUNDED");
+
+    const locked = await api(`/donations/${guest.data.data.id}/status`, { method: "PATCH", token: adminToken, body: { status: "RECEIVED" } });
+    check("REFUNDED locked (400)", locked.status === 400, `status ${locked.status}`);
+
+    const linkedReceive = await api(`/donations/${linked.data.data.id}/status`, { method: "PATCH", token: adminToken, body: { status: "RECEIVED" } });
+    check("linked donation marked RECEIVED", linkedReceive.status === 200);
+
+    const dash = await api("/admin/dashboard", { token: adminToken });
+    check("dashboard has donations aggregate", !!dash.data?.data?.donations?.byStatus && dash.data?.data?.donations?.total >= 3, `total ${dash.data?.data?.donations?.total}`);
+    check("dashboard donations receivedAmount > 0", dash.data?.data?.donations?.receivedAmount >= 1000, `got ${dash.data?.data?.donations?.receivedAmount}`);
+  } catch (err) {
+    check("phase 10 flow", false, err.message);
+  }
+
   // ---------- SUMMARY ----------
   console.log("\n========================================");
   console.log(`RESULT: ${pass} passed, ${fail} failed`);

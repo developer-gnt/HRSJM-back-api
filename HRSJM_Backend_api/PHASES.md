@@ -63,7 +63,7 @@ ends with a working, committed, testable increment before moving on.
 - CRITICAL: call the (stub) senior accounting posting boundary — never touch ledger/report balances
 - **Done when:** receipt creates with entry number and stub accounting call recorded; committed
 
-## Phase 10 — Donation Management (core)
+## Phase 10 — Donation Management (core) (completed)
 - Donation CRUD: donor info (guest or linked user), cause association, amounts, payment method
 - Status display + receipt reference display only (financials stay senior-owned)
 - **Done when:** donation created → status visible → receipt ref shown; committed
