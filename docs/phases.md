@@ -20,9 +20,9 @@
 | 6 | Accounting Foundation (COA + Entries + Ledger) | 10 | ✅ Done (verified 2026-09-28) |
 | 7 | Expense / Payment Entry | 5 | ✅ Done (verified 2026-09-28) |
 | 8 | Receipt / Payment Accounting Integration | 5 | ✅ Done (verified 2026-09-28) |
-| 9 | Donation Financial / Payment Integration | 7 | ⬜ Not started |
-| 10 | Trial Balance | 2 | ⬜ Not started |
-| 11 | Profit & Loss | 2 | ⬜ Not started |
+| 9 | Donation Financial / Payment Integration | 7 | ✅ Done (verified 2026-09-28) |
+| 10 | Trial Balance | 2 | ✅ Done (verified 2026-09-28) |
+| 11 | Profit & Loss | 2 | ✅ Done (verified 2026-09-28) |
 | 12 | Balance Sheet | 2 | ⬜ Not started |
 | 13 | Integration, QA & Handoff | — | ⬜ Not started |
 | | **TOTAL** | **74** | |
@@ -309,6 +309,8 @@ POST   /api/v1/donations/:id/refund
 
 **Exit criteria:** Donation payment → verify → receipt → accounting chain works; refund reverses correctly in the ledger; donation history reflects financial status.
 
+> **Verified 2026-09-28:** 7 APIs verified with server-validated amounts (defaults from the donation record), idempotent verification in a single DB transaction (payment + transaction row + receipt + accounting entry `Dr Bank/Cash, Cr Donation Income` via `AccountingPostingService`, donation status SUCCESS, `receipts.accounting_entry_id` linked), full refund via mirrored REVERSAL entry with `donation_refunds` record (double refund → 409 `DONATION_ALREADY_REFUNDED`; REFUNDED via status endpoint → 400 `DONATION_REFUND_REQUIRES_ENDPOINT`). Minimal `donations` scaffold created (Arshad owns CRUD; `donation.read/create/manage` permissions seeded ready). Unit tests: `donation-payments.service.spec.ts` (13), `donations.service.spec.ts` (5) — 179 tests project-wide passing. E2E suite (`test/e2e-donations.sh`) passed TC-DON-001–012 incl. idempotent posting, refund netting the ledger to zero, and offline CASH donation posting Dr 1002. All scenarios in `docs/test-scenarios.md` passed.
+
 ---
 
 ## Phase 10 — Trial Balance (2 APIs)
@@ -436,3 +438,6 @@ Per rule.md §2.10: every issue encountered while generating, applying, or verif
 | 2026-09-26 | 1790422648141-CreateMembershipPaymentsSchema | none — schema for `membership_payments`, `payment_transactions`, `receipts`, FKs, indexes, permission seeds (`payment.read/create/verify/manage_status`), and ADMIN role permissions mapping applied cleanly; verified via `migration:show` and app boot | — |
 | 2026-09-28 | 1790576732843-CreateAccountingSchema | none — tables `accounts`, `accounting_entries`, `accounting_entry_lines`, self/child FK constraints, partial unique indexes (one journal per reference; single reversal per entry), entry-number sequence, baseline COA seeds (1001 Bank, 1002 Cash, 4001–4004 Income, 5001 Other Expenses), permissions seeds (`account.*`, `accounting_entry.*`, `ledger.read`), and ADMIN role permissions mapping applied cleanly; verified via `migration:show`, direct DB seed checks, and app boot | — |
 | 2026-09-28 | 1790600000000-CreateExpenseEntriesSchema | none — table `expense_entries`, indexes, voucher-number sequence, permissions seeds (`expense.*`), and ADMIN role permissions mapping applied cleanly; verified via `migration:show` and app boot | — |
+| 2026-09-28 | 1790610000000-CreateReceiptEntriesSchema | none — table `receipt_entries`, indexes, voucher-number sequence, permissions seeds (`receipt_entry.*`), and ADMIN role permissions mapping applied cleanly; verified via `migration:show` and app boot | — |
+| 2026-09-28 | 1790620000000-CreateReportsPermissionsSchema | none — permissions `report.read` and `trial_balance.read` seeded and mapped to ADMIN; applied cleanly | — |
+| 2026-09-28 | 1790585028688-CreateDonationsSchema (first run failed) | `duplicate key value violates unique constraint "PK_..."` on `permissions` — the donation permission seeds used IDs `...000801–804`, already consumed by the Phase 7 `expense.*` block | Moved donation permissions to the free `9xx` block (`...000901–904`: `donation.read/create/manage/refund`); re-ran cleanly, verified via `migration:show` and DB checks |

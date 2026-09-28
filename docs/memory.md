@@ -92,8 +92,15 @@ HRSJM — Digital Membership & Donation Platform backend. The backend is the **s
   - Invariants: Sequence-generated vouchers (`REC-YYYYMMDD-#####`), transactional double-entry ledger posting (`Dr Bank-Cash / Cr Income Account`), cancellation reversal integration, audit logging.
   - Verification: Clean build, 14/14 unit test suites passed (147 tests total across project).
 
+- Phase 9 (Donation Financial / Payment Integration — 7 APIs):
+  - Modules: `donations` (scaffold: `DonationEntity`, `DonationRefundEntity`, `DonationsController` refund endpoint, `DonationsService`) + `donation-payments` (`DonationPaymentEntity`, `DonationPaymentsController`, `DonationPaymentsService`).
+  - Schema: Migration `CreateDonationsSchema1790585028688` applied (`donations`, `donation_payments`, `donation_refunds`; FKs wired `receipts.donation_payment_id` + `payment_transactions.donation_payment_id`), permissions `donation.read/create/manage/refund` (9xx ID block) seeded to ADMIN. First run failed — permission IDs 801–804 collided with `expense.*`; moved to 9xx (see phases.md Migration Issue Log).
+  - Invariants: server-validated amounts (default from donation record), idempotent verify in one DB transaction (payment + transaction row + receipt + accounting entry `Dr Bank/Cash, Cr Donation Income` + donation status SUCCESS), full refund via mirrored REVERSAL entry + refund record (partial refunds TBC), REFUNDED blocked on the generic status endpoint.
+  - Verification: Clean build, `donation-payments.service.spec.ts` (13) + `donations.service.spec.ts` (5) passing (179 project-wide), E2E `test/e2e-donations.sh` passed TC-DON-001–012.
+  - Config: `src/config/payment.config.ts` — generic `PAYMENT_GATEWAY_KEY/SECRET` placeholders (provider TBC).
+
 ### In progress / Next
-- Next: **Phase 9 — Donation Financial / Payment Integration (7 APIs)** per `phases.md` (donation payments, gateway verification, 80G tax receipts, accounting entries `Dr Bank / Cr Donation Income`, refunds).
+- Next: **Phase 10+ — financial reports (Trial Balance / P&L / Balance Sheet)** per `phases.md` (report endpoints derive strictly from accounting entries; permissions `report.read` / `trial_balance.read` already seeded via `CreateReportsPermissionsSchema`).
 
 ### Progress tracker status (from phases.md)
 - Phase 0: ✅ done (verified 2026-09-26)
@@ -105,6 +112,7 @@ HRSJM — Digital Membership & Donation Platform backend. The backend is the **s
 - Phase 6: ✅ done (verified 2026-09-28)
 - Phase 7: ✅ done (verified 2026-09-28)
 - Phase 8: ✅ done (verified 2026-09-28)
+- Phase 9: ✅ done (verified 2026-09-28)
 - Phases 9–13: ⬜ not started
 
 ---
@@ -141,7 +149,7 @@ Hard rule: **Arshad must never write to ledger balances directly** — all money
 - Final membership categories, fees, validity, required documents
 - Payment gateway provider + verification mechanism
 - Final chart of accounts + opening fund/equity treatment
-- Donation accounting treatment + refund policy
+- Donation accounting treatment + refund policy — refund implemented as full-refund-only via mirrored reversal (2026-09-28); partial refunds still TBC; 80G/tax receipts TBC (no statutory spec)
 - Final admin roles and permission matrix
 - Notification channels (SMS/WhatsApp/email out of scope unless separately agreed)
 - Document/kit fulfilment statuses

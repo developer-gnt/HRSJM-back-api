@@ -291,6 +291,35 @@ Every response must use the standard envelopes:
 
 ---
 
+## Phase 9 — Donation Financial / Payment Integration (7 APIs)
+
+> **Executed 2026-09-28 (unit + E2E suite `test/e2e-donations.sh`):** PASS — TC-DON-001 through TC-DON-012 (plus b/a variants). Unit test suites: `donation-payments.service.spec.ts` (13 tests), `donations.service.spec.ts` (5 tests) — 179 unit tests across the project, 100% passing.
+
+| ID | Scenario | Steps | Expected |
+|---|---|---|---|
+| TC-DON-001 | Create donation payment | POST `/api/v1/donation-payments` with donation_id (amount omitted) | 201 PENDING; amount defaults to the donation's recorded amount (server-validated) |
+| TC-DON-002 | Payment for unknown donation | POST with random UUID | 404 `DONATION_NOT_FOUND` |
+| TC-DON-003 | Verify posts accounting entry | POST `/api/v1/donation-payments/:id/verify` with gateway_payment_id | 201; payment `SUCCESS`; receipt generated (`HRSJM-REC-...`, type `DONATION`) with `accounting_entry_id` |
+| TC-DON-003b | Donation reflects financial status | Query the donation row after verify | `status = SUCCESS` (donation history reflects financial status) |
+| TC-DON-004 | Entry detail balanced lines | GET `/api/v1/accounting/entries/:id` | 200 with 2 lines: Dr Bank (1001) = Cr Donation Income (4003), reference `DONATION_PAYMENT` |
+| TC-DON-005 | Posting idempotency | Re-verify the same payment, re-query entries by reference | 200; still exactly ONE journal entry per payment (no double posting) |
+| TC-DON-006 | Receipt endpoint | GET `/api/v1/donation-payments/:id/receipt` | 200 with receipt number, `receipt_type: DONATION`, linked accounting entry |
+| TC-DON-007 | Non-admin refund denied | POST `/api/v1/donations/:id/refund` as non-admin | 403 `PERMISSION_DENIED` |
+| TC-DON-008 | Full refund with reversal | POST `/api/v1/donations/:id/refund` as admin with reason | 201; donation + payment → `REFUNDED`; mirrored REVERSAL entry posted (`Dr Donation Income / Cr Bank`) |
+| TC-DON-009 | Double refund rejected | POST refund on already-refunded donation | 409 `DONATION_ALREADY_REFUNDED` |
+| TC-DON-010 | Ledger reflects refund | GET `/api/v1/accounts/:id/ledger` for Bank after refund | 200; journal + mirrored reversal net to zero |
+| TC-DON-011a | Offline cash donation via status update | PATCH `/api/v1/donation-payments/:id/status` → SUCCESS (admin) | 200 `SUCCESS`; delegates to verify and posts the accounting entry |
+| TC-DON-011 | Offline cash posts Dr Cash | GET entry detail for the offline donation payment | 200 with Dr line on account **1002 (Cash)** |
+| TC-DON-012 | REFUNDED via status endpoint rejected | PATCH status → REFUNDED | 400 `DONATION_REFUND_REQUIRES_ENDPOINT` (refunds must reverse accounting) |
+
+**Unit-level financial integrity (rule.md §6.4):** unbalanced-entry rejection (posting service), single-side/negative line validation, duplicate-verify idempotency, posting-failure rollback, REFUNDED-via-status guard, double-refund rejection, refund-of-unpaid donation rejection, and missing-journal data-consistency guard are covered in `donation-payments.service.spec.ts` and `donations.service.spec.ts`.
+
+**Scaffold note:** the `donations` table is a minimal scaffold (Arshad owns donations CRUD per the ownership split); e2e seeds donations via SQL. Refund policy implemented: full refund via mirrored reversal only — partial refunds remain TBC (BRD §54 #21).
+
+**Sign-off:** Phase 9 marked ✅ in `phases.md`.
+
+---
+
 ## Template — every future module adds a section here
 
 Minimum coverage per module (rule.md §6):

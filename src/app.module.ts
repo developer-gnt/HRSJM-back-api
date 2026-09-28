@@ -19,12 +19,16 @@ import { SupportModule } from './modules/support/support.module';
 import { UsersModule } from './modules/users/users.module';
 import { ExpenseEntriesModule } from './modules/expense-entries/expense-entries.module';
 import { ReceiptEntriesModule } from './modules/receipt-entries/receipt-entries.module';
+import { ReportsModule } from './modules/reports/reports.module';
+import { DonationsModule } from './modules/donations/donations.module';
+import { DonationPaymentsModule } from './modules/donation-payments/donation-payments.module';
+import paymentConfig from './config/payment.config';
 
 @Module({
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
-      load: [appConfig, databaseConfig, authConfig],
+      load: [appConfig, databaseConfig, authConfig, paymentConfig],
     }),
     TypeOrmModule.forRootAsync({
       inject: [ConfigService],
@@ -43,9 +47,12 @@ import { ReceiptEntriesModule } from './modules/receipt-entries/receipt-entries.
     AccountingModule,
     ExpenseEntriesModule,
     ReceiptEntriesModule,
+    DonationsModule,
+    DonationPaymentsModule,
     DocumentsModule,
     AssistanceModule,
     SupportModule,
+    ReportsModule,
   ],
 })
 export class AppModule {}
