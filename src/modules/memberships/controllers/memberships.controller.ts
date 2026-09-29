@@ -50,7 +50,7 @@ export class MembershipsController {
     return this.membershipsService.list(dto);
   }
 
-  @Get('users/me/membership')
+  @Get(['users/me/membership', 'memberships/my'])
   @ApiOperation({ summary: 'Get current user membership profile' })
   getMyMembership(@AuthenticatedUser() user: { sub: string }) {
     return this.membershipsService.getMyMembership(user.sub);

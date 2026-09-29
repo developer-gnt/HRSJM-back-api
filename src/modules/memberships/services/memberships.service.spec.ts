@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   NotFoundException,
 } from '@nestjs/common';
@@ -122,6 +123,38 @@ describe('MembershipsService', () => {
       await expect(
         service.apply({ category_id: 'cat-1' }, 'user-1'),
       ).rejects.toThrow(BadRequestException);
+    });
+
+    it('throws ConflictException when applicant already has a pending or active membership', async () => {
+      categoriesRepo.findOne.mockResolvedValue(activeCategory);
+      membershipsRepo.findOne.mockResolvedValue({
+        id: 'existing-mem-1',
+        user_id: 'user-1',
+        status: MembershipStatus.PENDING,
+      });
+
+      await expect(
+        service.apply({ category_id: 'cat-1' }, 'user-1'),
+      ).rejects.toThrow(ConflictException);
+    });
+
+    it('allows applicant to apply again if previous membership was REJECTED', async () => {
+      categoriesRepo.findOne.mockResolvedValue(activeCategory);
+      // findOne for active/pending returns null because existing membership is REJECTED
+      membershipsRepo.findOne.mockResolvedValue(null);
+
+      const result = await service.apply(
+        { category_id: 'cat-1', application_data: { city: 'Delhi' } },
+        'user-1',
+      );
+
+      expect(result.id).toBe('mem-1');
+      expect(membershipsRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          user_id: 'user-1',
+          status: MembershipStatus.PENDING,
+        }),
+      );
     });
   });
 

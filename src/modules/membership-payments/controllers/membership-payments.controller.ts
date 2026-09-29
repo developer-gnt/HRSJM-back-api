@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Get,
@@ -54,6 +55,30 @@ export class MembershipPaymentsController {
   ) {
     const isAdmin = req.user?.roles?.includes('ADMIN') ?? false;
     return this.paymentsService.list(dto, user.sub, isAdmin);
+  }
+
+  @Get('my')
+  @ApiOperation({ summary: 'List my own membership payments' })
+  getMyPayments(
+    @Query() dto: ListMembershipPaymentsDto,
+    @AuthenticatedUser() user: { sub: string },
+  ) {
+    return this.paymentsService.list(dto, user.sub, false);
+  }
+
+  @Post('verify')
+  @ApiOperation({ summary: 'Verify gateway payment (id in body)' })
+  verifyDirect(
+    @Body() dto: VerifyMembershipPaymentDto,
+    @AuthenticatedUser() user: { sub: string },
+    @Req() req: AuthenticatedRequest,
+  ) {
+    const isAdmin = req.user?.roles?.includes('ADMIN') ?? false;
+    const paymentId = dto.payment_id;
+    if (!paymentId) {
+      throw new BadRequestException('payment_id is required in body');
+    }
+    return this.paymentsService.verify(paymentId, dto, user.sub, isAdmin);
   }
 
   @Get(':id')

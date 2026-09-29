@@ -1,7 +1,7 @@
 {
   "info": {
     "_postman_id": "hrsjm-api-collection-v1",
-    "name": "HRSJM Backend API (All 74 Endpoints)",
+    "name": "HRSJM all Backend API (All 74 Endpoints)",
     "description": "Comprehensive Postman collection for HRSJM Digital Membership, Donation & Accounting Platform.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
@@ -1031,7 +1031,7 @@
       ]
     },
     {
-      "name": "17. Renewals",
+      "name": "14. Renewals",
       "item": [
         {
           "name": "Submit Renewal Request",
@@ -1136,7 +1136,7 @@
       ]
     },
     {
-      "name": "18. Digital Membership ID & Public QR",
+      "name": "15. Digital Membership ID & Public QR",
       "item": [
         {
           "name": "Validate Digital ID (Public QR Scan)",
@@ -1156,7 +1156,7 @@
       ]
     },
     {
-      "name": "19. Direct Receipts",
+      "name": "16. Direct Receipts",
       "item": [
         {
           "name": "Get Receipt by Membership Payment ID",
@@ -1185,7 +1185,7 @@
       ]
     },
     {
-      "name": "20. Admin Dashboard & 360 View",
+      "name": "17. Admin Dashboard & 360 View",
       "item": [
         {
           "name": "Get Dashboard KPI Aggregates",

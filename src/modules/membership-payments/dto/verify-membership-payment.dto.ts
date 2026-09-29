@@ -1,6 +1,10 @@
 import { IsOptional, IsString } from 'class-validator';
 
 export class VerifyMembershipPaymentDto {
+  @IsOptional()
+  @IsString()
+  payment_id?: string;
+
   @IsString()
   gateway_payment_id: string;
 

@@ -6,7 +6,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Brackets, Repository } from 'typeorm';
+import { Brackets, In, Repository } from 'typeorm';
 import * as bcrypt from 'bcryptjs';
 import { MembershipEntity } from '../entities/membership.entity';
 import { MembershipCategoryEntity } from '../../membership-categories/entities/membership-category.entity';
@@ -73,6 +73,16 @@ export class MembershipsService {
       // Validate mobile number and optional email for applicant
       const existingUser = await this.usersService.findByLoginIdentifier(dto.mobile_number);
       if (existingUser) {
+        if (dto.email) {
+          const emailUser = await this.usersService.findByLoginIdentifier(dto.email);
+          if (emailUser && emailUser.id !== existingUser.id) {
+            throw new ConflictException({
+              message: 'Email is already registered by another account',
+              code: 'EMAIL_TAKEN',
+              details: { email: dto.email },
+            });
+          }
+        }
         targetUserId = existingUser.id;
       } else {
         // Check email duplicate if email provided
@@ -100,6 +110,30 @@ export class MembershipsService {
       }
     } else {
       targetUserId = isAdmin && dto.user_id ? dto.user_id : actingUserId;
+    }
+
+    // Check if applicant already has an active, approved, or pending membership
+    const existingActiveOrPending = await this.memberships.findOne({
+      where: {
+        user_id: targetUserId,
+        status: In([
+          MembershipStatus.PENDING,
+          MembershipStatus.APPROVED,
+          MembershipStatus.ACTIVE,
+        ]),
+      },
+    });
+
+    if (existingActiveOrPending) {
+      throw new ConflictException({
+        message: 'An active or pending membership application already exists for this applicant',
+        code: 'DUPLICATE_MEMBERSHIP_APPLICATION',
+        details: {
+          existing_membership_id: existingActiveOrPending.id,
+          status: existingActiveOrPending.status,
+          user_id: targetUserId,
+        },
+      });
     }
 
     // Merge personal_details and application_data

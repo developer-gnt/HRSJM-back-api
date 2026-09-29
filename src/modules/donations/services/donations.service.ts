@@ -16,6 +16,8 @@ import {
 } from '../../accounting/enums/accounting.enums';
 import { AccountingPostingService } from '../../accounting/services/accounting-posting.service';
 import { PaymentStatus } from '../../../common/enums/payment-status.enum';
+import { CreateDonationDto } from '../dto/create-donation.dto';
+import { ListDonationsDto } from '../dto/list-donations.dto';
 import { RefundDonationDto } from '../dto/refund-donation.dto';
 import { AuditService } from '../../audit/services/audit.service';
 
@@ -32,6 +34,93 @@ export class DonationsService {
     private readonly dataSource: DataSource,
     private readonly audit: AuditService,
   ) {}
+
+  async create(
+    dto: CreateDonationDto,
+    actingUserId?: string,
+  ): Promise<DonationEntity> {
+    const mobile = dto.donor_mobile || dto.mobile_number || '';
+    const email = dto.donor_email || dto.email || null;
+    const cause = dto.cause || dto.campaign || 'General Donation';
+
+    const donation = this.donations.create({
+      donor_name: dto.donor_name.trim(),
+      donor_mobile: mobile.trim(),
+      donor_email: email ? email.trim().toLowerCase() : null,
+      cause: cause.trim(),
+      amount: dto.amount,
+      status: 'PENDING',
+      remark: dto.remark?.trim() || null,
+      created_by: actingUserId ?? null,
+      updated_by: actingUserId ?? null,
+    });
+
+    const saved = await this.donations.save(donation);
+
+    await this.audit.record({
+      event: 'donation.created',
+      actorId: actingUserId ?? null,
+      entityType: 'donations',
+      entityId: saved.id,
+      metadata: {
+        donor_name: saved.donor_name,
+        amount: saved.amount,
+        cause: saved.cause,
+      },
+    });
+
+    return saved;
+  }
+
+  async list(dto: ListDonationsDto): Promise<{
+    items: DonationEntity[];
+    meta: { page: number; limit: number; total: number; totalPages: number };
+  }> {
+    const page = dto.page ?? 1;
+    const limit = dto.limit ?? 20;
+
+    const qb = this.donations
+      .createQueryBuilder('donation')
+      .orderBy('donation.created_at', 'DESC')
+      .skip((page - 1) * limit)
+      .take(limit);
+
+    if (dto.status) {
+      qb.andWhere('donation.status = :status', { status: dto.status });
+    }
+
+    if (dto.search) {
+      const term = `%${dto.search.toLowerCase()}%`;
+      qb.andWhere(
+        '(LOWER(donation.donor_name) LIKE :term OR LOWER(donation.donor_mobile) LIKE :term OR LOWER(donation.cause) LIKE :term)',
+        { term },
+      );
+    }
+
+    const [items, total] = await qb.getManyAndCount();
+
+    return {
+      items,
+      meta: {
+        page,
+        limit,
+        total,
+        totalPages: Math.max(1, Math.ceil(total / limit)),
+      },
+    };
+  }
+
+  async getById(id: string): Promise<DonationEntity> {
+    const donation = await this.donations.findOne({ where: { id } });
+    if (!donation) {
+      throw new NotFoundException({
+        message: 'Donation not found',
+        code: 'DONATION_NOT_FOUND',
+        details: { id },
+      });
+    }
+    return donation;
+  }
 
   /**
    * Full refund of a verified donation (partial refunds are TBC — BRD §54 #21).

@@ -13,6 +13,7 @@ describe('AccountsService', () => {
   const qb = () => {
     const mockQb: Record<string, jest.Mock> = {
       leftJoinAndSelect: jest.fn().mockReturnThis(),
+      select: jest.fn().mockReturnThis(),
       orderBy: jest.fn().mockReturnThis(),
       skip: jest.fn().mockReturnThis(),
       take: jest.fn().mockReturnThis(),
@@ -21,6 +22,7 @@ describe('AccountsService', () => {
       setParameter: jest.fn().mockReturnThis(),
       setParameters: jest.fn().mockReturnThis(),
       getOne: jest.fn().mockResolvedValue(null),
+      getRawMany: jest.fn().mockResolvedValue([]),
       getManyAndCount: jest.fn().mockResolvedValue([[], 0]),
     };
     return mockQb;
@@ -206,6 +208,30 @@ describe('AccountsService', () => {
           account_type: 'ASSET',
         } as never),
       ).rejects.toThrow(ConflictException);
+    });
+
+    it('auto-generates next serial account code when omitted', async () => {
+      const qb2 = qb();
+      qb2.getRawMany = jest.fn().mockResolvedValue([
+        { account_code: '5001' },
+        { account_code: '5002' },
+      ]);
+      accounts.createQueryBuilder.mockReturnValue(qb2);
+      accounts.findOne.mockResolvedValue(null);
+
+      const result = await service.create({
+        account_name: 'Travel Expense',
+        account_type: 'EXPENSE',
+      } as never);
+
+      expect(accounts.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          account_name: 'Travel Expense',
+          account_code: '5003',
+          account_type: 'EXPENSE',
+        }),
+      );
+      expect(result.id).toBe('acc-new');
     });
   });
 

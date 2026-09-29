@@ -140,7 +140,7 @@ export class ReceiptEntriesService {
         received_in_account_id: dto.received_in_account_id,
         amount: dto.amount,
         payment_method: dto.payment_method,
-        reference_number: dto.reference_number?.trim() || null,
+        reference_number: dto.reference_number?.trim() || `REF-${voucherNumber}`,
         description: dto.description?.trim() || null,
         attachment_url: dto.attachment_url?.trim() || null,
         status: ReceiptStatus.POSTED,

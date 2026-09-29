@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Get,
@@ -64,6 +65,21 @@ export class DonationPaymentsController {
   ) {
     const isAdmin = req.user?.roles?.includes('ADMIN') ?? false;
     return this.donationPaymentsService.getById(id, user.sub, isAdmin);
+  }
+
+  @Post('verify')
+  @ApiOperation({ summary: 'Verify gateway donation payment (id in body)' })
+  verifyDirect(
+    @Body() dto: VerifyDonationPaymentDto,
+    @AuthenticatedUser() user: { sub: string },
+    @Req() req: AuthenticatedRequest,
+  ) {
+    const isAdmin = req.user?.roles?.includes('ADMIN') ?? false;
+    const paymentId = dto.payment_id;
+    if (!paymentId) {
+      throw new BadRequestException('payment_id is required in body');
+    }
+    return this.donationPaymentsService.verify(paymentId, dto, user.sub, isAdmin);
   }
 
   @Post(':id/verify')

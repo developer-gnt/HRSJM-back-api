@@ -11,6 +11,7 @@ import { CreateAccountDto } from '../dto/create-account.dto';
 import { UpdateAccountDto } from '../dto/update-account.dto';
 import { UpdateAccountStatusDto } from '../dto/update-account-status.dto';
 import { ListAccountsDto } from '../dto/list-accounts.dto';
+import { AccountType } from '../enums/accounting.enums';
 import { AuditService } from '../../audit/services/audit.service';
 
 @Injectable()
@@ -126,11 +127,13 @@ export class AccountsService {
       });
     }
 
-    if (dto.account_code) {
+    let finalCode: string;
+    if (dto.account_code && dto.account_code.trim().length > 0) {
+      const code = dto.account_code.trim().toUpperCase();
       const existingCode = await this.accounts
         .createQueryBuilder('account')
         .where('LOWER(account.account_code) = LOWER(:code)', {
-          code: dto.account_code.trim(),
+          code: code.toLowerCase(),
         })
         .getOne();
       if (existingCode) {
@@ -140,11 +143,14 @@ export class AccountsService {
           details: { account_code: dto.account_code },
         });
       }
+      finalCode = code;
+    } else {
+      finalCode = await this.generateNextAccountCode(dto.account_type);
     }
 
     const account = this.accounts.create({
       account_name: dto.account_name.trim(),
-      account_code: dto.account_code ? dto.account_code.trim().toUpperCase() : null,
+      account_code: finalCode,
       account_type: dto.account_type,
       parent_account_id: dto.parent_account_id ?? null,
       description: dto.description ?? null,
@@ -168,6 +174,49 @@ export class AccountsService {
     });
 
     return saved;
+  }
+
+  async generateNextAccountCode(accountType: AccountType): Promise<string> {
+    const baseCodeMap: Record<string, number> = {
+      ASSET: 1001,
+      LIABILITY: 2001,
+      FUND_EQUITY: 3001,
+      INCOME: 4001,
+      EXPENSE: 5001,
+    };
+
+    const base = baseCodeMap[accountType] ?? 1001;
+    const minRange = Math.floor(base / 1000) * 1000;
+    const maxRange = minRange + 999;
+
+    const existingAccounts = await this.accounts
+      .createQueryBuilder('account')
+      .select('account.account_code', 'account_code')
+      .where('account.account_type = :accountType', { accountType })
+      .getRawMany<{ account_code: string | null }>();
+
+    let maxNum = base - 1;
+    for (const acc of existingAccounts) {
+      if (acc.account_code) {
+        const parsed = parseInt(acc.account_code, 10);
+        if (!isNaN(parsed) && parsed >= minRange && parsed <= maxRange) {
+          if (parsed > maxNum) {
+            maxNum = parsed;
+          }
+        }
+      }
+    }
+
+    let candidate = maxNum + 1;
+    while (
+      await this.accounts.findOne({
+        where: { account_code: candidate.toString() },
+      })
+    ) {
+      candidate++;
+    }
+
+    return candidate.toString();
   }
 
   async update(
