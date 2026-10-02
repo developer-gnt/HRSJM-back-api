@@ -11,3 +11,9 @@ export const BASELINE_ROLES = [
 
 /** Baseline roles are protected from rename and delete. */
 export const PROTECTED_ROLE_NAMES: string[] = BASELINE_ROLES.map((r) => r.name);
+
+/**
+ * Roles a public (unauthenticated) registrant may self-select. ADMIN is
+ * deliberately excluded — admin accounts are provisioned manually.
+ */
+export const PUBLIC_REGISTER_ROLE_NAMES: string[] = ['MEMBER', 'DONOR', 'DONATION_SEEKER'];

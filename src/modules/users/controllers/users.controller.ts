@@ -21,6 +21,7 @@ import {
 import { AuthenticatedUser } from '../../../common/decorators/current-user.decorator';
 import { UsersAdminService } from '../services/users-admin.service';
 import { RolesService } from '../../roles/services/roles.service';
+import { UsersService } from '../services/users.service';
 import {
   ListUsersDto,
   UpdateUserDto,
@@ -36,7 +37,20 @@ export class UsersController {
   constructor(
     private readonly usersAdmin: UsersAdminService,
     private readonly rolesService: RolesService,
+    private readonly usersService: UsersService,
   ) {}
+
+  /** Declared before ':id' routes so 'me/permissions' is never captured as an id. */
+  @Get('me/permissions')
+  @ApiOperation({
+    summary: "List the authenticated user's effective permission keys (all roles)",
+  })
+  async mePermissions(@AuthenticatedUser() user: { sub: string }) {
+    const permissions = await this.usersService.getEffectivePermissionNames(
+      user.sub,
+    );
+    return { user_id: user.sub, permissions };
+  }
 
   @Get()
   @RequirePermissions('user.read')

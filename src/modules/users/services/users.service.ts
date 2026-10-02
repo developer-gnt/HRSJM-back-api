@@ -1,14 +1,10 @@
-import {
-  BadRequestException,
-  ConflictException,
-  Injectable,
-  InternalServerErrorException,
-} from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, InternalServerErrorException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, Repository } from 'typeorm';
+import { DataSource, In, Repository } from 'typeorm';
 import { UserEntity } from '../entities/user.entity';
 import { UserRoleEntity } from '../entities/user-role.entity';
 import { RoleEntity } from '../../roles/entities/role.entity';
+import { RolePermissionEntity } from '../../roles/entities/role-permission.entity';
 
 export interface UserRoleInfo {
   id: string;
@@ -73,6 +69,37 @@ export class UsersService {
       created_at: user.created_at,
       updated_at: user.updated_at,
     };
+  }
+
+  /**
+   * Aggregates the effective permission keys granted to a user through all of
+   * their roles (user_roles → role_permissions → permissions). Mirrors the
+   * resolution inside PermissionsGuard so clients can drive dynamic RBAC UI
+   * without needing role.read.
+   */
+  async getEffectivePermissionNames(userId: string): Promise<string[]> {
+    const userRoles = await this.dataSource
+      .getRepository(UserRoleEntity)
+      .find({ where: { user_id: userId } });
+
+    if (userRoles.length === 0) {
+      return [];
+    }
+
+    const rolePermissions = await this.dataSource
+      .getRepository(RolePermissionEntity)
+      .find({
+        where: { role_id: In(userRoles.map((userRole) => userRole.role_id)) },
+        relations: { permission: true },
+      });
+
+    return [
+      ...new Set(
+        rolePermissions
+          .map((rp) => rp.permission?.name)
+          .filter((name): name is string => Boolean(name)),
+      ),
+    ].sort();
   }
 
   async createUserWithRole(input: {

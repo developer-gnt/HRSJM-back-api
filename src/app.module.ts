@@ -26,6 +26,7 @@ import { NotificationsModule } from './modules/notifications/notifications.modul
 import { RenewalsModule } from './modules/renewals/renewals.module';
 import { AdminModule } from './modules/admin/admin.module';
 import { ReceiptsModule } from './modules/receipts/receipts.module';
+import { EventsModule } from './modules/events/events.module';
 import paymentConfig from './config/payment.config';
 
 @Module({
@@ -61,6 +62,7 @@ import paymentConfig from './config/payment.config';
     NotificationsModule,
     AdminModule,
     ReceiptsModule,
+    EventsModule,
   ],
 })
 export class AppModule {}

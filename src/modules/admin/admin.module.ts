@@ -10,6 +10,9 @@ import { SupportTicketEntity } from '../support/entities/support-ticket.entity';
 import { DonationEntity } from '../donations/entities/donation.entity';
 import { DocumentEntity } from '../documents/entities/document.entity';
 import { NotificationRecipientEntity } from '../notifications/entities/notification-recipient.entity';
+import { MembershipPaymentEntity } from '../membership-payments/entities/membership-payment.entity';
+import { ReceiptEntity } from '../membership-payments/entities/receipt.entity';
+import { AuditLogEntity } from '../audit/entities/audit-log.entity';
 
 @Module({
   imports: [
@@ -22,6 +25,9 @@ import { NotificationRecipientEntity } from '../notifications/entities/notificat
       DonationEntity,
       DocumentEntity,
       NotificationRecipientEntity,
+      MembershipPaymentEntity,
+      ReceiptEntity,
+      AuditLogEntity,
     ]),
   ],
   controllers: [AdminController],
