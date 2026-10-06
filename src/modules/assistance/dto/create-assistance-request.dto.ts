@@ -1,13 +1,16 @@
 import { Type } from 'class-transformer';
 import {
   IsEmail,
+  IsEnum,
   IsNumber,
   IsOptional,
   IsString,
+  IsUUID,
   MaxLength,
   Min,
   MinLength,
 } from 'class-validator';
+import { AssistanceRequestStatus } from '../entities/assistance-request.entity';
 
 export class CreateAssistanceRequestDto {
   @IsString()
@@ -30,11 +33,24 @@ export class CreateAssistanceRequestDto {
   requested_amount: number;
 
   @IsString()
-  @MinLength(5)
+  @MinLength(2)
   @MaxLength(255)
   reason: string;
 
   @IsOptional()
   @IsString()
   description?: string;
+
+  @IsOptional()
+  @IsUUID()
+  user_id?: string;
+
+  @IsOptional()
+  @IsString()
+  admin_remark?: string;
+
+  @IsOptional()
+  @IsEnum(AssistanceRequestStatus)
+  status?: AssistanceRequestStatus;
 }
+

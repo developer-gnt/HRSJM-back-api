@@ -34,6 +34,20 @@ export class UpdateProfileDto {
   @IsEmail()
   @MaxLength(255)
   email?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(20)
+  mobile_number?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(20)
+  phone?: string;
+
+  @IsOptional()
+  @IsString()
+  avatar?: string | null;
 }
 
 export { IsEmail, IsOptional, IsString, MaxLength, MinLength, Validate, MatchConstraint };

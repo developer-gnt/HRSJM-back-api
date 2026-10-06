@@ -1,7 +1,9 @@
 import { Type } from 'class-transformer';
 import {
+  IsDateString,
   IsEnum,
   IsInt,
+  IsNumber,
   IsOptional,
   IsString,
   IsUUID,
@@ -37,4 +39,30 @@ export class ListAssistanceDto {
   @IsString()
   @MaxLength(255)
   search?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  category?: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  min_amount?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  max_amount?: number;
+
+  @IsOptional()
+  @IsDateString()
+  from_date?: string;
+
+  @IsOptional()
+  @IsDateString()
+  to_date?: string;
 }
+

@@ -19,6 +19,9 @@ export class UserEntity extends BaseEntity {
   @Column({ type: 'varchar', length: 255 })
   password_hash: string;
 
+  @Column({ type: 'text', nullable: true })
+  avatar?: string | null;
+
   @Column({ type: 'enum', enum: CommonStatus, default: CommonStatus.ACTIVE })
   status: CommonStatus;
 

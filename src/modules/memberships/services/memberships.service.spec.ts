@@ -37,6 +37,7 @@ describe('MembershipsService', () => {
     membershipsRepo = {
       createQueryBuilder: jest.fn().mockReturnValue(qb),
       findOne: jest.fn().mockResolvedValue(null),
+      count: jest.fn().mockResolvedValue(0),
       create: jest.fn((x) => x),
       save: jest.fn(async (x) => ({ id: 'mem-1', ...x })),
     };
@@ -261,7 +262,7 @@ describe('MembershipsService', () => {
       expect(membershipsRepo.save).toHaveBeenCalledWith(
         expect.objectContaining({
           status: MembershipStatus.APPROVED,
-          membership_number: expect.stringMatching(/^HRSJM-MEM-\d{4}-\d{5}$/),
+          membership_number: expect.stringMatching(/^HRSJM-(\d{5}|MEM-\d{4}-\d{5})$/),
           approval_date: expect.any(Date),
           start_date: expect.any(Date),
           expiry_date: expect.any(Date),

@@ -88,6 +88,7 @@ export class UsersAdminService {
     const updated = await this.usersService.updateProfile(user, {
       full_name: patch.full_name,
       email: patch.email,
+      mobile_number: patch.mobile_number || patch.phone,
     });
     void actingUserId;
     return updated;

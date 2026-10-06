@@ -126,6 +126,25 @@ export class SupportService {
       ).setParameter('term', term);
     }
 
+    if (dto.category && dto.category !== 'ALL') {
+      const catTerm = `%[${dto.category.toLowerCase()}]%`;
+      qb.andWhere(
+        new Brackets((w) => {
+          w.where('LOWER(ticket.subject) LIKE :catTerm').orWhere(
+            'LOWER(ticket.description) LIKE :catTerm',
+          );
+        }),
+      ).setParameter('catTerm', catTerm);
+    }
+
+    if (dto.from_date) {
+      qb.andWhere('ticket.created_at >= :fromDate', { fromDate: dto.from_date });
+    }
+
+    if (dto.to_date) {
+      qb.andWhere('ticket.created_at <= :toDate', { toDate: dto.to_date });
+    }
+
     const [rawItems, total] = await qb.getManyAndCount();
 
     const items = rawItems.map((t) => {
@@ -146,6 +165,70 @@ export class SupportService {
         total,
         totalPages: Math.max(1, Math.ceil(total / limit)),
       },
+    };
+  }
+
+  async getStats(
+    dto: ListTicketsDto,
+    actingUserId: string,
+    isAdmin = false,
+  ): Promise<{
+    total: number;
+    open: number;
+    inProgress: number;
+    resolved: number;
+    closed: number;
+  }> {
+    const buildBase = () => {
+      const qb = this.tickets.createQueryBuilder('ticket');
+      if (!isAdmin) {
+        qb.andWhere('ticket.user_id = :userId', { userId: actingUserId });
+      } else if (dto.user_id) {
+        qb.andWhere('ticket.user_id = :userId', { userId: dto.user_id });
+      }
+      if (dto.category && dto.category !== 'ALL') {
+        const catTerm = `%[${dto.category.toLowerCase()}]%`;
+        qb.andWhere(
+          new Brackets((w) => {
+            w.where('LOWER(ticket.subject) LIKE :catTerm').orWhere(
+              'LOWER(ticket.description) LIKE :catTerm',
+            );
+          }),
+        ).setParameter('catTerm', catTerm);
+      }
+      if (dto.from_date) {
+        qb.andWhere('ticket.created_at >= :fromDate', { fromDate: dto.from_date });
+      }
+      if (dto.to_date) {
+        qb.andWhere('ticket.created_at <= :toDate', { toDate: dto.to_date });
+      }
+      if (dto.search) {
+        const term = `%${dto.search.toLowerCase()}%`;
+        qb.andWhere(
+          new Brackets((w) => {
+            w.where('LOWER(ticket.subject) LIKE :term').orWhere(
+              'LOWER(ticket.description) LIKE :term',
+            );
+          }),
+        ).setParameter('term', term);
+      }
+      return qb;
+    };
+
+    const [total, open, inProgress, resolved, closed] = await Promise.all([
+      buildBase().getCount(),
+      buildBase().andWhere('ticket.status = :st', { st: TicketStatus.SUBMITTED }).getCount(),
+      buildBase().andWhere('ticket.status = :st', { st: TicketStatus.UNDER_REVIEW }).getCount(),
+      buildBase().andWhere('ticket.status = :st', { st: TicketStatus.RESOLVED }).getCount(),
+      buildBase().andWhere('ticket.status = :st', { st: TicketStatus.CLOSED }).getCount(),
+    ]);
+
+    return {
+      total,
+      open,
+      inProgress,
+      resolved,
+      closed,
     };
   }
 

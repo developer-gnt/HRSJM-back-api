@@ -47,6 +47,16 @@ export class UpdateUserDto {
   @IsString()
   @MaxLength(255)
   email?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(20)
+  mobile_number?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(20)
+  phone?: string;
 }
 
 export class UpdateUserStatusDto {

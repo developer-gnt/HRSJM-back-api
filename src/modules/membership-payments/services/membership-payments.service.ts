@@ -339,7 +339,8 @@ export class MembershipPaymentsService {
           );
         }
         if (!membership.membership_number) {
-          membership.membership_number = `HRSJM-MEM-${year}-${rand}`;
+          const count = await manager.getRepository(MembershipEntity).count();
+          membership.membership_number = `HRSJM-${String(count + 1).padStart(5, '0')}`;
         }
         membership.updated_by = actingUserId;
         await manager.save(membership);

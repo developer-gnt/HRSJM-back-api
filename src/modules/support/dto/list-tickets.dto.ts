@@ -37,4 +37,17 @@ export class ListTicketsDto {
   @IsString()
   @MaxLength(255)
   search?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  category?: string;
+
+  @IsOptional()
+  @IsString()
+  from_date?: string;
+
+  @IsOptional()
+  @IsString()
+  to_date?: string;
 }

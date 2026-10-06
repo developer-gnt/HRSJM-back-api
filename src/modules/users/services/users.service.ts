@@ -16,6 +16,7 @@ export interface UserProfile {
   full_name: string;
   mobile_number: string;
   email: string | null;
+  avatar?: string | null;
   status: string;
   roles: UserRoleInfo[];
   created_at: Date;
@@ -58,6 +59,7 @@ export class UsersService {
       full_name: user.full_name,
       mobile_number: user.mobile_number,
       email: user.email,
+      avatar: user.avatar ?? null,
       status: user.status,
       roles: (user.user_roles ?? [])
         .map((userRole) => userRole.role)
@@ -185,9 +187,10 @@ export class UsersService {
 
   async updateProfile(
     user: UserEntity,
-    patch: { full_name?: string; email?: string },
+    patch: { full_name?: string; email?: string; mobile_number?: string; avatar?: string | null },
   ): Promise<UserProfile> {
     if (patch.full_name !== undefined) user.full_name = patch.full_name;
+    if (patch.avatar !== undefined) user.avatar = patch.avatar;
     if (patch.email !== undefined && patch.email !== user.email) {
       const emailOwner = await this.users.findOne({
         where: { email: patch.email.toLowerCase() },
@@ -201,6 +204,20 @@ export class UsersService {
         });
       }
       user.email = patch.email.toLowerCase();
+    }
+    if (patch.mobile_number !== undefined && patch.mobile_number !== user.mobile_number) {
+      const mobileOwner = await this.users.findOne({
+        where: { mobile_number: patch.mobile_number },
+        select: ['id'],
+      });
+      if (mobileOwner && mobileOwner.id !== user.id) {
+        throw new ConflictException({
+          message: 'Mobile number already registered',
+          code: 'MOBILE_TAKEN',
+          details: null,
+        });
+      }
+      user.mobile_number = patch.mobile_number;
     }
     user.updated_by = user.id;
     const saved = await this.users.save(user);

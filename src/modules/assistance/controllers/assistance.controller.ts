@@ -35,13 +35,27 @@ export class AssistanceController {
   constructor(private readonly assistanceService: AssistanceService) {}
 
   @Post()
-  @ApiOperation({ summary: 'Submit an assistance request (Donation Seeker/Member)' })
+  @ApiOperation({ summary: 'Submit an assistance request (Donation Seeker/Member/Admin)' })
   create(
     @Body() dto: CreateAssistanceRequestDto,
     @AuthenticatedUser() user: { sub: string },
+    @Req() req: AuthenticatedRequest,
   ) {
-    return this.assistanceService.create(dto, user.sub);
+    const isAdmin = req.user?.roles?.includes('ADMIN') ?? false;
+    return this.assistanceService.create(dto, user.sub, isAdmin);
   }
+
+  @Get('stats/summary')
+  @ApiOperation({ summary: 'Get summary statistics for assistance requests' })
+  getStats(
+    @Query() dto: ListAssistanceDto,
+    @AuthenticatedUser() user: { sub: string },
+    @Req() req: AuthenticatedRequest,
+  ) {
+    const isAdmin = req.user?.roles?.includes('ADMIN') ?? false;
+    return this.assistanceService.getStats(user.sub, isAdmin, dto);
+  }
+
 
   @Get()
   @ApiOperation({ summary: 'List assistance requests (own or all for admin)' })
@@ -53,6 +67,7 @@ export class AssistanceController {
     const isAdmin = req.user?.roles?.includes('ADMIN') ?? false;
     return this.assistanceService.list(dto, user.sub, isAdmin);
   }
+
 
   @Get(':id')
   @ApiOperation({ summary: 'View single assistance request details' })

@@ -55,6 +55,17 @@ export class SupportController {
     return this.supportService.list(dto, user.sub, isAdmin);
   }
 
+  @Get('stats/summary')
+  @ApiOperation({ summary: 'Get support ticket statistics summary' })
+  getStats(
+    @Query() dto: ListTicketsDto,
+    @AuthenticatedUser() user: { sub: string },
+    @Req() req: AuthenticatedRequest,
+  ) {
+    const isAdmin = req.user?.roles?.includes('ADMIN') ?? false;
+    return this.supportService.getStats(dto, user.sub, isAdmin);
+  }
+
   @Get(':id')
   @ApiOperation({ summary: 'View single support ticket' })
   getById(

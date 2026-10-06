@@ -1,11 +1,13 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Brackets, Repository } from 'typeorm';
+import * as bcrypt from 'bcryptjs';
 import {
   AssistanceRequestEntity,
   AssistanceRequestStatus,
@@ -19,6 +21,8 @@ import {
   RelatedEntityType,
 } from '../../documents/entities/document.entity';
 import { AuditService } from '../../audit/services/audit.service';
+import { UsersService } from '../../users/services/users.service';
+import { NotificationsService } from '../../notifications/services/notifications.service';
 
 const ALLOWED_TRANSITIONS: Record<
   AssistanceRequestStatus,
@@ -40,8 +44,6 @@ const ALLOWED_TRANSITIONS: Record<
   [AssistanceRequestStatus.CLOSED]: [],
 };
 
-import { NotificationsService } from '../../notifications/services/notifications.service';
-
 @Injectable()
 export class AssistanceService {
   constructor(
@@ -50,21 +52,60 @@ export class AssistanceService {
     private readonly documentsService: DocumentsService,
     private readonly audit: AuditService,
     private readonly notifications: NotificationsService,
+    private readonly usersService: UsersService,
   ) {}
 
   async create(
     dto: CreateAssistanceRequestDto,
     actingUserId: string,
+    isAdmin = false,
   ): Promise<AssistanceRequestEntity> {
+    let targetUserId = actingUserId;
+
+    if (dto.user_id && isAdmin) {
+      targetUserId = dto.user_id;
+    } else if (dto.mobile) {
+      const cleanMobile = dto.mobile.trim();
+      const existingUser = await this.usersService.findByLoginIdentifier(cleanMobile);
+      if (existingUser) {
+        targetUserId = existingUser.id;
+      } else {
+        if (dto.email) {
+          const emailUser = await this.usersService.findByLoginIdentifier(dto.email.trim());
+          if (emailUser) {
+            throw new ConflictException({
+              message: 'Email is already registered by another account',
+              code: 'EMAIL_TAKEN',
+              details: { email: dto.email },
+            });
+          }
+        }
+        const passwordHash = await bcrypt.hash('123456', 10);
+        const newUser = await this.usersService.createUserWithRole({
+          full_name: dto.full_name.trim() || 'Donation Seeker',
+          mobile_number: cleanMobile,
+          email: dto.email ? dto.email.trim().toLowerCase() : null,
+          password_hash: passwordHash,
+          roleName: 'DONATION_SEEKER',
+        });
+        targetUserId = newUser.id;
+      }
+    }
+
+    const initialStatus = dto.status || AssistanceRequestStatus.PENDING;
+
     const request = this.assistance.create({
-      user_id: actingUserId,
+      user_id: targetUserId,
       full_name: dto.full_name.trim(),
       mobile: dto.mobile.trim(),
-      email: dto.email ?? null,
+      email: dto.email ? dto.email.trim().toLowerCase() : null,
       requested_amount: dto.requested_amount,
       reason: dto.reason.trim(),
-      description: dto.description ?? null,
-      status: AssistanceRequestStatus.PENDING,
+      description: dto.description?.trim() ?? null,
+      status: initialStatus,
+      admin_remark: dto.admin_remark?.trim() ?? null,
+      reviewed_by: initialStatus !== AssistanceRequestStatus.PENDING ? actingUserId : null,
+      reviewed_at: initialStatus !== AssistanceRequestStatus.PENDING ? new Date() : null,
       created_by: actingUserId,
       updated_by: actingUserId,
     });
@@ -79,23 +120,91 @@ export class AssistanceService {
       metadata: {
         requestedAmount: saved.requested_amount,
         reason: saved.reason,
+        status: saved.status,
       },
     });
 
     // Real-time notifications to applicant and admins
     await this.notifications.sendToUser(
-      actingUserId,
+      targetUserId,
       'Assistance Request Submitted',
-      `Your request for ₹${saved.requested_amount} (${saved.reason}) has been received and is pending review.`,
+      `Your request for ₹${saved.requested_amount} (${saved.reason}) has been received and is ${saved.status.toLowerCase().replace('_', ' ')}.`,
       actingUserId,
     );
     await this.notifications.sendToAdmins(
       'New Assistance Request',
-      `Assistance request for ₹${saved.requested_amount} submitted by ${saved.full_name}.`,
+      `Assistance request for ₹${saved.requested_amount} submitted for ${saved.full_name}.`,
       actingUserId,
     );
 
     return saved;
+  }
+
+  async getStats(
+    actingUserId: string,
+    isAdmin = false,
+    query?: ListAssistanceDto,
+  ): Promise<{
+    total: number;
+    underReview: number;
+    approved: number;
+    rejected: number;
+    closed: number;
+    totalAmount: number;
+  }> {
+    const qb = this.assistance.createQueryBuilder('request');
+    if (!isAdmin) {
+      qb.andWhere('request.user_id = :userId', { userId: actingUserId });
+    }
+
+    if (query?.category) {
+      qb.andWhere('LOWER(request.reason) LIKE :cat', {
+        cat: `%${query.category.toLowerCase()}%`,
+      });
+    }
+
+    if (query?.min_amount !== undefined) {
+      qb.andWhere('request.requested_amount >= :minAmt', {
+        minAmt: query.min_amount,
+      });
+    }
+
+    if (query?.max_amount !== undefined) {
+      qb.andWhere('request.requested_amount <= :maxAmt', {
+        maxAmt: query.max_amount,
+      });
+    }
+
+    if (query?.from_date) {
+      qb.andWhere('request.created_at >= :fromD', {
+        fromD: new Date(query.from_date),
+      });
+    }
+
+    if (query?.to_date) {
+      qb.andWhere('request.created_at <= :toD', {
+        toD: new Date(query.to_date),
+      });
+    }
+
+    const [total, underReview, pending, approved, rejected, closed, sumResult] = await Promise.all([
+      qb.clone().getCount(),
+      qb.clone().andWhere('request.status = :s', { s: AssistanceRequestStatus.UNDER_REVIEW }).getCount(),
+      qb.clone().andWhere('request.status = :s', { s: AssistanceRequestStatus.PENDING }).getCount(),
+      qb.clone().andWhere('request.status = :s', { s: AssistanceRequestStatus.APPROVED }).getCount(),
+      qb.clone().andWhere('request.status = :s', { s: AssistanceRequestStatus.REJECTED }).getCount(),
+      qb.clone().andWhere('request.status = :s', { s: AssistanceRequestStatus.CLOSED }).getCount(),
+      qb.clone().select('SUM(request.requested_amount)', 'sum').getRawOne<{ sum: string | null }>(),
+    ]);
+
+    return {
+      total,
+      underReview: underReview + pending,
+      approved,
+      rejected,
+      closed,
+      totalAmount: sumResult?.sum ? parseFloat(sumResult.sum) : 0,
+    };
   }
 
   async list(
@@ -125,6 +234,36 @@ export class AssistanceService {
 
     if (dto.status) {
       qb.andWhere('request.status = :status', { status: dto.status });
+    }
+
+    if (dto.category) {
+      qb.andWhere('LOWER(request.reason) LIKE :cat', {
+        cat: `%${dto.category.toLowerCase()}%`,
+      });
+    }
+
+    if (dto.min_amount !== undefined) {
+      qb.andWhere('request.requested_amount >= :minAmt', {
+        minAmt: dto.min_amount,
+      });
+    }
+
+    if (dto.max_amount !== undefined) {
+      qb.andWhere('request.requested_amount <= :maxAmt', {
+        maxAmt: dto.max_amount,
+      });
+    }
+
+    if (dto.from_date) {
+      qb.andWhere('request.created_at >= :fromD', {
+        fromD: new Date(dto.from_date),
+      });
+    }
+
+    if (dto.to_date) {
+      qb.andWhere('request.created_at <= :toD', {
+        toD: new Date(dto.to_date),
+      });
     }
 
     if (dto.search) {
@@ -160,6 +299,7 @@ export class AssistanceService {
       },
     };
   }
+
 
   async getById(
     id: string,

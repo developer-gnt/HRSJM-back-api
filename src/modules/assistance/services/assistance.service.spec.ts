@@ -20,13 +20,19 @@ describe('AssistanceService', () => {
       sendToUser: jest.fn().mockResolvedValue(undefined),
       sendToAdmins: jest.fn().mockResolvedValue(undefined),
     };
+    const usersService = {
+      findByLoginIdentifier: jest.fn().mockResolvedValue(null),
+      createUserWithRole: jest.fn().mockResolvedValue({ id: 'u1' }),
+    };
     service = new AssistanceService(
       repo as never,
       docs as never,
       audit as never,
       notifications as never,
+      usersService as never,
     );
   });
+
 
   describe('create', () => {
     it('creates assistance request in PENDING status', async () => {

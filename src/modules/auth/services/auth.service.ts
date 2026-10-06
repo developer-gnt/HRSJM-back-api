@@ -347,7 +347,7 @@ export class AuthService {
 
   async updateOwnProfile(
     userId: string,
-    dto: { full_name?: string; email?: string },
+    dto: { full_name?: string; email?: string; mobile_number?: string; phone?: string; avatar?: string | null },
   ): Promise<UserProfile> {
     await this.getOwnProfile(userId);
     const user = await this.usersService.findById(userId);
@@ -358,9 +358,12 @@ export class AuthService {
         details: null,
       });
     }
+    const mobile_number = dto.mobile_number || dto.phone;
     const updated = await this.usersService.updateProfile(user, {
       full_name: dto.full_name,
       email: dto.email,
+      mobile_number,
+      avatar: dto.avatar,
     });
     await this.auditService.record({
       event: 'AUTH_PROFILE_UPDATED',

@@ -50,6 +50,16 @@ export class MembershipsController {
     return this.membershipsService.list(dto);
   }
 
+  @Get('memberships/stats')
+  @RequirePermissions('membership.read')
+  @ApiOperation({ summary: 'Get membership summary KPI statistics (admin)' })
+  getStats(
+    @Query('search') search?: string,
+    @Query('category_id') categoryId?: string,
+  ) {
+    return this.membershipsService.getStats(search, categoryId);
+  }
+
   @Get(['users/me/membership', 'memberships/my'])
   @ApiOperation({ summary: 'Get current user membership profile' })
   getMyMembership(@AuthenticatedUser() user: { sub: string }) {

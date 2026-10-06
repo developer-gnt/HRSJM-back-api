@@ -8,6 +8,7 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { Brackets, In, Repository } from 'typeorm';
 import * as bcrypt from 'bcryptjs';
+import { UserEntity } from '../../users/entities/user.entity';
 import { MembershipEntity } from '../entities/membership.entity';
 import { MembershipCategoryEntity } from '../../membership-categories/entities/membership-category.entity';
 import { MembershipPaymentEntity } from '../../membership-payments/entities/membership-payment.entity';
@@ -246,6 +247,84 @@ export class MembershipsService {
     };
   }
 
+  async getStats(
+    search?: string,
+    categoryId?: string,
+  ): Promise<{
+    total: number;
+    active: number;
+    expiringSoon: number;
+    inactive: number;
+    pending: number;
+  }> {
+    const applyFilters = (qb: any) => {
+      qb.leftJoin('m.user', 'u');
+      if (categoryId) {
+        qb.andWhere('m.category_id = :categoryId', { categoryId });
+      }
+      if (search && search.trim()) {
+        const term = `%${search.trim().toLowerCase()}%`;
+        qb.andWhere(
+          new Brackets((w) => {
+            w.where('LOWER(m.membership_number) LIKE :term')
+              .orWhere('LOWER(u.full_name) LIKE :term')
+              .orWhere('u.mobile_number LIKE :term')
+              .orWhere('LOWER(u.email) LIKE :term');
+          }),
+        ).setParameter('term', term);
+      }
+      return qb;
+    };
+
+    const totalQb = this.memberships.createQueryBuilder('m');
+    applyFilters(totalQb);
+    const total = await totalQb.getCount();
+
+    const activeQb = this.memberships
+      .createQueryBuilder('m')
+      .where('m.status = :status', { status: MembershipStatus.ACTIVE });
+    applyFilters(activeQb);
+    const active = await activeQb.getCount();
+
+    const now = new Date();
+    const in30Days = new Date();
+    in30Days.setDate(in30Days.getDate() + 30);
+
+    const expiringSoonQb = this.memberships
+      .createQueryBuilder('m')
+      .where('m.status = :status', { status: MembershipStatus.ACTIVE })
+      .andWhere('m.expiry_date >= :now', { now })
+      .andWhere('m.expiry_date <= :in30Days', { in30Days });
+    applyFilters(expiringSoonQb);
+    const expiringSoon = await expiringSoonQb.getCount();
+
+    const inactiveQb = this.memberships
+      .createQueryBuilder('m')
+      .where('m.status IN (:...statuses)', {
+        statuses: [
+          MembershipStatus.EXPIRED,
+          MembershipStatus.CANCELLED,
+          MembershipStatus.REJECTED,
+        ],
+      });
+    applyFilters(inactiveQb);
+    const inactive = await inactiveQb.getCount();
+
+    const pendingQb = this.memberships
+      .createQueryBuilder('m')
+      .where('m.status = :status', { status: MembershipStatus.PENDING });
+    applyFilters(pendingQb);
+    const pending = await pendingQb.getCount();
+
+    return {
+      total,
+      active,
+      expiringSoon,
+      inactive,
+      pending,
+    };
+  }
+
   async getById(
     id: string,
     actingUserId: string,
@@ -332,6 +411,30 @@ export class MembershipsService {
 
     if (dto.application_data !== undefined) {
       membership.application_data = dto.application_data;
+
+      // Sync user profile fields if admin updated personal identity in application_data
+      if (membership.user_id && typeof dto.application_data === 'object' && dto.application_data !== null) {
+        try {
+          const userRepo = this.memberships.manager.getRepository(UserEntity);
+          const user = await userRepo.findOne({ where: { id: membership.user_id } });
+          if (user) {
+            const appData = dto.application_data as Record<string, any>;
+            if (typeof appData.full_name === 'string' && appData.full_name.trim()) {
+              user.full_name = appData.full_name.trim();
+            }
+            if (typeof appData.mobile_number === 'string' && appData.mobile_number.trim()) {
+              user.mobile_number = appData.mobile_number.trim();
+            }
+            if (typeof appData.email === 'string') {
+              user.email = appData.email.trim() || null;
+            }
+            await userRepo.save(user);
+            membership.user = user;
+          }
+        } catch (err) {
+          console.warn('Could not sync user details on membership update:', err);
+        }
+      }
     }
     if (dto.admin_notes !== undefined) {
       membership.admin_notes = dto.admin_notes;
@@ -389,9 +492,7 @@ export class MembershipsService {
         );
       }
       if (!membership.membership_number) {
-        const year = now.getFullYear();
-        const rand = Math.floor(10000 + Math.random() * 90000);
-        membership.membership_number = `HRSJM-MEM-${year}-${rand}`;
+        membership.membership_number = await this.generateMemberNumber();
       }
       membership.rejection_reason = null;
     } else if (dto.status === MembershipStatus.REJECTED) {
@@ -520,6 +621,16 @@ export class MembershipsService {
       return true; // Lifetime
     }
     return new Date(membership.expiry_date) >= new Date();
+  }
+
+  private async generateMemberNumber(): Promise<string> {
+    try {
+      const count = typeof this.memberships?.count === 'function' ? await this.memberships.count() : 0;
+      const nextNum = count + 1;
+      return `HRSJM-${String(nextNum).padStart(5, '0')}`;
+    } catch {
+      return 'HRSJM-00001';
+    }
   }
 
   async getRenewalHistory(
