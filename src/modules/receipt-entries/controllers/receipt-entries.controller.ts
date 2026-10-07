@@ -48,6 +48,13 @@ export class ReceiptEntriesController {
     return this.receiptService.list(dto);
   }
 
+  @Get('stats')
+  @RequirePermissions('receipt_entry.read')
+  @ApiOperation({ summary: 'Get KPI statistics for receipt entries (admin)' })
+  getStats() {
+    return this.receiptService.getStats();
+  }
+
   @Get(':id')
   @RequirePermissions('receipt_entry.read')
   @ApiOperation({

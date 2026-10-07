@@ -7,6 +7,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
 import { AccountEntity } from '../../accounting/entities/account.entity';
 import { AccountingEntryEntity } from '../../accounting/entities/accounting-entry.entity';
+import { AccountingEntryLineEntity } from '../../accounting/entities/accounting-entry-line.entity';
 import {
   AccountType,
   ReferenceType,
@@ -275,6 +276,35 @@ export class ReceiptEntriesService {
   }
 
   /**
+   * Executive KPI statistics for receipt entries.
+   */
+  async getStats() {
+    const raw = await this.receiptRepository
+      .createQueryBuilder('receipt')
+      .select('COUNT(*)', 'all')
+      .addSelect(
+        `COUNT(CASE WHEN receipt.status = 'POSTED' THEN 1 END)`,
+        'posted',
+      )
+      .addSelect(
+        `COUNT(CASE WHEN receipt.status = 'CANCELLED' THEN 1 END)`,
+        'cancelled',
+      )
+      .addSelect(
+        `COALESCE(SUM(CASE WHEN receipt.status = 'POSTED' THEN CAST(receipt.amount AS numeric) ELSE 0 END), 0)`,
+        'total_amount',
+      )
+      .getRawOne();
+
+    return {
+      all: parseInt(raw?.all ?? '0', 10),
+      posted: parseInt(raw?.posted ?? '0', 10),
+      cancelled: parseInt(raw?.cancelled ?? '0', 10),
+      totalAmount: parseFloat(raw?.total_amount ?? '0'),
+    };
+  }
+
+  /**
    * Retrieve a single receipt entry with its accounts and journal lines.
    */
   async getById(id: string): Promise<ReceiptEntryEntity> {
@@ -301,48 +331,197 @@ export class ReceiptEntriesService {
   }
 
   /**
-   * Updates metadata on an active/posted receipt entry.
+   * Updates an active/posted receipt entry and synchronizes the linked journal lines.
    */
   async update(
     id: string,
     dto: UpdateReceiptEntryDto,
     actingUserId?: string | null,
   ): Promise<ReceiptEntryEntity> {
-    const receipt = await this.getById(id);
-
-    if (receipt.status === ReceiptStatus.CANCELLED) {
-      throw new BadRequestException({
-        message: 'Cannot update a cancelled receipt entry',
-        code: 'RECEIPT_ENTRY_ALREADY_CANCELLED',
-        details: { id },
+    return this.dataSource.transaction(async (manager) => {
+      const receipt = await manager.findOne(ReceiptEntryEntity, {
+        where: { id },
+        relations: [
+          'income_account',
+          'received_in_account',
+          'accounting_entry',
+          'accounting_entry.lines',
+          'accounting_entry.lines.account',
+        ],
       });
-    }
 
-    if (dto.received_from !== undefined) {
-      receipt.received_from = dto.received_from.trim();
-    }
-    if (dto.reference_number !== undefined) {
-      receipt.reference_number = dto.reference_number?.trim() || null;
-    }
-    if (dto.description !== undefined) {
-      receipt.description = dto.description?.trim() || null;
-    }
-    if (dto.attachment_url !== undefined) {
-      receipt.attachment_url = dto.attachment_url?.trim() || null;
-    }
-    receipt.updated_by = actingUserId ?? null;
+      if (!receipt) {
+        throw new NotFoundException({
+          message: 'Receipt entry not found',
+          code: 'RECEIPT_ENTRY_NOT_FOUND',
+          details: { id },
+        });
+      }
 
-    const saved = await this.receiptRepository.save(receipt);
+      if (receipt.status === ReceiptStatus.CANCELLED) {
+        throw new BadRequestException({
+          message: 'Cannot update a cancelled receipt entry',
+          code: 'RECEIPT_ENTRY_ALREADY_CANCELLED',
+          details: { id },
+        });
+      }
 
-    await this.auditService.record({
-      event: 'RECEIPT_ENTRY_UPDATED',
-      actorId: actingUserId,
-      entityType: 'receipt_entries',
-      entityId: id,
-      metadata: { ...dto },
+      // Validate income account if updated
+      let incomeAccount = receipt.income_account;
+      if (
+        dto.income_account_id &&
+        dto.income_account_id !== receipt.income_account_id
+      ) {
+        const acc = await manager.findOne(AccountEntity, {
+          where: { id: dto.income_account_id },
+        });
+        if (!acc) {
+          throw new NotFoundException({
+            message: 'Income account not found',
+            code: 'INCOME_ACCOUNT_NOT_FOUND',
+            details: { id: dto.income_account_id },
+          });
+        }
+        if (!acc.is_active) {
+          throw new BadRequestException({
+            message: 'Selected income account is inactive',
+            code: 'INCOME_ACCOUNT_INACTIVE',
+            details: { id: dto.income_account_id },
+          });
+        }
+        if (acc.account_type !== AccountType.INCOME) {
+          throw new BadRequestException({
+            message: 'Selected income account must have account type INCOME',
+            code: 'INVALID_INCOME_ACCOUNT_TYPE',
+            details: {
+              id: dto.income_account_id,
+              account_type: acc.account_type,
+            },
+          });
+        }
+        receipt.income_account_id = dto.income_account_id;
+        incomeAccount = acc;
+      }
+
+      // Validate received-in account if updated
+      let receivedInAccount = receipt.received_in_account;
+      if (
+        dto.received_in_account_id &&
+        dto.received_in_account_id !== receipt.received_in_account_id
+      ) {
+        const acc = await manager.findOne(AccountEntity, {
+          where: { id: dto.received_in_account_id },
+        });
+        if (!acc) {
+          throw new NotFoundException({
+            message: 'Received-in payment account not found',
+            code: 'RECEIVED_IN_ACCOUNT_NOT_FOUND',
+            details: { id: dto.received_in_account_id },
+          });
+        }
+        if (!acc.is_active) {
+          throw new BadRequestException({
+            message: 'Selected receiving account is inactive',
+            code: 'RECEIVED_IN_ACCOUNT_INACTIVE',
+            details: { id: dto.received_in_account_id },
+          });
+        }
+        if (acc.account_type !== AccountType.ASSET) {
+          throw new BadRequestException({
+            message:
+              'Selected receiving account must have account type ASSET (Bank/Cash)',
+            code: 'INVALID_RECEIVED_IN_ACCOUNT_TYPE',
+            details: {
+              id: dto.received_in_account_id,
+              account_type: acc.account_type,
+            },
+          });
+        }
+        receipt.received_in_account_id = dto.received_in_account_id;
+        receivedInAccount = acc;
+      }
+
+      if (dto.receipt_date !== undefined && dto.receipt_date.trim()) {
+        receipt.receipt_date = new Date(dto.receipt_date.trim());
+      }
+      if (dto.received_from !== undefined) {
+        receipt.received_from = dto.received_from.trim();
+      }
+      if (dto.amount !== undefined) {
+        receipt.amount = dto.amount;
+      }
+      if (dto.payment_method !== undefined) {
+        receipt.payment_method = dto.payment_method;
+      }
+      if (dto.reference_number !== undefined) {
+        receipt.reference_number = dto.reference_number?.trim() || null;
+      }
+      if (dto.description !== undefined) {
+        receipt.description = dto.description?.trim() || null;
+      }
+      if (dto.attachment_url !== undefined) {
+        receipt.attachment_url = dto.attachment_url?.trim() || null;
+      }
+      receipt.updated_by = actingUserId ?? null;
+
+      const saved = await manager.save(ReceiptEntryEntity, receipt);
+
+      // Update linked accounting journal entry lines if present
+      if (receipt.accounting_entry_id) {
+        const accountingEntry = await manager.findOne(AccountingEntryEntity, {
+          where: { id: receipt.accounting_entry_id },
+          relations: ['lines'],
+        });
+
+        if (accountingEntry) {
+          accountingEntry.entry_date = receipt.receipt_date;
+          accountingEntry.description =
+            receipt.description ||
+            `Receipt voucher ${receipt.voucher_number} received from ${receipt.received_from}`;
+          accountingEntry.updated_by = actingUserId ?? null;
+          await manager.save(AccountingEntryEntity, accountingEntry);
+
+          if (accountingEntry.lines && accountingEntry.lines.length >= 2) {
+            // Line 1: Receiving account (Asset - Debit)
+            const debitLine =
+              accountingEntry.lines.find((l) => Number(l.debit_amount) > 0) ||
+              accountingEntry.lines[0];
+            debitLine.account_id = receipt.received_in_account_id;
+            debitLine.debit_amount = receipt.amount;
+            debitLine.credit_amount = 0;
+            debitLine.line_description = `Received via ${receipt.payment_method}`;
+            debitLine.updated_by = actingUserId ?? null;
+
+            // Line 2: Income account (Income - Credit)
+            const creditLine =
+              accountingEntry.lines.find((l) => Number(l.credit_amount) > 0) ||
+              accountingEntry.lines[1];
+            creditLine.account_id = receipt.income_account_id;
+            creditLine.debit_amount = 0;
+            creditLine.credit_amount = receipt.amount;
+            creditLine.line_description = `Income: ${receipt.received_from}`;
+            creditLine.updated_by = actingUserId ?? null;
+
+            await manager.save(AccountingEntryLineEntity, [
+              debitLine,
+              creditLine,
+            ]);
+          }
+        }
+      }
+
+      await this.auditService.record({
+        event: 'RECEIPT_ENTRY_UPDATED',
+        actorId: actingUserId,
+        entityType: 'receipt_entries',
+        entityId: id,
+        metadata: { ...dto },
+      });
+
+      saved.income_account = incomeAccount;
+      saved.received_in_account = receivedInAccount;
+      return saved;
     });
-
-    return saved;
   }
 
   /**
