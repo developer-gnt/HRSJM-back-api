@@ -8,6 +8,7 @@ import {
 import { TrialBalanceService } from '../services/trial-balance.service';
 import { ProfitLossService } from '../services/profit-loss.service';
 import { BalanceSheetService } from '../services/balance-sheet.service';
+import { ReportsAnalyticsService } from '../services/reports-analytics.service';
 import { TrialBalanceQueryDto } from '../dto/trial-balance-query.dto';
 import { TrialBalanceSummaryQueryDto } from '../dto/trial-balance-summary-query.dto';
 import { ProfitLossQueryDto } from '../dto/profit-loss-query.dto';
@@ -24,7 +25,17 @@ export class ReportsController {
     private readonly trialBalanceService: TrialBalanceService,
     private readonly profitLossService: ProfitLossService,
     private readonly balanceSheetService: BalanceSheetService,
+    private readonly reportsAnalyticsService: ReportsAnalyticsService,
   ) {}
+
+  @Get('analytics')
+  @RequirePermissions('trial_balance.read')
+  @ApiOperation({
+    summary: 'Get platform activities analytics, growth charts and KPIs (admin)',
+  })
+  getAnalytics(@Query() query: { start_date?: string; end_date?: string }) {
+    return this.reportsAnalyticsService.getAnalytics(query);
+  }
 
   @Get('trial-balance')
   @RequirePermissions('trial_balance.read')
