@@ -103,6 +103,7 @@ describe('ReportsController', () => {
       trialBalanceService as unknown as TrialBalanceService,
       profitLossService as unknown as ProfitLossService,
       balanceSheetService as unknown as BalanceSheetService,
+      { getAnalytics: jest.fn().mockResolvedValue({}) } as any,
     );
   });
 

@@ -9,6 +9,7 @@ import { SupportTicketEntity } from '../../support/entities/support-ticket.entit
 import { DonationEntity } from '../../donations/entities/donation.entity';
 import { DocumentEntity } from '../../documents/entities/document.entity';
 import { NotificationRecipientEntity } from '../../notifications/entities/notification-recipient.entity';
+import { EventEntity } from '../../events/entities/event.entity';
 
 describe('AdminService', () => {
   let service: AdminService;
@@ -25,6 +26,7 @@ describe('AdminService', () => {
         { provide: getRepositoryToken(DonationEntity), useValue: { count: jest.fn().mockResolvedValue(4), createQueryBuilder: jest.fn().mockReturnValue({ select: jest.fn().mockReturnThis(), where: jest.fn().mockReturnThis(), getRawOne: jest.fn().mockResolvedValue({ total: '1500' }) }) } },
         { provide: getRepositoryToken(DocumentEntity), useValue: { count: jest.fn().mockResolvedValue(0), find: jest.fn().mockResolvedValue([]) } },
         { provide: getRepositoryToken(NotificationRecipientEntity), useValue: { count: jest.fn().mockResolvedValue(0) } },
+        { provide: getRepositoryToken(EventEntity), useValue: { count: jest.fn().mockResolvedValue(2) } },
       ],
     }).compile();
 

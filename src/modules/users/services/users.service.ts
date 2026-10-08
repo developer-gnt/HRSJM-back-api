@@ -41,7 +41,10 @@ export class UsersService {
   }
 
   findById(id: string): Promise<UserEntity | null> {
-    return this.users.findOne({ where: { id } });
+    return this.users.findOne({
+      where: { id },
+      relations: ['user_roles', 'user_roles.role'],
+    });
   }
 
   async getProfile(id: string): Promise<UserProfile | null> {
@@ -220,7 +223,8 @@ export class UsersService {
       user.mobile_number = patch.mobile_number;
     }
     user.updated_by = user.id;
-    const saved = await this.users.save(user);
-    return this.toProfile(saved);
+    await this.users.save(user);
+    const fullProfile = await this.getProfile(user.id);
+    return fullProfile || this.toProfile(user);
   }
 }

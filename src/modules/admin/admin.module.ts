@@ -13,6 +13,7 @@ import { NotificationRecipientEntity } from '../notifications/entities/notificat
 import { MembershipPaymentEntity } from '../membership-payments/entities/membership-payment.entity';
 import { ReceiptEntity } from '../membership-payments/entities/receipt.entity';
 import { AuditLogEntity } from '../audit/entities/audit-log.entity';
+import { EventEntity } from '../events/entities/event.entity';
 
 @Module({
   imports: [
@@ -28,6 +29,7 @@ import { AuditLogEntity } from '../audit/entities/audit-log.entity';
       MembershipPaymentEntity,
       ReceiptEntity,
       AuditLogEntity,
+      EventEntity,
     ]),
   ],
   controllers: [AdminController],

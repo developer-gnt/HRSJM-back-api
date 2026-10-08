@@ -17,12 +17,16 @@ import { AssistanceRequestStatus } from '../../assistance/entities/assistance-re
 import { TicketStatus } from '../../support/entities/support-ticket.entity';
 import { ListMembersQueryDto } from '../dto/list-members.dto';
 
-/** Month keys (YYYY-MM) for the last N months, oldest first, ending this month. */
-function lastNMonthKeys(n: number): string[] {
+import { EventEntity, EventStatus } from '../../events/entities/event.entity';
+
+/** Month keys (YYYY-MM) for the last N months, oldest first, ending in targetYear-targetMonth. */
+function lastNMonthKeys(n: number, targetYear?: number, targetMonth?: number): string[] {
   const keys: string[] = [];
   const now = new Date();
+  const y = targetYear !== undefined ? targetYear : now.getFullYear();
+  const m = targetMonth !== undefined ? targetMonth : now.getMonth();
   for (let i = n - 1; i >= 0; i--) {
-    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const d = new Date(y, m - i, 1);
     keys.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`);
   }
   return keys;
@@ -53,9 +57,28 @@ export class AdminService {
     private readonly receiptsRepo: Repository<ReceiptEntity>,
     @InjectRepository(AuditLogEntity)
     private readonly auditRepo: Repository<AuditLogEntity>,
+    @InjectRepository(EventEntity)
+    private readonly eventsRepo: Repository<EventEntity>,
   ) {}
 
-  async getDashboard() {
+  async getDashboard(month?: string, growthMonths?: number) {
+    let targetYear: number;
+    let targetMonth: number; // 0-indexed
+
+    if (month && /^\d{4}-\d{2}$/.test(month)) {
+      const [y, m] = month.split('-').map(Number);
+      targetYear = y;
+      targetMonth = m - 1;
+    } else {
+      const now = new Date();
+      targetYear = now.getFullYear();
+      targetMonth = now.getMonth();
+    }
+
+    const thisMonthStart = new Date(targetYear, targetMonth, 1);
+    const thisMonthEnd = new Date(targetYear, targetMonth + 1, 1);
+    const prevMonthStart = new Date(targetYear, targetMonth - 1, 1);
+
     const [
       totalUsers,
       totalMemberships,
@@ -68,6 +91,8 @@ export class AdminService {
       totalTickets,
       openTickets,
       totalDonations,
+      totalEvents,
+      upcomingEvents,
     ] = await Promise.all([
       this.usersRepo.count(),
       this.membershipsRepo.count(),
@@ -80,6 +105,8 @@ export class AdminService {
       this.ticketsRepo.count(),
       this.ticketsRepo.count({ where: { status: TicketStatus.SUBMITTED } }),
       this.donationsRepo.count(),
+      this.eventsRepo.count({ where: { deleted_at: IsNull() } }),
+      this.eventsRepo.count({ where: { status: EventStatus.UPCOMING, deleted_at: IsNull() } }),
     ]);
 
     const donationSumRow = await this.donationsRepo
@@ -139,22 +166,23 @@ export class AdminService {
     const membershipIncome = revenueByType.get('MEMBERSHIP') ?? 0;
     const donationIncome = revenueByType.get('DONATION') ?? 0;
 
-    // Member growth: cumulative total members at each of the last 6 month ends.
-    const monthKeys = lastNMonthKeys(6);
+    // Member growth: cumulative total memberships at each of the N months ending in selected month.
+    const nMonths = growthMonths && [3, 6, 12].includes(growthMonths) ? growthMonths : 6;
+    const monthKeys = lastNMonthKeys(nMonths, targetYear, targetMonth);
     const monthStart = new Date(
       Number(monthKeys[0].slice(0, 4)),
       Number(monthKeys[0].slice(5, 7)) - 1,
       1,
     );
     const growthRows: Array<{ bucket: string; total: string }> =
-      await this.usersRepo
-        .createQueryBuilder('u')
+      await this.membershipsRepo
+        .createQueryBuilder('m')
         .select(
-          "to_char(date_trunc('month', u.created_at), 'YYYY-MM')",
+          "to_char(date_trunc('month', m.created_at), 'YYYY-MM')",
           'bucket',
         )
         .addSelect('count(*)', 'total')
-        .where('u.created_at >= :monthStart', { monthStart })
+        .where('m.created_at >= :monthStart', { monthStart })
         .groupBy('bucket')
         .orderBy('bucket', 'ASC')
         .getRawMany();
@@ -164,27 +192,27 @@ export class AdminService {
     );
     let cumulative = 0;
     const monthBucketsBefore = monthKeys.map((key) => {
-      const [year, month] = key.split('-').map(Number);
-      return new Date(year, month - 1, 1);
+      const [year, mth] = key.split('-').map(Number);
+      return new Date(year, mth - 1, 1);
     });
-    const usersBefore = await this.usersRepo
-      .createQueryBuilder('u')
-      .where('u.created_at < :start', { start: monthBucketsBefore[0] })
+    const membersBefore = await this.membershipsRepo
+      .createQueryBuilder('m')
+      .where('m.created_at < :start', { start: monthBucketsBefore[0] })
       .getCount();
-    cumulative = usersBefore;
+    cumulative = membersBefore;
     const memberGrowth = monthKeys.map((key) => {
       cumulative += growthByMonth.get(key) ?? 0;
       return { month: key, total: cumulative };
     });
 
-    // Month-over-month activity for the KPI growth badges.
-    const now = new Date();
-    const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-    const prevMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    // Month-over-month activity for the KPI badges relative to selected month.
     const between = (repo: Repository<any>, column: string) => [
       repo
         .createQueryBuilder('x')
-        .where(`x.${column} >= :start`, { start: thisMonthStart })
+        .where(`x.${column} >= :start AND x.${column} < :end`, {
+          start: thisMonthStart,
+          end: thisMonthEnd,
+        })
         .getCount(),
       repo
         .createQueryBuilder('x')
@@ -197,6 +225,9 @@ export class AdminService {
     const [usersThisMonth, usersPrevMonth] = await Promise.all(
       between(this.usersRepo, 'created_at'),
     );
+    const [membershipsThisMonth, membershipsPrevMonth] = await Promise.all(
+      between(this.membershipsRepo, 'created_at'),
+    );
     const [assistanceThisMonth, assistancePrevMonth] = await Promise.all(
       between(this.assistanceRepo, 'created_at'),
     );
@@ -205,6 +236,9 @@ export class AdminService {
     );
     const [donationsThisMonth, donationsPrevMonth] = await Promise.all(
       between(this.donationsRepo, 'created_at'),
+    );
+    const [eventsThisMonth, eventsPrevMonth] = await Promise.all(
+      between(this.eventsRepo, 'start_at'),
     );
 
     // Recent activity feed: last 10 audit events.
@@ -223,6 +257,8 @@ export class AdminService {
         total: totalMemberships,
         active: activeMemberships,
         pending: pendingMemberships,
+        thisMonth: membershipsThisMonth,
+        prevMonth: membershipsPrevMonth,
       },
       renewals: {
         total: totalRenewals,
@@ -240,6 +276,12 @@ export class AdminService {
         open: openTickets,
         thisMonth: ticketsThisMonth,
         prevMonth: ticketsPrevMonth,
+      },
+      events: {
+        total: totalEvents,
+        upcoming: upcomingEvents,
+        thisMonth: eventsThisMonth,
+        prevMonth: eventsPrevMonth,
       },
       donations: {
         total: totalDonations,

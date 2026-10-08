@@ -70,19 +70,34 @@ async function seedTestUsers(): Promise<void> {
       // 2. Hash the password
       const passwordHash = await bcrypt.hash(testUser.password, 10);
 
-      // 3. Insert or update the user
-      const userResult = await dataSource.query(
-        `INSERT INTO "users" ("full_name", "email", "mobile_number", "password_hash", "status")
-         VALUES ($1, $2, $3, $4, 'ACTIVE')
-         ON CONFLICT ("mobile_number") DO UPDATE
-         SET "full_name" = EXCLUDED."full_name",
-             "email" = EXCLUDED."email",
-             "password_hash" = EXCLUDED."password_hash",
-             "status" = 'ACTIVE'
-         RETURNING "id"`,
-        [testUser.fullName, testUser.email, testUser.mobile, passwordHash],
+      // 3. Find if user exists by email or mobile
+      const existingUser = await dataSource.query(
+        `SELECT id FROM "users" WHERE "email" = $1 OR "mobile_number" = $2 LIMIT 1`,
+        [testUser.email, testUser.mobile],
       );
-      const userId = userResult[0].id;
+
+      let userId: string;
+      if (existingUser && existingUser.length > 0) {
+        userId = existingUser[0].id;
+        await dataSource.query(
+          `UPDATE "users"
+           SET "full_name" = $1,
+               "email" = $2,
+               "mobile_number" = $3,
+               "password_hash" = $4,
+               "status" = 'ACTIVE'
+           WHERE "id" = $5`,
+          [testUser.fullName, testUser.email, testUser.mobile, passwordHash, userId],
+        );
+      } else {
+        const userResult = await dataSource.query(
+          `INSERT INTO "users" ("full_name", "email", "mobile_number", "password_hash", "status")
+           VALUES ($1, $2, $3, $4, 'ACTIVE')
+           RETURNING "id"`,
+          [testUser.fullName, testUser.email, testUser.mobile, passwordHash],
+        );
+        userId = userResult[0].id;
+      }
 
       // 4. Assign role in user_roles
       await dataSource.query(
