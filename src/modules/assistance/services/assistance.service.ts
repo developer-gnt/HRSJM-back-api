@@ -300,6 +300,62 @@ export class AssistanceService {
     };
   }
 
+  async listApprovedCauses(
+    dto: ListAssistanceDto,
+  ): Promise<{
+    items: AssistanceRequestEntity[];
+    meta: { page: number; limit: number; total: number; totalPages: number };
+  }> {
+    const page = dto.page ?? 1;
+    const limit = dto.limit ?? 50;
+
+    const qb = this.assistance
+      .createQueryBuilder('request')
+      .leftJoinAndSelect('request.user', 'user')
+      .where('request.status = :status', { status: AssistanceRequestStatus.APPROVED })
+      .orderBy('request.reviewed_at', 'DESC', 'NULLS LAST')
+      .addOrderBy('request.created_at', 'DESC')
+      .skip((page - 1) * limit)
+      .take(limit);
+
+    if (dto.category) {
+      qb.andWhere('LOWER(request.reason) LIKE :cat', {
+        cat: `%${dto.category.toLowerCase()}%`,
+      });
+    }
+
+    if (dto.search) {
+      const term = `%${dto.search.toLowerCase()}%`;
+      qb.andWhere(
+        new Brackets((sub) => {
+          sub
+            .where('LOWER(request.full_name) LIKE :term')
+            .orWhere('LOWER(request.reason) LIKE :term')
+            .orWhere('LOWER(request.description) LIKE :term');
+        }),
+      ).setParameter('term', term);
+    }
+
+    const [rawItems, total] = await qb.getManyAndCount();
+
+    const items = rawItems.map((r) => {
+      if (r.user) {
+        delete (r.user as { password_hash?: string }).password_hash;
+      }
+      return r;
+    });
+
+    return {
+      items,
+      meta: {
+        page,
+        limit,
+        total,
+        totalPages: Math.max(1, Math.ceil(total / limit)),
+      },
+    };
+  }
+
 
   async getById(
     id: string,

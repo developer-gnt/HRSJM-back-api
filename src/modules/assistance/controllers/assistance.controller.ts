@@ -69,6 +69,12 @@ export class AssistanceController {
   }
 
 
+  @Get('approved')
+  @ApiOperation({ summary: 'List all approved assistance requests as verified public causes' })
+  listApproved(@Query() dto: ListAssistanceDto) {
+    return this.assistanceService.listApprovedCauses(dto);
+  }
+
   @Get(':id')
   @ApiOperation({ summary: 'View single assistance request details' })
   getById(
