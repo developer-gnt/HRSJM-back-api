@@ -29,6 +29,7 @@ import { ReceiptsModule } from './modules/receipts/receipts.module';
 import { EventsModule } from './modules/events/events.module';
 import { NewsModule } from './modules/news/news.module';
 import { BlogsModule } from './modules/blogs/blogs.module';
+import { MockGatewayModule } from './modules/mock-gateway/mock-gateway.module';
 import paymentConfig from './config/payment.config';
 
 @Module({
@@ -67,6 +68,7 @@ import paymentConfig from './config/payment.config';
     EventsModule,
     NewsModule,
     BlogsModule,
+    MockGatewayModule,
   ],
 })
 export class AppModule {}
