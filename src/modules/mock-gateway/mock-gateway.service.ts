@@ -35,12 +35,21 @@ export interface MockPaymentResponse {
   error_description?: string;
 }
 
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
+import { DonationEntity } from '../donations/entities/donation.entity';
+
 @Injectable()
 export class MockGatewayService {
   private readonly SECRET_KEY = 'hrsjm_sandbox_secret_key_mock_pg_2026';
   private readonly KEY_ID = 'rzp_test_hrsjm_live_sandbox';
   private ordersStore = new Map<string, MockOrderResponse>();
   private paymentsStore = new Map<string, MockPaymentResponse>();
+
+  constructor(
+    @InjectRepository(DonationEntity)
+    private readonly donationsRepo?: Repository<DonationEntity>,
+  ) {}
 
   /**
    * Generates a new realistic mock gateway order
@@ -173,6 +182,27 @@ export class MockGatewayService {
 
     order.status = 'paid';
     this.paymentsStore.set(paymentId, successPayment);
+
+    // Save donation record to database if purpose is donation
+    if (this.donationsRepo && (order.notes?.purpose === 'donation' || !order.notes?.purpose)) {
+      try {
+        const donation = this.donationsRepo.create({
+          donor_name: order.notes?.customer_name || 'Donor',
+          donor_mobile: order.notes?.customer_phone || '9888880002',
+          donor_email: order.notes?.customer_email || null,
+          cause: order.notes?.title || 'HRSJM Social Initiative',
+          amount: dto.amount,
+          status: 'COMPLETED',
+          remark: order.notes?.entity_id
+            ? `Payment for Seeker/Cause ID: ${order.notes.entity_id} (Gateway ID: ${paymentId})`
+            : `Payment completed via Mock Gateway (ID: ${paymentId})`,
+        });
+        void this.donationsRepo.save(donation);
+      } catch {
+        // Ignored
+      }
+    }
+
     return successPayment;
   }
 
