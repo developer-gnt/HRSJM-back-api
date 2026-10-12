@@ -3,6 +3,7 @@ import {
   Controller,
   Get,
   Param,
+  ParseUUIDPipe,
   Patch,
   Post,
   Query,
@@ -26,6 +27,7 @@ import { AssistanceService } from '../services/assistance.service';
 import { CreateAssistanceRequestDto } from '../dto/create-assistance-request.dto';
 import { ListAssistanceDto } from '../dto/list-assistance.dto';
 import { UpdateAssistanceStatusDto } from '../dto/update-assistance-status.dto';
+import { AssistanceRequestStatus } from '../entities/assistance-request.entity';
 
 @ApiTags('assistance-requests')
 @ApiBearerAuth()
@@ -68,11 +70,25 @@ export class AssistanceController {
     return this.assistanceService.list(dto, user.sub, isAdmin);
   }
 
+  @Get('approved')
+  @ApiOperation({ summary: 'List approved assistance requests (for public causes/donations)' })
+  getApproved(
+    @Query() dto: ListAssistanceDto,
+    @AuthenticatedUser() user: { sub: string },
+    @Req() req: AuthenticatedRequest,
+  ) {
+    const isAdmin = req.user?.roles?.includes('ADMIN') ?? false;
+    return this.assistanceService.list(
+      { ...dto, status: AssistanceRequestStatus.APPROVED },
+      user.sub,
+      isAdmin,
+    );
+  }
 
   @Get(':id')
   @ApiOperation({ summary: 'View single assistance request details' })
   getById(
-    @Param('id') id: string,
+    @Param('id', new ParseUUIDPipe()) id: string,
     @AuthenticatedUser() user: { sub: string },
     @Req() req: AuthenticatedRequest,
   ) {
@@ -84,7 +100,7 @@ export class AssistanceController {
   @RequirePermissions('assistance.review')
   @ApiOperation({ summary: 'Review and update assistance request status (admin)' })
   updateStatus(
-    @Param('id') id: string,
+    @Param('id', new ParseUUIDPipe()) id: string,
     @Body() dto: UpdateAssistanceStatusDto,
     @AuthenticatedUser() user: { sub: string },
   ) {
