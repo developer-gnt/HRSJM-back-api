@@ -27,11 +27,8 @@ import { AssistanceService } from '../services/assistance.service';
 import { CreateAssistanceRequestDto } from '../dto/create-assistance-request.dto';
 import { ListAssistanceDto } from '../dto/list-assistance.dto';
 import { UpdateAssistanceStatusDto } from '../dto/update-assistance-status.dto';
-import { AssistanceRequestStatus } from '../entities/assistance-request.entity';
 
 @ApiTags('assistance-requests')
-@ApiBearerAuth()
-@UseGuards(JwtAuthGuard, PermissionsGuard)
 @Controller('assistance-requests')
 export class AssistanceController {
   constructor(private readonly assistanceService: AssistanceService) {}
@@ -40,14 +37,16 @@ export class AssistanceController {
   @ApiOperation({ summary: 'Submit an assistance request (Donation Seeker/Member/Admin)' })
   create(
     @Body() dto: CreateAssistanceRequestDto,
-    @AuthenticatedUser() user: { sub: string },
-    @Req() req: AuthenticatedRequest,
+    @AuthenticatedUser() user?: { sub: string },
+    @Req() req?: AuthenticatedRequest,
   ) {
-    const isAdmin = req.user?.roles?.includes('ADMIN') ?? false;
-    return this.assistanceService.create(dto, user.sub, isAdmin);
+    const isAdmin = req?.user?.roles?.includes('ADMIN') ?? false;
+    return this.assistanceService.create(dto, user?.sub, isAdmin);
   }
 
   @Get('stats/summary')
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard)
   @ApiOperation({ summary: 'Get summary statistics for assistance requests' })
   getStats(
     @Query() dto: ListAssistanceDto,
@@ -58,8 +57,9 @@ export class AssistanceController {
     return this.assistanceService.getStats(user.sub, isAdmin, dto);
   }
 
-
   @Get()
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard)
   @ApiOperation({ summary: 'List assistance requests (own or all for admin)' })
   list(
     @Query() dto: ListAssistanceDto,
@@ -71,21 +71,14 @@ export class AssistanceController {
   }
 
   @Get('approved')
-  @ApiOperation({ summary: 'List approved assistance requests (for public causes/donations)' })
-  getApproved(
-    @Query() dto: ListAssistanceDto,
-    @AuthenticatedUser() user: { sub: string },
-    @Req() req: AuthenticatedRequest,
-  ) {
-    const isAdmin = req.user?.roles?.includes('ADMIN') ?? false;
-    return this.assistanceService.list(
-      { ...dto, status: AssistanceRequestStatus.APPROVED },
-      user.sub,
-      isAdmin,
-    );
+  @ApiOperation({ summary: 'List all approved assistance requests as verified public causes' })
+  listApproved(@Query() dto: ListAssistanceDto) {
+    return this.assistanceService.listApprovedCauses(dto);
   }
 
   @Get(':id')
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard)
   @ApiOperation({ summary: 'View single assistance request details' })
   getById(
     @Param('id', new ParseUUIDPipe()) id: string,
@@ -97,6 +90,8 @@ export class AssistanceController {
   }
 
   @Patch(':id/status')
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, PermissionsGuard)
   @RequirePermissions('assistance.review')
   @ApiOperation({ summary: 'Review and update assistance request status (admin)' })
   updateStatus(
@@ -108,6 +103,8 @@ export class AssistanceController {
   }
 
   @Post(':id/documents')
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard)
   @UseInterceptors(FileInterceptor('file'))
   @ApiConsumes('multipart/form-data')
   @ApiOperation({ summary: 'Attach supporting document to assistance request' })

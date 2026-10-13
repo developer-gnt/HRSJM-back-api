@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AssistanceRequestEntity } from './entities/assistance-request.entity';
 import { UserEntity } from '../users/entities/user.entity';
+import { DonationEntity } from '../donations/entities/donation.entity';
 import { AssistanceController } from './controllers/assistance.controller';
 import { AssistanceService } from './services/assistance.service';
 import { DocumentsModule } from '../documents/documents.module';
@@ -11,7 +12,11 @@ import { UsersModule } from '../users/users.module';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([AssistanceRequestEntity, UserEntity]),
+    TypeOrmModule.forFeature([
+      AssistanceRequestEntity,
+      UserEntity,
+      DonationEntity,
+    ]),
     DocumentsModule,
     AuditModule,
     NotificationsModule,

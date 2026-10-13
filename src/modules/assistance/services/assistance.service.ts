@@ -23,6 +23,7 @@ import {
 import { AuditService } from '../../audit/services/audit.service';
 import { UsersService } from '../../users/services/users.service';
 import { NotificationsService } from '../../notifications/services/notifications.service';
+import { DonationEntity } from '../../donations/entities/donation.entity';
 
 const ALLOWED_TRANSITIONS: Record<
   AssistanceRequestStatus,
@@ -49,6 +50,8 @@ export class AssistanceService {
   constructor(
     @InjectRepository(AssistanceRequestEntity)
     private readonly assistance: Repository<AssistanceRequestEntity>,
+    @InjectRepository(DonationEntity)
+    private readonly donationsRepo: Repository<DonationEntity>,
     private readonly documentsService: DocumentsService,
     private readonly audit: AuditService,
     private readonly notifications: NotificationsService,
@@ -57,10 +60,10 @@ export class AssistanceService {
 
   async create(
     dto: CreateAssistanceRequestDto,
-    actingUserId: string,
+    actingUserId?: string,
     isAdmin = false,
   ): Promise<AssistanceRequestEntity> {
-    let targetUserId = actingUserId;
+    let targetUserId = actingUserId || '';
 
     if (dto.user_id && isAdmin) {
       targetUserId = dto.user_id;
@@ -92,6 +95,7 @@ export class AssistanceService {
       }
     }
 
+    const effectiveActor = actingUserId || targetUserId;
     const initialStatus = dto.status || AssistanceRequestStatus.PENDING;
 
     const request = this.assistance.create({
@@ -104,17 +108,17 @@ export class AssistanceService {
       description: dto.description?.trim() ?? null,
       status: initialStatus,
       admin_remark: dto.admin_remark?.trim() ?? null,
-      reviewed_by: initialStatus !== AssistanceRequestStatus.PENDING ? actingUserId : null,
+      reviewed_by: initialStatus !== AssistanceRequestStatus.PENDING ? effectiveActor : null,
       reviewed_at: initialStatus !== AssistanceRequestStatus.PENDING ? new Date() : null,
-      created_by: actingUserId,
-      updated_by: actingUserId,
+      created_by: effectiveActor,
+      updated_by: effectiveActor,
     });
 
     const saved = await this.assistance.save(request);
 
     await this.audit.record({
       event: 'assistance_request.created',
-      actorId: actingUserId,
+      actorId: effectiveActor,
       entityType: 'assistance_requests',
       entityId: saved.id,
       metadata: {
@@ -129,12 +133,12 @@ export class AssistanceService {
       targetUserId,
       'Assistance Request Submitted',
       `Your request for ₹${saved.requested_amount} (${saved.reason}) has been received and is ${saved.status.toLowerCase().replace('_', ' ')}.`,
-      actingUserId,
+      effectiveActor,
     );
     await this.notifications.sendToAdmins(
       'New Assistance Request',
       `Assistance request for ₹${saved.requested_amount} submitted for ${saved.full_name}.`,
-      actingUserId,
+      effectiveActor,
     );
 
     return saved;
@@ -289,8 +293,10 @@ export class AssistanceService {
       return r;
     });
 
+    const enrichedItems = await this.attachRaisedAmounts(items);
+
     return {
-      items,
+      items: enrichedItems,
       meta: {
         page,
         limit,
@@ -300,29 +306,132 @@ export class AssistanceService {
     };
   }
 
+  async listApprovedCauses(
+    dto: ListAssistanceDto,
+  ): Promise<{
+    items: AssistanceRequestEntity[];
+    meta: { page: number; limit: number; total: number; totalPages: number };
+  }> {
+    const page = dto.page ?? 1;
+    const limit = dto.limit ?? 50;
+
+    const qb = this.assistance
+      .createQueryBuilder('request')
+      .leftJoinAndSelect('request.user', 'user')
+      .where('request.status = :status', { status: AssistanceRequestStatus.APPROVED })
+      .orderBy('request.reviewed_at', 'DESC', 'NULLS LAST')
+      .addOrderBy('request.created_at', 'DESC')
+      .skip((page - 1) * limit)
+      .take(limit);
+
+    if (dto.category) {
+      qb.andWhere('LOWER(request.reason) LIKE :cat', {
+        cat: `%${dto.category.toLowerCase()}%`,
+      });
+    }
+
+    if (dto.search) {
+      const term = `%${dto.search.toLowerCase()}%`;
+      qb.andWhere(
+        new Brackets((sub) => {
+          sub
+            .where('LOWER(request.full_name) LIKE :term')
+            .orWhere('LOWER(request.reason) LIKE :term')
+            .orWhere('LOWER(request.description) LIKE :term');
+        }),
+      ).setParameter('term', term);
+    }
+
+    const [rawItems, total] = await qb.getManyAndCount();
+
+    const items = rawItems.map((r) => {
+      if (r.user) {
+        delete (r.user as { password_hash?: string }).password_hash;
+      }
+      return r;
+    });
+
+    const enrichedItems = await this.attachRaisedAmounts(items);
+
+    return {
+      items: enrichedItems,
+      meta: {
+        page,
+        limit,
+        total,
+        totalPages: Math.max(1, Math.ceil(total / limit)),
+      },
+    };
+  }
+
+  private async attachRaisedAmounts(items: AssistanceRequestEntity[]): Promise<any[]> {
+    if (!items || !items.length) return [];
+    try {
+      const donations = await this.donationsRepo.find();
+      return items.map((r) => {
+        const idStr = r.id.toLowerCase();
+        const nameStr = (r.full_name || '').toLowerCase().trim();
+        const reasonStr = (r.reason || '').toLowerCase().trim();
+        const combinedStr = `${nameStr} (${reasonStr})`.toLowerCase( ).trim();
+
+        let raisedAmount = 0;
+        let donorCount = 0;
+
+        for (const d of donations) {
+          const status = (d.status || '').toUpperCase().trim();
+          const isCompleted =
+            status === 'COMPLETED' ||
+            status === 'SUCCESS' ||
+            status === 'PAID' ||
+            status === 'VERIFIED' ||
+            status === 'RECEIVED';
+          if (!isCompleted) continue;
+
+          const causeStr = (d.cause || '').toLowerCase().trim();
+          const remarkStr = (d.remark || '').toLowerCase().trim();
+
+          const isMatch =
+            causeStr === combinedStr ||
+            causeStr.includes(idStr) ||
+            remarkStr.includes(idStr) ||
+            (nameStr.length >= 3 && causeStr.includes(nameStr)) ||
+            (causeStr.length >= 4 && (nameStr === causeStr || reasonStr === causeStr));
+
+          if (isMatch) {
+            raisedAmount += Number(d.amount || 0);
+            donorCount += 1;
+          }
+        }
+
+        return {
+          ...r,
+          raised_amount: raisedAmount,
+          donor_count: donorCount,
+        };
+      });
+    } catch {
+      return items.map((r) => ({ ...r, raised_amount: 0, donor_count: 0 }));
+    }
+  }
 
   async getById(
     id: string,
     actingUserId: string,
     isAdmin = false,
-  ): Promise<AssistanceRequestEntity> {
+  ): Promise<any> {
     const request = await this.assistance.findOne({
       where: { id },
       relations: ['user', 'reviewed_by_user'],
     });
 
     if (!request) {
-      throw new NotFoundException({
-        message: 'Assistance request not found',
-        code: 'ASSISTANCE_REQUEST_NOT_FOUND',
-        details: { id },
-      });
+      throw new NotFoundException(`Assistance request ${id} not found`);
     }
 
     if (!isAdmin && request.user_id !== actingUserId) {
       throw new ForbiddenException({
-        message: 'You can only access your own assistance requests',
-        code: 'ASSISTANCE_REQUEST_ACCESS_DENIED',
+        message: 'Cannot view assistance request belonging to another user',
+        code: 'FORBIDDEN',
         details: null,
       });
     }
@@ -334,7 +443,8 @@ export class AssistanceService {
       delete (request.reviewed_by_user as { password_hash?: string }).password_hash;
     }
 
-    return request;
+    const [enriched] = await this.attachRaisedAmounts([request]);
+    return enriched;
   }
 
   async updateStatus(

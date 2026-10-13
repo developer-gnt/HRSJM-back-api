@@ -29,13 +29,16 @@ import { ReceiptsModule } from './modules/receipts/receipts.module';
 import { EventsModule } from './modules/events/events.module';
 import { NewsModule } from './modules/news/news.module';
 import { BlogsModule } from './modules/blogs/blogs.module';
+import { MockGatewayModule } from './modules/mock-gateway/mock-gateway.module';
 import paymentConfig from './config/payment.config';
+import cashfreeConfig from './config/cashfree.config';
+import { CashfreeModule } from './modules/payments/cashfree/cashfree.module';
 
 @Module({
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
-      load: [appConfig, databaseConfig, authConfig, paymentConfig],
+      load: [appConfig, databaseConfig, authConfig, paymentConfig, cashfreeConfig],
     }),
     TypeOrmModule.forRootAsync({
       inject: [ConfigService],
@@ -67,6 +70,8 @@ import paymentConfig from './config/payment.config';
     EventsModule,
     NewsModule,
     BlogsModule,
+    MockGatewayModule,
+    CashfreeModule,
   ],
 })
 export class AppModule {}

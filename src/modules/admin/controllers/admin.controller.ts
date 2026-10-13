@@ -24,8 +24,11 @@ export class AdminController {
   @Get('dashboard')
   @RequirePermissions('user.read')
   @ApiOperation({ summary: 'Get overall admin dashboard metrics and KPI aggregates' })
-  getDashboard() {
-    return this.adminService.getDashboard();
+  getDashboard(
+    @Query('month') month?: string,
+    @Query('growthMonths') growthMonths?: number,
+  ) {
+    return this.adminService.getDashboard(month, growthMonths ? Number(growthMonths) : undefined);
   }
 
   @Get('members')
