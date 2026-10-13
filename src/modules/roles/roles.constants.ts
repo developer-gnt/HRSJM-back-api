@@ -1,5 +1,6 @@
-/** The four baseline business roles (seeded in the Phase 1 migration). */
+/** The baseline business roles (seeded in migrations). */
 export const BASELINE_ROLES = [
+  { name: 'USER', description: 'General user / public portal access' },
   { name: 'MEMBER', description: 'Applies for and manages HRSJM membership' },
   { name: 'DONOR', description: 'Makes donations' },
   {
@@ -16,4 +17,9 @@ export const PROTECTED_ROLE_NAMES: string[] = BASELINE_ROLES.map((r) => r.name);
  * Roles a public (unauthenticated) registrant may self-select. ADMIN is
  * deliberately excluded — admin accounts are provisioned manually.
  */
-export const PUBLIC_REGISTER_ROLE_NAMES: string[] = ['MEMBER', 'DONOR', 'DONATION_SEEKER'];
+export const PUBLIC_REGISTER_ROLE_NAMES: string[] = [
+  'USER',
+  'MEMBER',
+  'DONOR',
+  'DONATION_SEEKER',
+];
