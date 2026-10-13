@@ -65,6 +65,16 @@ export class UpdateProfileDto {
   @IsOptional()
   @IsString()
   avatar?: string | null;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(30)
+  dob?: string | null;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(30)
+  dateOfBirth?: string | null;
 }
 
 export { IsEmail, IsOptional, IsString, MaxLength, MinLength, Validate, MatchConstraint };

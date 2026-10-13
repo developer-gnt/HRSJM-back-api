@@ -16,6 +16,7 @@ export interface UserProfile {
   full_name: string;
   mobile_number: string;
   email: string | null;
+  dob?: string | null;
   avatar?: string | null;
   status: string;
   roles: UserRoleInfo[];
@@ -62,6 +63,7 @@ export class UsersService {
       full_name: user.full_name,
       mobile_number: user.mobile_number,
       email: user.email,
+      dob: user.dob ?? null,
       avatar: user.avatar ?? null,
       status: user.status,
       roles: (user.user_roles ?? [])
@@ -190,10 +192,11 @@ export class UsersService {
 
   async updateProfile(
     user: UserEntity,
-    patch: { full_name?: string; email?: string | null; mobile_number?: string; avatar?: string | null },
+    patch: { full_name?: string; email?: string | null; mobile_number?: string; avatar?: string | null; dob?: string | null },
   ): Promise<UserProfile> {
     if (patch.full_name !== undefined) user.full_name = patch.full_name.trim();
     if (patch.avatar !== undefined) user.avatar = patch.avatar;
+    if (patch.dob !== undefined) user.dob = patch.dob ? patch.dob.trim() : null;
     if (patch.email !== undefined) {
       const cleanEmail = patch.email ? patch.email.trim().toLowerCase() : null;
       const currentEmail = user.email ? user.email.trim().toLowerCase() : null;

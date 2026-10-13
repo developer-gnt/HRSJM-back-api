@@ -22,6 +22,9 @@ export class UserEntity extends BaseEntity {
   @Column({ type: 'text', nullable: true })
   avatar?: string | null;
 
+  @Column({ type: 'varchar', length: 30, nullable: true })
+  dob?: string | null;
+
   @Column({ type: 'enum', enum: CommonStatus, default: CommonStatus.ACTIVE })
   status: CommonStatus;
 

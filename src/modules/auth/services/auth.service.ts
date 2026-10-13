@@ -347,7 +347,7 @@ export class AuthService {
 
   async updateOwnProfile(
     userId: string,
-    dto: { full_name?: string; email?: string; mobile_number?: string; phone?: string; avatar?: string | null },
+    dto: { full_name?: string; email?: string; mobile_number?: string; phone?: string; avatar?: string | null; dob?: string | null; dateOfBirth?: string | null },
   ): Promise<UserProfile> {
     await this.getOwnProfile(userId);
     const user = await this.usersService.findById(userId);
@@ -361,11 +361,13 @@ export class AuthService {
     const rawMobile = (dto.mobile_number || dto.phone || '').trim();
     const cleanMobile = rawMobile ? rawMobile.replace(/\D/g, '').slice(-10) : undefined;
     const cleanEmail = dto.email !== undefined ? (dto.email ? dto.email.trim().toLowerCase() : null) : undefined;
+    const dobValue = dto.dob !== undefined ? dto.dob : dto.dateOfBirth;
     const updated = await this.usersService.updateProfile(user, {
       full_name: dto.full_name ? dto.full_name.trim() : undefined,
       email: cleanEmail,
       mobile_number: cleanMobile,
       avatar: dto.avatar,
+      dob: dobValue !== undefined ? dobValue : undefined,
     });
     await this.auditService.record({
       event: 'AUTH_PROFILE_UPDATED',
