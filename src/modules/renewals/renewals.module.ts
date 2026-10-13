@@ -8,9 +8,15 @@ import { MembershipEntity } from '../memberships/entities/membership.entity';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { AuditModule } from '../audit/audit.module';
 
+import { ReceiptEntity } from '../membership-payments/entities/receipt.entity';
+
 @Module({
   imports: [
-    TypeOrmModule.forFeature([RenewalRequestEntity, MembershipEntity]),
+    TypeOrmModule.forFeature([
+      RenewalRequestEntity,
+      MembershipEntity,
+      ReceiptEntity,
+    ]),
     AuditModule,
     NotificationsModule,
   ],

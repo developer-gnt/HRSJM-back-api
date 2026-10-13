@@ -33,6 +33,22 @@ export class EventsService {
     const limit = dto.limit ?? 50;
     const skip = (page - 1) * limit;
 
+    // 0. Automatically mark past UPCOMING events as COMPLETED when end date has passed
+    try {
+      await this.eventRepo
+        .createQueryBuilder()
+        .update(EventEntity)
+        .set({ status: EventStatus.COMPLETED })
+        .where('status = :status', { status: EventStatus.UPCOMING })
+        .andWhere(
+          '((end_at IS NOT NULL AND end_at < :now) OR (end_at IS NULL AND start_at < :now))',
+          { now: new Date() },
+        )
+        .execute();
+    } catch {
+      // Ignore update errors if read-only or concurrent
+    }
+
     // 1. Calculate aggregated summary counts for the stat cards
     const [total, upcoming, completed, cancelled] = await Promise.all([
       this.eventRepo.count({ where: { deleted_at: IsNull() } }),
@@ -68,7 +84,24 @@ export class EventsService {
       );
     }
 
-    qb.orderBy('e.start_at', 'DESC');
+    if (dto.status === EventStatus.UPCOMING) {
+      // Upcoming events ordered chronologically ascending (nearest first)
+      qb.orderBy('e.start_at', 'ASC');
+    } else if (dto.status === EventStatus.COMPLETED) {
+      // Completed events ordered descending (most recent first)
+      qb.orderBy('e.start_at', 'DESC');
+    } else {
+      // All events: UPCOMING first (ascending/nearest first), followed by COMPLETED/others (descending)
+      qb.addOrderBy(
+        `CASE WHEN e.status = '${EventStatus.UPCOMING}' THEN 0 ELSE 1 END`,
+        'ASC',
+      );
+      qb.addOrderBy(
+        `CASE WHEN e.status = '${EventStatus.UPCOMING}' THEN e.start_at END`,
+        'ASC',
+      );
+      qb.addOrderBy('e.start_at', 'DESC');
+    }
     qb.skip(skip).take(limit);
 
     const [items, totalCount] = await qb.getManyAndCount();

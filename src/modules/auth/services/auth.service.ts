@@ -18,7 +18,7 @@ import { RefreshTokenEntity } from '../../users/entities/refresh-token.entity';
 import { UserEntity } from '../../users/entities/user.entity';
 import { UsersService, UserProfile } from '../../users/services/users.service';
 import { RegisterDto } from '../dto/register.dto';
-import { ResetPasswordDto } from '../dto/password.dto';
+import { ChangePasswordDto, ResetPasswordDto } from '../dto/password.dto';
 
 const BCRYPT_ROUNDS = 10;
 const RESET_TOKEN_TTL_MS = 30 * 60 * 1000;
@@ -358,11 +358,13 @@ export class AuthService {
         details: null,
       });
     }
-    const mobile_number = dto.mobile_number || dto.phone;
+    const rawMobile = (dto.mobile_number || dto.phone || '').trim();
+    const cleanMobile = rawMobile ? rawMobile.replace(/\D/g, '').slice(-10) : undefined;
+    const cleanEmail = dto.email !== undefined ? (dto.email ? dto.email.trim().toLowerCase() : null) : undefined;
     const updated = await this.usersService.updateProfile(user, {
-      full_name: dto.full_name,
-      email: dto.email,
-      mobile_number,
+      full_name: dto.full_name ? dto.full_name.trim() : undefined,
+      email: cleanEmail,
+      mobile_number: cleanMobile,
       avatar: dto.avatar,
     });
     await this.auditService.record({
@@ -372,6 +374,56 @@ export class AuthService {
       entityId: userId,
     });
     return updated;
+  }
+
+  async changePassword(
+    userId: string,
+    dto: ChangePasswordDto,
+    ip: string | null,
+    userAgent: string | null,
+  ): Promise<{ success: boolean; message: string }> {
+    const user = await this.usersService.findById(userId);
+    if (!user) {
+      throw new UnauthorizedException({
+        message: 'Invalid token subject',
+        code: 'UNAUTHORIZED',
+        details: null,
+      });
+    }
+
+    const passwordOk = await bcrypt.compare(dto.current_password, user.password_hash);
+    if (!passwordOk) {
+      throw new BadRequestException({
+        message: 'Current password is incorrect',
+        code: 'INVALID_CURRENT_PASSWORD',
+        details: null,
+      });
+    }
+
+    if (dto.current_password === dto.new_password) {
+      throw new BadRequestException({
+        message: 'New password cannot be identical to current password',
+        code: 'SAME_PASSWORD',
+        details: null,
+      });
+    }
+
+    const password_hash = await bcrypt.hash(dto.new_password, BCRYPT_ROUNDS);
+    await this.usersService.updatePassword(user, password_hash);
+
+    await this.auditService.record({
+      event: 'AUTH_PASSWORD_CHANGED',
+      actorId: userId,
+      entityType: 'user',
+      entityId: userId,
+      ip,
+      userAgent,
+    });
+
+    return {
+      success: true,
+      message: 'Password changed successfully',
+    };
   }
 
   /**

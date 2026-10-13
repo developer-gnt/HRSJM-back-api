@@ -23,6 +23,23 @@ export class ResetPasswordDto {
   confirm_password: string;
 }
 
+export class ChangePasswordDto {
+  @IsString()
+  @MinLength(6)
+  current_password: string;
+
+  @IsString()
+  @MinLength(8)
+  @MaxLength(72)
+  new_password: string;
+
+  @IsString()
+  @MinLength(8)
+  @MaxLength(72)
+  @Validate(MatchConstraint, ['new_password'])
+  confirm_password: string;
+}
+
 export class UpdateProfileDto {
   @IsOptional()
   @IsString()

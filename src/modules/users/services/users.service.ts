@@ -190,41 +190,65 @@ export class UsersService {
 
   async updateProfile(
     user: UserEntity,
-    patch: { full_name?: string; email?: string; mobile_number?: string; avatar?: string | null },
+    patch: { full_name?: string; email?: string | null; mobile_number?: string; avatar?: string | null },
   ): Promise<UserProfile> {
-    if (patch.full_name !== undefined) user.full_name = patch.full_name;
+    if (patch.full_name !== undefined) user.full_name = patch.full_name.trim();
     if (patch.avatar !== undefined) user.avatar = patch.avatar;
-    if (patch.email !== undefined && patch.email !== user.email) {
-      const emailOwner = await this.users.findOne({
-        where: { email: patch.email.toLowerCase() },
-        select: ['id'],
-      });
-      if (emailOwner && emailOwner.id !== user.id) {
-        throw new ConflictException({
-          message: 'Email already registered',
-          code: 'EMAIL_TAKEN',
-          details: null,
-        });
+    if (patch.email !== undefined) {
+      const cleanEmail = patch.email ? patch.email.trim().toLowerCase() : null;
+      const currentEmail = user.email ? user.email.trim().toLowerCase() : null;
+      if (cleanEmail !== currentEmail) {
+        if (cleanEmail) {
+          const emailOwner = await this.users.findOne({
+            where: { email: cleanEmail },
+            select: ['id'],
+          });
+          if (emailOwner && emailOwner.id !== user.id) {
+            throw new ConflictException({
+              message: 'Email already registered',
+              code: 'EMAIL_TAKEN',
+              details: null,
+            });
+          }
+        }
+        user.email = cleanEmail;
       }
-      user.email = patch.email.toLowerCase();
     }
-    if (patch.mobile_number !== undefined && patch.mobile_number !== user.mobile_number) {
-      const mobileOwner = await this.users.findOne({
-        where: { mobile_number: patch.mobile_number },
-        select: ['id'],
-      });
-      if (mobileOwner && mobileOwner.id !== user.id) {
-        throw new ConflictException({
-          message: 'Mobile number already registered',
-          code: 'MOBILE_TAKEN',
+    if (patch.mobile_number !== undefined) {
+      const cleanMobile = patch.mobile_number ? patch.mobile_number.replace(/\D/g, '').slice(-10) : '';
+      if (cleanMobile && cleanMobile.length !== 10) {
+        throw new BadRequestException({
+          message: 'Phone number must be exactly 10 digits',
+          code: 'INVALID_PHONE_NUMBER',
           details: null,
         });
       }
-      user.mobile_number = patch.mobile_number;
+      if (cleanMobile !== user.mobile_number) {
+        if (cleanMobile) {
+          const mobileOwner = await this.users.findOne({
+            where: { mobile_number: cleanMobile },
+            select: ['id'],
+          });
+          if (mobileOwner && mobileOwner.id !== user.id) {
+            throw new ConflictException({
+              message: 'Mobile number already registered',
+              code: 'MOBILE_TAKEN',
+              details: null,
+            });
+          }
+        }
+        user.mobile_number = cleanMobile;
+      }
     }
     user.updated_by = user.id;
     await this.users.save(user);
     const fullProfile = await this.getProfile(user.id);
     return fullProfile || this.toProfile(user);
+  }
+
+  async updatePassword(user: UserEntity, newPasswordHash: string): Promise<void> {
+    user.password_hash = newPasswordHash;
+    user.updated_by = user.id;
+    await this.users.save(user);
   }
 }

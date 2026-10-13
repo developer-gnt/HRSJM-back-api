@@ -11,6 +11,7 @@ import {
   PermissionsGuard,
   RequirePermissions,
 } from '../../../common/guards/permissions.guard';
+import { AuthenticatedUser } from '../../../common/decorators/current-user.decorator';
 import { ReceiptsService } from '../services/receipts.service';
 
 @ApiTags('receipts')
@@ -19,6 +20,22 @@ import { ReceiptsService } from '../services/receipts.service';
 @Controller()
 export class ReceiptsController {
   constructor(private readonly receiptsService: ReceiptsService) {}
+
+  @Get('receipts/my')
+  @ApiOperation({ summary: 'List all receipts for current user' })
+  getMyReceipts(
+    @AuthenticatedUser() user: { sub: string },
+    @Query('page') page = 1,
+    @Query('limit') limit = 50,
+    @Query('type') type?: string,
+  ) {
+    return this.receiptsService.listByUser(
+      user.sub,
+      Number(page) || 1,
+      Number(limit) || 50,
+      type,
+    );
+  }
 
   @Get('receipts/membership/:paymentId')
   @ApiOperation({ summary: 'Get receipt by membership payment ID' })
@@ -37,5 +54,15 @@ export class ReceiptsController {
   @ApiOperation({ summary: 'List all issued receipts (admin)' })
   listAll(@Query('page') page = 1, @Query('limit') limit = 20) {
     return this.receiptsService.listAll(Number(page) || 1, Number(limit) || 20);
+  }
+
+  @Get('receipts/:id')
+  @ApiOperation({ summary: 'Get receipt details by ID or Receipt Number' })
+  getReceiptById(
+    @Param('id') id: string,
+    @AuthenticatedUser() user: { sub: string; roles?: string[] },
+  ) {
+    const isAdmin = (user.roles || []).includes('ADMIN');
+    return this.receiptsService.getByIdOrNumber(id, user.sub, isAdmin);
   }
 }

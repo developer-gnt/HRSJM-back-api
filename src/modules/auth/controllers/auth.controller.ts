@@ -17,6 +17,7 @@ import { RegisterDto } from '../dto/register.dto';
 import { LoginDto } from '../dto/login.dto';
 import { LogoutDto, RefreshTokenDto } from '../dto/token.dto';
 import {
+  ChangePasswordDto,
   ForgotPasswordDto,
   ResetPasswordDto,
   UpdateProfileDto,
@@ -99,5 +100,18 @@ export class AuthController {
     @Body() dto: UpdateProfileDto,
   ) {
     return this.authService.updateOwnProfile(req.user!.sub, dto);
+  }
+
+  @Post('change-password')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Change password for currently authenticated user' })
+  changePassword(
+    @Req() req: AuthenticatedRequest,
+    @Body() dto: ChangePasswordDto,
+  ) {
+    const { ip, userAgent } = this.requestContext(req);
+    return this.authService.changePassword(req.user!.sub, dto, ip, userAgent);
   }
 }

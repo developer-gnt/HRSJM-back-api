@@ -22,6 +22,7 @@ import {
 } from '../dto/renewal.dto';
 
 import { NotificationsService } from '../../notifications/services/notifications.service';
+import { ReceiptEntity } from '../../membership-payments/entities/receipt.entity';
 
 @Injectable()
 export class RenewalsService {
@@ -30,6 +31,8 @@ export class RenewalsService {
     private readonly renewalsRepo: Repository<RenewalRequestEntity>,
     @InjectRepository(MembershipEntity)
     private readonly membershipsRepo: Repository<MembershipEntity>,
+    @InjectRepository(ReceiptEntity)
+    private readonly receiptsRepo: Repository<ReceiptEntity>,
     private readonly audit: AuditService,
     private readonly notifications: NotificationsService,
   ) {}
@@ -329,6 +332,7 @@ export class RenewalsService {
 
     const membership = await this.membershipsRepo.findOne({
       where: { id: renewal.membership_id },
+      relations: ['user'],
     });
 
     if (!membership) {
@@ -349,17 +353,33 @@ export class RenewalsService {
     await this.membershipsRepo.save(membership);
 
     const year = now.getFullYear();
-    const rand = Math.floor(1000 + Math.random() * 9000);
+    const rand = Math.floor(10000 + Math.random() * 90000);
+    const receiptNumber = `HRSJM-REC-${year}-${rand}`;
     renewal.status = RenewalStatus.ACTIVE;
     renewal.payment_status = RenewalPaymentStatus.SUCCESS;
     renewal.previous_expiry = currentExpiry;
     renewal.new_expiry = newExpiry;
-    renewal.receipt_number = `RCV-${year}-${rand}`;
+    renewal.receipt_number = receiptNumber;
     renewal.reviewed_by = actingUserId;
     renewal.reviewed_at = now;
     renewal.updated_by = actingUserId;
 
     const saved = await this.renewalsRepo.save(renewal);
+
+    // Auto-generate official Receipt record for member receipts list
+    const receipt = this.receiptsRepo.create({
+      receipt_number: receiptNumber,
+      receipt_date: now,
+      user_id: renewal.requested_by,
+      amount: renewal.amount,
+      payment_method: renewal.payment_method || 'ONLINE',
+      receipt_type: 'RENEWAL',
+      issued_to: (membership as any)?.user?.full_name ?? 'Member',
+      notes: `Membership Renewal (${renewal.period_years} Year Extension)`,
+      created_by: actingUserId,
+      updated_by: actingUserId,
+    });
+    await this.receiptsRepo.save(receipt);
 
     await this.notifications.sendToUser(
       renewal.requested_by,
