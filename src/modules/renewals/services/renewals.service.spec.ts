@@ -7,8 +7,16 @@ import { AuditService } from '../../audit/services/audit.service';
 import { MembershipStatus } from '../../../common/enums/membership-status.enum';
 import { NotificationsService } from '../../notifications/services/notifications.service';
 
+import { ReceiptEntity } from '../../membership-payments/entities/receipt.entity';
+
 describe('RenewalsService', () => {
   let service: RenewalsService;
+
+  const mockReceiptsRepo = {
+    create: jest.fn().mockImplementation((r) => ({ id: 'rec-1', ...r })),
+    save: jest.fn().mockImplementation((r) => Promise.resolve({ id: 'rec-1', ...r })),
+    findOne: jest.fn(),
+  };
 
   const mockRenewalsRepo = {
     create: jest.fn().mockImplementation((dto) => ({ id: 'ren-1', ...dto })),
@@ -38,6 +46,10 @@ describe('RenewalsService', () => {
         {
           provide: getRepositoryToken(MembershipEntity),
           useValue: mockMembershipsRepo,
+        },
+        {
+          provide: getRepositoryToken(ReceiptEntity),
+          useValue: mockReceiptsRepo,
         },
         {
           provide: AuditService,

@@ -10,23 +10,41 @@ import { DonationEntity } from '../../donations/entities/donation.entity';
 import { DocumentEntity } from '../../documents/entities/document.entity';
 import { NotificationRecipientEntity } from '../../notifications/entities/notification-recipient.entity';
 import { EventEntity } from '../../events/entities/event.entity';
+import { MembershipPaymentEntity } from '../../membership-payments/entities/membership-payment.entity';
+import { ReceiptEntity } from '../../membership-payments/entities/receipt.entity';
+import { AuditLogEntity } from '../../audit/entities/audit-log.entity';
 
 describe('AdminService', () => {
   let service: AdminService;
+
+  const createMockQB = () => ({
+    select: jest.fn().mockReturnThis(),
+    addSelect: jest.fn().mockReturnThis(),
+    where: jest.fn().mockReturnThis(),
+    andWhere: jest.fn().mockReturnThis(),
+    groupBy: jest.fn().mockReturnThis(),
+    orderBy: jest.fn().mockReturnThis(),
+    getRawOne: jest.fn().mockResolvedValue({ total: '500' }),
+    getRawMany: jest.fn().mockResolvedValue([]),
+    getCount: jest.fn().mockResolvedValue(0),
+  });
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         AdminService,
-        { provide: getRepositoryToken(UserEntity), useValue: { count: jest.fn().mockResolvedValue(5), createQueryBuilder: jest.fn() } },
-        { provide: getRepositoryToken(MembershipEntity), useValue: { count: jest.fn().mockResolvedValue(3), createQueryBuilder: jest.fn() } },
-        { provide: getRepositoryToken(RenewalRequestEntity), useValue: { count: jest.fn().mockResolvedValue(2), createQueryBuilder: jest.fn().mockReturnValue({ select: jest.fn().mockReturnThis(), where: jest.fn().mockReturnThis(), getRawOne: jest.fn().mockResolvedValue({ total: '500' }) }) } },
-        { provide: getRepositoryToken(AssistanceRequestEntity), useValue: { count: jest.fn().mockResolvedValue(1) } },
-        { provide: getRepositoryToken(SupportTicketEntity), useValue: { count: jest.fn().mockResolvedValue(1) } },
-        { provide: getRepositoryToken(DonationEntity), useValue: { count: jest.fn().mockResolvedValue(4), createQueryBuilder: jest.fn().mockReturnValue({ select: jest.fn().mockReturnThis(), where: jest.fn().mockReturnThis(), getRawOne: jest.fn().mockResolvedValue({ total: '1500' }) }) } },
+        { provide: getRepositoryToken(UserEntity), useValue: { count: jest.fn().mockResolvedValue(5), createQueryBuilder: jest.fn().mockImplementation(createMockQB) } },
+        { provide: getRepositoryToken(MembershipEntity), useValue: { count: jest.fn().mockResolvedValue(3), createQueryBuilder: jest.fn().mockImplementation(createMockQB) } },
+        { provide: getRepositoryToken(RenewalRequestEntity), useValue: { count: jest.fn().mockResolvedValue(2), createQueryBuilder: jest.fn().mockImplementation(createMockQB) } },
+        { provide: getRepositoryToken(AssistanceRequestEntity), useValue: { count: jest.fn().mockResolvedValue(1), createQueryBuilder: jest.fn().mockImplementation(createMockQB) } },
+        { provide: getRepositoryToken(SupportTicketEntity), useValue: { count: jest.fn().mockResolvedValue(1), createQueryBuilder: jest.fn().mockImplementation(createMockQB) } },
+        { provide: getRepositoryToken(DonationEntity), useValue: { count: jest.fn().mockResolvedValue(4), createQueryBuilder: jest.fn().mockImplementation(createMockQB) } },
         { provide: getRepositoryToken(DocumentEntity), useValue: { count: jest.fn().mockResolvedValue(0), find: jest.fn().mockResolvedValue([]) } },
         { provide: getRepositoryToken(NotificationRecipientEntity), useValue: { count: jest.fn().mockResolvedValue(0) } },
-        { provide: getRepositoryToken(EventEntity), useValue: { count: jest.fn().mockResolvedValue(2) } },
+        { provide: getRepositoryToken(MembershipPaymentEntity), useValue: { count: jest.fn().mockResolvedValue(0), createQueryBuilder: jest.fn().mockImplementation(createMockQB) } },
+        { provide: getRepositoryToken(ReceiptEntity), useValue: { count: jest.fn().mockResolvedValue(0), createQueryBuilder: jest.fn().mockImplementation(createMockQB) } },
+        { provide: getRepositoryToken(AuditLogEntity), useValue: { count: jest.fn().mockResolvedValue(0), find: jest.fn().mockResolvedValue([]) } },
+        { provide: getRepositoryToken(EventEntity), useValue: { count: jest.fn().mockResolvedValue(2), createQueryBuilder: jest.fn().mockImplementation(createMockQB) } },
       ],
     }).compile();
 

@@ -377,9 +377,9 @@ describe('ReceiptEntriesService', () => {
         deleted_by: null,
       };
 
-      (receiptRepo.findOne as jest.Mock).mockResolvedValue(mockReceipt);
-      (receiptRepo.save as jest.Mock).mockImplementation((e) =>
-        Promise.resolve(e),
+      (manager.findOne as jest.Mock).mockResolvedValue(mockReceipt);
+      (manager.save as jest.Mock).mockImplementation((_, e) =>
+        Promise.resolve(e ?? _),
       );
 
       const updated = await service.update(
@@ -423,7 +423,7 @@ describe('ReceiptEntriesService', () => {
         deleted_by: null,
       };
 
-      (receiptRepo.findOne as jest.Mock).mockResolvedValue(mockReceipt);
+      (manager.findOne as jest.Mock).mockResolvedValue(mockReceipt);
 
       await expect(
         service.update(mockReceipt.id, { received_from: 'Something else' }),
