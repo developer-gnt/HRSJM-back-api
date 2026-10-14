@@ -82,7 +82,8 @@ export class BlogsService {
       );
     }
 
-    qb.orderBy('b.published_at', 'DESC');
+    qb.orderBy('b.published_at', 'DESC')
+      .addOrderBy('b.created_at', 'DESC');
     qb.skip(skip).take(limit);
 
     const [items, totalCount] = await qb.getManyAndCount();
@@ -106,22 +107,39 @@ export class BlogsService {
     return item;
   }
 
+  private isValidUuid(id?: string | null): boolean {
+    return (
+      typeof id === 'string' &&
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id)
+    );
+  }
+
+  private parseDateSafe(val?: string | null): Date {
+    if (!val) return new Date();
+    const parsed = new Date(val);
+    return isNaN(parsed.getTime()) ? new Date() : parsed;
+  }
+
   async create(dto: CreateBlogDto, userId?: string): Promise<BlogEntity> {
     const slug = dto.slug || this.generateSlug(dto.title);
+    const safeUserId = this.isValidUuid(userId) ? userId! : null;
+
     const item = this.blogRepo.create({
       ...dto,
       slug,
-      published_at: dto.published_at ? new Date(dto.published_at) : new Date(),
+      published_at: this.parseDateSafe(dto.published_at),
       status: dto.status ?? BlogStatus.PUBLISHED,
-      author: dto.author || 'HRSJM Admin',
-      created_by: userId,
-      updated_by: userId,
+      author: dto.author?.trim() || 'HRSJM Admin',
+      tags: Array.isArray(dto.tags) ? (dto.tags.length ? dto.tags : null) : null,
+      created_by: safeUserId,
+      updated_by: safeUserId,
     });
     return this.blogRepo.save(item);
   }
 
   async update(id: string, dto: UpdateBlogDto, userId?: string): Promise<BlogEntity> {
     const item = await this.findOne(id);
+    const safeUserId = this.isValidUuid(userId) ? userId! : null;
 
     if (dto.title && !dto.slug && !item.slug) {
       item.slug = this.generateSlug(dto.title);
@@ -129,17 +147,22 @@ export class BlogsService {
 
     Object.assign(item, {
       ...dto,
-      published_at: dto.published_at ? new Date(dto.published_at) : item.published_at,
-      updated_by: userId,
+      published_at: dto.published_at ? this.parseDateSafe(dto.published_at) : item.published_at,
+      updated_by: safeUserId,
     });
+
+    if (dto.tags !== undefined) {
+      item.tags = Array.isArray(dto.tags) ? (dto.tags.length ? dto.tags : null) : null;
+    }
 
     return this.blogRepo.save(item);
   }
 
   async remove(id: string, userId?: string): Promise<void> {
     const item = await this.findOne(id);
+    const safeUserId = this.isValidUuid(userId) ? userId! : null;
     item.deleted_at = new Date();
-    item.deleted_by = userId ?? null;
+    item.deleted_by = safeUserId;
     await this.blogRepo.save(item);
   }
 
