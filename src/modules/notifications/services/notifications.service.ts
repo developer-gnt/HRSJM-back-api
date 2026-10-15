@@ -399,13 +399,15 @@ export class NotificationsService {
       });
     }
 
-    // Role-targeted audience (MEMBERS, DONORS, DONATION_SEEKERS)
+    // Role-targeted audience (MEMBERS, DONATION_SEEKERS)
     const roleName =
       audience === NotificationAudience.MEMBERS
         ? 'MEMBER'
-        : audience === NotificationAudience.DONORS
-          ? 'DONOR'
-          : 'DONATION_SEEKER';
+        : audience === NotificationAudience.DONATION_SEEKERS
+          ? 'DONATION_SEEKER'
+          : null;
+
+    if (!roleName) return [];
 
     const role = await this.rolesRepo.findOne({ where: { name: roleName } });
     if (!role) return [];

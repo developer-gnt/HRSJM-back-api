@@ -6,7 +6,7 @@ interface TestUserDefinition {
   email: string;
   mobile: string;
   password: string;
-  roleName: 'ADMIN' | 'MEMBER' | 'DONOR' | 'DONATION_SEEKER' | 'USER';
+  roleName: 'ADMIN' | 'MEMBER' | 'DONATION_SEEKER' | 'USER';
 }
 
 const TEST_USERS: TestUserDefinition[] = [
@@ -30,13 +30,6 @@ const TEST_USERS: TestUserDefinition[] = [
     mobile: '9888880002',
     password: 'MemberPass#1',
     roleName: 'MEMBER',
-  },
-  {
-    fullName: 'HRSJM Test Donor',
-    email: 'donor@hrsjm.org',
-    mobile: '9888880003',
-    password: 'DonorPass#1',
-    roleName: 'DONOR',
   },
   {
     fullName: 'HRSJM Test Seeker',
