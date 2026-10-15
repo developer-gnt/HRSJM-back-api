@@ -11,6 +11,7 @@ import {
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../../../common/guards/jwt-auth.guard';
+import { OptionalJwtAuthGuard } from '../../../common/guards/optional-jwt-auth.guard';
 import {
   PermissionsGuard,
   RequirePermissions,
@@ -24,7 +25,6 @@ import { UpdateMembershipCategoryStatusDto } from '../dto/update-membership-cate
 
 @ApiTags('membership-categories')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard, PermissionsGuard)
 @Controller('membership-categories')
 export class MembershipCategoriesController {
   constructor(
@@ -32,12 +32,14 @@ export class MembershipCategoriesController {
   ) {}
 
   @Get()
+  @UseGuards(OptionalJwtAuthGuard)
   @ApiOperation({ summary: 'List/search membership categories' })
   listCategories(@Query() dto: ListMembershipCategoriesDto) {
     return this.categoriesService.list(dto);
   }
 
   @Post()
+  @UseGuards(JwtAuthGuard, PermissionsGuard)
   @RequirePermissions('membership_category.create')
   @ApiOperation({ summary: 'Create a membership category (admin)' })
   createCategory(
@@ -48,12 +50,14 @@ export class MembershipCategoriesController {
   }
 
   @Get(':id')
+  @UseGuards(OptionalJwtAuthGuard)
   @ApiOperation({ summary: 'View a membership category' })
   getCategory(@Param('id', ParseUUIDPipe) id: string) {
     return this.categoriesService.getById(id);
   }
 
   @Patch(':id')
+  @UseGuards(JwtAuthGuard, PermissionsGuard)
   @RequirePermissions('membership_category.update')
   @ApiOperation({ summary: 'Update a membership category (admin)' })
   updateCategory(
@@ -65,6 +69,7 @@ export class MembershipCategoriesController {
   }
 
   @Patch(':id/status')
+  @UseGuards(JwtAuthGuard, PermissionsGuard)
   @RequirePermissions('membership_category.manage_status')
   @ApiOperation({ summary: 'Activate/deactivate a membership category (admin)' })
   updateCategoryStatus(

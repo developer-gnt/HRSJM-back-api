@@ -70,7 +70,9 @@ export class MembershipsService {
 
     let targetUserId: string;
 
-    if (dto.mobile_number) {
+    if (actingUserId && !isAdmin) {
+      targetUserId = actingUserId;
+    } else if (dto.mobile_number) {
       // Validate mobile number and optional email for applicant
       const existingUser = await this.usersService.findByLoginIdentifier(dto.mobile_number);
       if (existingUser) {
@@ -120,16 +122,19 @@ export class MembershipsService {
       targetUserId = resolved;
     }
 
-    // Check if applicant already has an active, approved, or pending membership
+    // Check if applicant already has an active, approved, pending, or rejected membership
     const existingActiveOrPending = await this.memberships.findOne({
       where: {
         user_id: targetUserId,
         status: In([
           MembershipStatus.PENDING,
+          MembershipStatus.UNDER_REVIEW,
           MembershipStatus.APPROVED,
           MembershipStatus.ACTIVE,
+          MembershipStatus.REJECTED,
         ]),
       },
+      order: { created_at: 'DESC' },
     });
 
     // Merge personal_details and application_data
@@ -321,7 +326,9 @@ export class MembershipsService {
 
     const pendingQb = this.memberships
       .createQueryBuilder('m')
-      .where('m.status = :status', { status: MembershipStatus.PENDING });
+      .where('m.status IN (:...statuses)', {
+        statuses: [MembershipStatus.PENDING, MembershipStatus.UNDER_REVIEW],
+      });
     applyFilters(pendingQb);
     const pending = await pendingQb.getCount();
 

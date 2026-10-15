@@ -144,7 +144,7 @@ export class UsersService {
       } else {
         role = await manager
           .getRepository(RoleEntity)
-          .findOne({ where: { name: input.roleName ?? 'MEMBER' } });
+          .findOne({ where: { name: input.roleName ?? 'USER' } });
         if (!role) {
           throw new InternalServerErrorException({
             message: 'Default role is missing',
@@ -188,15 +188,15 @@ export class UsersService {
         where: { user_id: userId, role_id: memberRole.id },
       });
 
-      if (!existingMember) {
-        // Remove standard USER role if present
-        if (userRole) {
-          await userRoleRepo.delete({
-            user_id: userId,
-            role_id: userRole.id,
-          });
-        }
+      // Remove standard USER role so user is now exclusively a MEMBER
+      if (userRole) {
+        await userRoleRepo.delete({
+          user_id: userId,
+          role_id: userRole.id,
+        });
+      }
 
+      if (!existingMember) {
         // Add MEMBER role
         await userRoleRepo.save(
           userRoleRepo.create({
