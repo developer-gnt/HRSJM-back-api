@@ -4,3 +4,9 @@ coverage/
 .env
 *.log
 .DS_Store
+
+# Local database backups and credentials
+backup-*.json
+*-credentials*.txt
+*.keystore
+*.jks

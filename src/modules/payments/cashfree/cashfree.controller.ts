@@ -1,4 +1,4 @@
-import {
+﻿import {
   BadRequestException,
   Body,
   Controller,
@@ -60,9 +60,8 @@ export class CashfreeController {
   ) {
     const rawBody = req.rawBody ?? (req.body ? Buffer.from(JSON.stringify(req.body)) : Buffer.alloc(0));
 
-    if (timestamp && signature) {
-      this.gateway.assertWebhookSignature(rawBody, timestamp, signature);
-    }
+    // Mandatory signature verification — no bypass allowed
+    this.gateway.assertWebhookSignature(rawBody, timestamp, signature);
 
     return this.orders.processWebhook((req.body as Record<string, unknown>) ?? {});
   }

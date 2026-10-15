@@ -10,6 +10,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
 import { Request } from 'express';
 import { JwtAuthGuard, AuthenticatedRequest } from '../../../common/guards/jwt-auth.guard';
 import { AuthService } from '../services/auth.service';
@@ -35,6 +36,7 @@ export class AuthController {
     };
   }
 
+  @Throttle({ default: { limit: 10, ttl: 60000 } })
   @Post('register')
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({ summary: 'Register a new user account (initial role: Member)' })
@@ -43,6 +45,7 @@ export class AuthController {
     return this.authService.register(dto, ip, userAgent);
   }
 
+  @Throttle({ default: { limit: 10, ttl: 60000 } })
   @Post('login')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Login with mobile number or email' })
@@ -51,6 +54,7 @@ export class AuthController {
     return this.authService.login(dto.identifier, dto.password, ip, userAgent);
   }
 
+  @Throttle({ default: { limit: 20, ttl: 60000 } })
   @Post('refresh')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Exchange a refresh token for a new token pair (rotates the refresh token)' })
@@ -67,6 +71,7 @@ export class AuthController {
     return this.authService.logout(dto.refresh_token, ip, userAgent);
   }
 
+  @Throttle({ default: { limit: 5, ttl: 60000 } })
   @Post('forgot-password')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Request a password reset (delivery channel TBC)' })
@@ -75,6 +80,7 @@ export class AuthController {
     return this.authService.forgotPassword(dto.identifier, ip, userAgent);
   }
 
+  @Throttle({ default: { limit: 5, ttl: 60000 } })
   @Post('reset-password')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Reset the password with a valid reset token' })
@@ -102,6 +108,7 @@ export class AuthController {
     return this.authService.updateOwnProfile(req.user!.sub, dto);
   }
 
+  @Throttle({ default: { limit: 5, ttl: 60000 } })
   @Post('change-password')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()

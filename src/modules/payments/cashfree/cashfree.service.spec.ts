@@ -27,7 +27,7 @@ describe('CashfreeService', () => {
 
   describe('Webhook Signature Verification', () => {
     it('should verify valid HMAC signature successfully', () => {
-      const timestamp = '1710000000';
+      const timestamp = String(Math.floor(Date.now() / 1000));
       const rawBody = Buffer.from(JSON.stringify({ data: { order_id: 'test_order' } }));
       const expected = crypto
         .createHmac('sha256', mockWebhookSecret)
@@ -39,7 +39,7 @@ describe('CashfreeService', () => {
     });
 
     it('should reject invalid HMAC signature', () => {
-      const timestamp = '1710000000';
+      const timestamp = String(Math.floor(Date.now() / 1000));
       const rawBody = Buffer.from(JSON.stringify({ data: { order_id: 'test_order' } }));
       const forgedSignature = Buffer.from('invalid_signature_base64_string=').toString('base64');
 
@@ -47,8 +47,21 @@ describe('CashfreeService', () => {
       expect(isValid).toBe(false);
     });
 
+    it('should reject when raw body is altered', () => {
+      const timestamp = String(Math.floor(Date.now() / 1000));
+      const rawBody = Buffer.from(JSON.stringify({ data: { order_id: 'original_order' } }));
+      const alteredBody = Buffer.from(JSON.stringify({ data: { order_id: 'tampered_order' } }));
+      const signature = crypto
+        .createHmac('sha256', mockWebhookSecret)
+        .update(Buffer.concat([Buffer.from(timestamp, 'utf8'), rawBody]))
+        .digest('base64');
+
+      const isValid = service.verifyWebhookSignature(alteredBody, timestamp, signature);
+      expect(isValid).toBe(false);
+    });
+
     it('should reject when signatures have different lengths without timing attack vulnerability', () => {
-      const timestamp = '1710000000';
+      const timestamp = String(Math.floor(Date.now() / 1000));
       const rawBody = Buffer.from('test');
       const shortSignature = 'short';
 
@@ -56,10 +69,69 @@ describe('CashfreeService', () => {
       expect(isValid).toBe(false);
     });
 
-    it('should throw UnauthorizedException on assertWebhookSignature failure', () => {
+    it('should pass assertWebhookSignature with fresh timestamp and valid signature', () => {
+      const timestamp = String(Math.floor(Date.now() / 1000));
+      const rawBody = Buffer.from(JSON.stringify({ event: 'PAYMENT_SUCCESS' }));
+      const validSignature = crypto
+        .createHmac('sha256', mockWebhookSecret)
+        .update(Buffer.concat([Buffer.from(timestamp, 'utf8'), rawBody]))
+        .digest('base64');
+
+      expect(() => {
+        service.assertWebhookSignature(rawBody, timestamp, validSignature);
+      }).not.toThrow();
+    });
+
+    it('should throw UnauthorizedException when timestamp is missing or empty', () => {
       const rawBody = Buffer.from('body');
       expect(() => {
-        service.assertWebhookSignature(rawBody, '123', 'bad_sig');
+        service.assertWebhookSignature(rawBody, undefined, 'some_sig');
+      }).toThrow(UnauthorizedException);
+
+      expect(() => {
+        service.assertWebhookSignature(rawBody, '   ', 'some_sig');
+      }).toThrow('Missing required x-webhook-timestamp header');
+    });
+
+    it('should throw UnauthorizedException when signature is missing or empty', () => {
+      const rawBody = Buffer.from('body');
+      const timestamp = String(Math.floor(Date.now() / 1000));
+      expect(() => {
+        service.assertWebhookSignature(rawBody, timestamp, undefined);
+      }).toThrow(UnauthorizedException);
+
+      expect(() => {
+        service.assertWebhookSignature(rawBody, timestamp, '   ');
+      }).toThrow('Missing required x-webhook-signature header');
+    });
+
+    it('should throw UnauthorizedException when timestamp is invalid format', () => {
+      const rawBody = Buffer.from('body');
+      expect(() => {
+        service.assertWebhookSignature(rawBody, 'not-a-timestamp', 'sig');
+      }).toThrow('Invalid x-webhook-timestamp format');
+    });
+
+    it('should throw UnauthorizedException when timestamp is expired', () => {
+      const rawBody = Buffer.from('body');
+      const oldTimestamp = String(Math.floor(Date.now() / 1000) - 600); // 10 minutes ago
+      expect(() => {
+        service.assertWebhookSignature(rawBody, oldTimestamp, 'sig');
+      }).toThrow('Webhook timestamp expired');
+    });
+
+    it('should throw BadRequestException when raw body is empty', () => {
+      const timestamp = String(Math.floor(Date.now() / 1000));
+      expect(() => {
+        service.assertWebhookSignature(Buffer.alloc(0), timestamp, 'sig');
+      }).toThrow(BadRequestException);
+    });
+
+    it('should throw UnauthorizedException on assertWebhookSignature failure for forged signature', () => {
+      const timestamp = String(Math.floor(Date.now() / 1000));
+      const rawBody = Buffer.from('body');
+      expect(() => {
+        service.assertWebhookSignature(rawBody, timestamp, 'bad_sig');
       }).toThrow(UnauthorizedException);
     });
   });
