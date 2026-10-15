@@ -2,7 +2,6 @@
 export const BASELINE_ROLES = [
   { name: 'USER', description: 'General user / public portal access' },
   { name: 'MEMBER', description: 'Applies for and manages HRSJM membership' },
-  { name: 'DONOR', description: 'Makes donations' },
   {
     name: 'DONATION_SEEKER',
     description: 'Submits and tracks assistance requests',
@@ -20,6 +19,5 @@ export const PROTECTED_ROLE_NAMES: string[] = BASELINE_ROLES.map((r) => r.name);
 export const PUBLIC_REGISTER_ROLE_NAMES: string[] = [
   'USER',
   'MEMBER',
-  'DONOR',
   'DONATION_SEEKER',
 ];

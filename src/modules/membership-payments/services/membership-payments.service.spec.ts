@@ -201,6 +201,7 @@ describe('MembershipPaymentsService', () => {
             status: MembershipStatus.PENDING,
             category: { validity_days: 365 },
           }),
+          getRepository: jest.fn().mockReturnValue({ count: jest.fn().mockResolvedValue(0) }),
         };
         return callback(mockManager);
       });
@@ -240,6 +241,7 @@ describe('MembershipPaymentsService', () => {
             status: MembershipStatus.PENDING,
             category: { validity_days: 365 },
           }),
+          getRepository: jest.fn().mockReturnValue({ count: jest.fn().mockResolvedValue(0) }),
         };
         return callback(mockManager);
       });
