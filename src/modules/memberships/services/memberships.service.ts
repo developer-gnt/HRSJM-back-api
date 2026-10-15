@@ -45,7 +45,7 @@ export class MembershipsService {
 
   async apply(
     dto: CreateMembershipDto,
-    actingUserId: string,
+    actingUserId?: string,
     isAdmin = false,
   ): Promise<MembershipEntity> {
     const category = await this.categories.findOne({
@@ -110,7 +110,14 @@ export class MembershipsService {
         targetUserId = newUser.id;
       }
     } else {
-      targetUserId = isAdmin && dto.user_id ? dto.user_id : actingUserId;
+      const resolved = isAdmin && dto.user_id ? dto.user_id : actingUserId;
+      if (!resolved) {
+        throw new BadRequestException({
+          message: 'Applicant user identification or mobile number is required',
+          code: 'APPLICANT_ID_REQUIRED',
+        });
+      }
+      targetUserId = resolved;
     }
 
     // Check if applicant already has an active, approved, or pending membership
@@ -125,18 +132,6 @@ export class MembershipsService {
       },
     });
 
-    if (existingActiveOrPending) {
-      throw new ConflictException({
-        message: 'An active or pending membership application already exists for this applicant',
-        code: 'DUPLICATE_MEMBERSHIP_APPLICATION',
-        details: {
-          existing_membership_id: existingActiveOrPending.id,
-          status: existingActiveOrPending.status,
-          user_id: targetUserId,
-        },
-      });
-    }
-
     // Merge personal_details and application_data
     const appData = {
       ...(dto.application_data ?? {}),
@@ -146,21 +141,35 @@ export class MembershipsService {
       ...(dto.email ? { email: dto.email } : {}),
     };
 
+    if (existingActiveOrPending) {
+      existingActiveOrPending.application_data = Object.keys(appData).length > 0 ? appData : null;
+      existingActiveOrPending.category_id = category.id;
+      existingActiveOrPending.status = MembershipStatus.PENDING;
+      existingActiveOrPending.applied_at = new Date();
+      existingActiveOrPending.created_at = new Date();
+      existingActiveOrPending.updated_at = new Date();
+      existingActiveOrPending.approval_date = null;
+      existingActiveOrPending.rejection_reason = null;
+      existingActiveOrPending.updated_by = actingUserId || targetUserId;
+      const saved = await this.memberships.save(existingActiveOrPending);
+      return saved;
+    }
+
     const membership = this.memberships.create({
       user_id: targetUserId,
       category_id: category.id,
       status: MembershipStatus.PENDING,
       application_data: Object.keys(appData).length > 0 ? appData : null,
       admin_notes: dto.admin_notes ?? null,
-      created_by: actingUserId,
-      updated_by: actingUserId,
+      created_by: actingUserId || targetUserId,
+      updated_by: actingUserId || targetUserId,
     });
 
     const saved = await this.memberships.save(membership);
 
     await this.audit.record({
       event: 'membership.applied',
-      actorId: actingUserId,
+      actorId: actingUserId || targetUserId,
       entityType: 'memberships',
       entityId: saved.id,
       metadata: {
@@ -176,12 +185,12 @@ export class MembershipsService {
       targetUserId,
       'Membership Application Received',
       `Your application for ${category.name} has been received and is pending verification.`,
-      actingUserId,
+      actingUserId || targetUserId,
     );
     await this.notifications.sendToAdmins(
       'New Membership Application',
       `New membership application submitted by ${dto.full_name || 'Applicant'} (${dto.mobile_number || targetUserId}) for ${category.name}.`,
-      actingUserId,
+      actingUserId || targetUserId,
     );
 
     return saved;
@@ -495,6 +504,15 @@ export class MembershipsService {
         membership.membership_number = await this.generateMemberNumber();
       }
       membership.rejection_reason = null;
+
+      // Convert applicant to MEMBER role so they have full member access
+      if (membership.user_id) {
+        try {
+          await this.usersService.assignMemberRole(membership.user_id);
+        } catch (roleErr) {
+          console.warn('Could not assign MEMBER role to applicant:', roleErr);
+        }
+      }
     } else if (dto.status === MembershipStatus.REJECTED) {
       membership.rejection_reason = dto.rejection_reason ?? 'Application rejected by admin';
     }

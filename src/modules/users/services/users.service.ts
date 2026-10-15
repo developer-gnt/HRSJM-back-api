@@ -167,6 +167,47 @@ export class UsersService {
     });
   }
 
+  /**
+   * Upgrades a user account to the MEMBER role upon membership approval.
+   * Replaces the base USER role with MEMBER so the account gets full member privileges.
+   */
+  async assignMemberRole(userId: string): Promise<void> {
+    await this.dataSource.transaction(async (manager) => {
+      const roleRepo = manager.getRepository(RoleEntity);
+      const userRoleRepo = manager.getRepository(UserRoleEntity);
+
+      const memberRole = await roleRepo.findOne({ where: { name: 'MEMBER' } });
+      const userRole = await roleRepo.findOne({ where: { name: 'USER' } });
+
+      if (!memberRole) {
+        return;
+      }
+
+      // Check if user already has MEMBER role
+      const existingMember = await userRoleRepo.findOne({
+        where: { user_id: userId, role_id: memberRole.id },
+      });
+
+      if (!existingMember) {
+        // Remove standard USER role if present
+        if (userRole) {
+          await userRoleRepo.delete({
+            user_id: userId,
+            role_id: userRole.id,
+          });
+        }
+
+        // Add MEMBER role
+        await userRoleRepo.save(
+          userRoleRepo.create({
+            user_id: userId,
+            role_id: memberRole.id,
+          }),
+        );
+      }
+    });
+  }
+
   async assertNoDuplicates(mobile: string, email?: string | null): Promise<void> {
     const clash = await this.users.findOne({
       where: [
