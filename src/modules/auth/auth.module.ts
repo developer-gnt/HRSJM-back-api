@@ -5,9 +5,10 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { AuditModule } from '../audit/audit.module';
 import { RefreshTokenEntity } from '../users/entities/refresh-token.entity';
-import { PasswordResetTokenEntity } from '../users/entities/password-reset-token.entity';
 import { UserEntity } from '../users/entities/user.entity';
 import { UsersModule } from '../users/users.module';
+import { OptionalJwtAuthGuard } from '../../common/guards/optional-jwt-auth.guard';
+import { PasswordResetTokenEntity } from '../users/entities/password-reset-token.entity';
 import { AuthController } from './controllers/auth.controller';
 import { AuthService } from './services/auth.service';
 import { PasswordResetDeliveryService } from './delivery/password-reset-delivery.service';
@@ -33,7 +34,7 @@ import { PasswordResetDeliveryService } from './delivery/password-reset-delivery
     AuditModule,
   ],
   controllers: [AuthController],
-  providers: [AuthService, JwtAuthGuard, PasswordResetDeliveryService],
-  exports: [AuthService, PasswordResetDeliveryService],
+  providers: [AuthService, JwtAuthGuard, OptionalJwtAuthGuard, PasswordResetDeliveryService],
+  exports: [AuthService, OptionalJwtAuthGuard, PasswordResetDeliveryService],
 })
 export class AuthModule {}

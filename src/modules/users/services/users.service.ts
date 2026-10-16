@@ -144,7 +144,7 @@ export class UsersService {
       } else {
         role = await manager
           .getRepository(RoleEntity)
-          .findOne({ where: { name: input.roleName ?? 'MEMBER' } });
+          .findOne({ where: { name: input.roleName ?? 'USER' } });
         if (!role) {
           throw new InternalServerErrorException({
             message: 'Default role is missing',
@@ -164,6 +164,47 @@ export class UsersService {
         );
 
       return user;
+    });
+  }
+
+  /**
+   * Upgrades a user account to the MEMBER role upon membership approval.
+   * Replaces the base USER role with MEMBER so the account gets full member privileges.
+   */
+  async assignMemberRole(userId: string): Promise<void> {
+    await this.dataSource.transaction(async (manager) => {
+      const roleRepo = manager.getRepository(RoleEntity);
+      const userRoleRepo = manager.getRepository(UserRoleEntity);
+
+      const memberRole = await roleRepo.findOne({ where: { name: 'MEMBER' } });
+      const userRole = await roleRepo.findOne({ where: { name: 'USER' } });
+
+      if (!memberRole) {
+        return;
+      }
+
+      // Check if user already has MEMBER role
+      const existingMember = await userRoleRepo.findOne({
+        where: { user_id: userId, role_id: memberRole.id },
+      });
+
+      // Remove standard USER role so user is now exclusively a MEMBER
+      if (userRole) {
+        await userRoleRepo.delete({
+          user_id: userId,
+          role_id: userRole.id,
+        });
+      }
+
+      if (!existingMember) {
+        // Add MEMBER role
+        await userRoleRepo.save(
+          userRoleRepo.create({
+            user_id: userId,
+            role_id: memberRole.id,
+          }),
+        );
+      }
     });
   }
 

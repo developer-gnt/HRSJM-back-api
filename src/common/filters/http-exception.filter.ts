@@ -60,6 +60,16 @@ export class HttpExceptionFilter implements ExceptionFilter {
         }
       }
     } else {
+      const err = exception as any;
+      if (err?.type === 'entity.too.large' || err?.status === 413) {
+        status = HttpStatus.PAYLOAD_TOO_LARGE;
+        code = 'PAYLOAD_TOO_LARGE';
+        message = 'Payload too large. Please select a smaller file or reduce image resolution.';
+      } else if (err?.status && typeof err.status === 'number') {
+        status = err.status;
+        code = STATUS_ERROR_CODES[status] ?? 'HTTP_ERROR';
+        message = err.message || 'Server error';
+      }
       this.logger.error(
         exception instanceof Error ? exception.stack : String(exception),
       );

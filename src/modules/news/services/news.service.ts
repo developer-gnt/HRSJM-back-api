@@ -92,40 +92,67 @@ export class NewsService {
     return item;
   }
 
+  private isValidUuid(id?: string | null): boolean {
+    return (
+      typeof id === 'string' &&
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id)
+    );
+  }
+
+  private parseDateSafe(val?: string | null): Date {
+    if (!val) return new Date();
+    const parsed = new Date(val);
+    return isNaN(parsed.getTime()) ? new Date() : parsed;
+  }
+
   async create(dto: CreateNewsDto, userId?: string): Promise<NewsEntity> {
-    const slug = dto.slug || this.generateSlug(dto.title);
+    const rawSlug = dto.slug ? this.generateSlug(dto.slug) : this.generateSlug(dto.title);
+    const slug = rawSlug || `news-${Date.now()}`;
+    const safeUserId = this.isValidUuid(userId) ? userId! : null;
+
     const item = this.newsRepo.create({
       ...dto,
       slug,
-      published_at: dto.published_at ? new Date(dto.published_at) : new Date(),
+      published_at: this.parseDateSafe(dto.published_at),
       status: dto.status ?? NewsStatus.PUBLISHED,
-      author: dto.author || 'HRSJM Team',
-      created_by: userId,
-      updated_by: userId,
+      author: dto.author?.trim() || 'HRSJM Team',
+      tags: Array.isArray(dto.tags) ? (dto.tags.length ? dto.tags : null) : null,
+      highlights: Array.isArray(dto.highlights) ? (dto.highlights.length ? dto.highlights : null) : null,
+      gallery: Array.isArray(dto.gallery) ? (dto.gallery.length ? dto.gallery : null) : null,
+      created_by: safeUserId,
+      updated_by: safeUserId,
     });
     return this.newsRepo.save(item);
   }
 
   async update(id: string, dto: UpdateNewsDto, userId?: string): Promise<NewsEntity> {
     const item = await this.findOne(id);
+    const safeUserId = this.isValidUuid(userId) ? userId! : null;
 
     if (dto.title && !dto.slug && !item.slug) {
       item.slug = this.generateSlug(dto.title);
+    } else if (dto.slug) {
+      item.slug = this.generateSlug(dto.slug);
     }
 
     Object.assign(item, {
       ...dto,
-      published_at: dto.published_at ? new Date(dto.published_at) : item.published_at,
-      updated_by: userId,
+      published_at: dto.published_at ? this.parseDateSafe(dto.published_at) : item.published_at,
+      updated_by: safeUserId,
     });
+
+    if (dto.tags !== undefined) {
+      item.tags = Array.isArray(dto.tags) ? (dto.tags.length ? dto.tags : null) : null;
+    }
 
     return this.newsRepo.save(item);
   }
 
   async remove(id: string, userId?: string): Promise<void> {
     const item = await this.findOne(id);
+    const safeUserId = this.isValidUuid(userId) ? userId! : null;
     item.deleted_at = new Date();
-    item.deleted_by = userId ?? null;
+    item.deleted_by = safeUserId;
     await this.newsRepo.save(item);
   }
 

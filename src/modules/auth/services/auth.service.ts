@@ -66,8 +66,8 @@ export class AuthService {
       password_hash,
       roleId: dto.role_id,
       // Self-service registration may pick a public role by name (never ADMIN);
-      // defaults to MEMBER when unspecified.
-      roleName: dto.role_id ? undefined : dto.role_name ?? 'MEMBER',
+      // defaults to USER when unspecified.
+      roleName: dto.role_id ? undefined : dto.role_name ?? 'USER',
     });
 
     await this.auditService.record({

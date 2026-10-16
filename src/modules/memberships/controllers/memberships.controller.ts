@@ -24,26 +24,28 @@ import { CreateMembershipDto } from '../dto/create-membership.dto';
 import { UpdateMembershipDto } from '../dto/update-membership.dto';
 import { ListMembershipsDto } from '../dto/list-memberships.dto';
 import { UpdateMembershipStatusDto } from '../dto/update-membership-status.dto';
+import { OptionalJwtAuthGuard } from '../../../common/guards/optional-jwt-auth.guard';
 
 @ApiTags('memberships')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard, PermissionsGuard)
 @Controller()
 export class MembershipsController {
   constructor(private readonly membershipsService: MembershipsService) {}
 
   @Post(['memberships', 'memberships/apply'])
+  @UseGuards(OptionalJwtAuthGuard)
   @ApiOperation({ summary: 'Apply for membership' })
   apply(
     @Body() dto: CreateMembershipDto,
-    @AuthenticatedUser() user: { sub: string; roles?: string[] },
-    @Req() req: AuthenticatedRequest,
+    @AuthenticatedUser() user?: { sub: string; roles?: string[] },
+    @Req() req?: AuthenticatedRequest,
   ) {
-    const isAdmin = req.user?.roles?.includes('ADMIN') ?? false;
-    return this.membershipsService.apply(dto, user.sub, isAdmin);
+    const isAdmin = req?.user?.roles?.includes('ADMIN') ?? false;
+    return this.membershipsService.apply(dto, user?.sub, isAdmin);
   }
 
   @Get('memberships')
+  @UseGuards(JwtAuthGuard, PermissionsGuard)
   @RequirePermissions('membership.read')
   @ApiOperation({ summary: 'List/filter memberships (admin)' })
   list(@Query() dto: ListMembershipsDto) {
@@ -51,6 +53,7 @@ export class MembershipsController {
   }
 
   @Get('memberships/stats')
+  @UseGuards(JwtAuthGuard, PermissionsGuard)
   @RequirePermissions('membership.read')
   @ApiOperation({ summary: 'Get membership summary KPI statistics (admin)' })
   getStats(
@@ -61,12 +64,14 @@ export class MembershipsController {
   }
 
   @Get(['users/me/membership', 'memberships/my'])
+  @UseGuards(JwtAuthGuard)
   @ApiOperation({ summary: 'Get current user membership profile' })
   getMyMembership(@AuthenticatedUser() user: { sub: string }) {
     return this.membershipsService.getMyMembership(user.sub);
   }
 
   @Get('memberships/:id')
+  @UseGuards(JwtAuthGuard)
   @ApiOperation({ summary: 'View single membership details (owner or admin)' })
   getById(
     @Param('id') id: string,
@@ -78,6 +83,7 @@ export class MembershipsController {
   }
 
   @Patch('memberships/:id')
+  @UseGuards(JwtAuthGuard)
   @ApiOperation({ summary: 'Update membership application (owner or admin)' })
   update(
     @Param('id') id: string,
@@ -90,6 +96,7 @@ export class MembershipsController {
   }
 
   @Patch('memberships/:id/status')
+  @UseGuards(JwtAuthGuard, PermissionsGuard)
   @RequirePermissions('membership.manage_status')
   @ApiOperation({ summary: 'Approve, reject, or change membership status (admin)' })
   updateStatus(
@@ -101,6 +108,7 @@ export class MembershipsController {
   }
 
   @Get('memberships/:id/documents')
+  @UseGuards(JwtAuthGuard)
   @ApiOperation({ summary: 'List documents for membership' })
   getDocuments(
     @Param('id') id: string,
@@ -112,6 +120,7 @@ export class MembershipsController {
   }
 
   @Get('memberships/:id/payment-history')
+  @UseGuards(JwtAuthGuard)
   @ApiOperation({ summary: 'List payment history for membership' })
   getPaymentHistory(
     @Param('id') id: string,
@@ -123,6 +132,7 @@ export class MembershipsController {
   }
 
   @Get('memberships/:id/renewal-history')
+  @UseGuards(JwtAuthGuard)
   @ApiOperation({ summary: 'List renewal history for membership' })
   getRenewalHistory(
     @Param('id') id: string,

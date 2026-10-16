@@ -6,8 +6,23 @@ import { AppModule } from './app.module';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 import { TransformInterceptor } from './common/interceptors/transform.interceptor';
 
+import { json, urlencoded } from 'express';
+
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule, { rawBody: true });
+  const app = await NestFactory.create(AppModule, {
+    rawBody: true,
+    bodyParser: false,
+  });
+
+  app.use(
+    json({
+      limit: '50mb',
+      verify: (req: any, _res, buf) => {
+        req.rawBody = buf;
+      },
+    }),
+  );
+  app.use(urlencoded({ extended: true, limit: '50mb' }));
 
   const expressApp = app.getHttpAdapter().getInstance();
   expressApp.set('trust proxy', 1);
