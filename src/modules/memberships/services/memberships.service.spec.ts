@@ -126,7 +126,7 @@ describe('MembershipsService', () => {
       ).rejects.toThrow(BadRequestException);
     });
 
-    it('throws ConflictException when applicant already has a pending or active membership', async () => {
+    it('updates existing application and resets to PENDING when applicant re-applies', async () => {
       categoriesRepo.findOne.mockResolvedValue(activeCategory);
       membershipsRepo.findOne.mockResolvedValue({
         id: 'existing-mem-1',
@@ -134,9 +134,9 @@ describe('MembershipsService', () => {
         status: MembershipStatus.PENDING,
       });
 
-      await expect(
-        service.apply({ category_id: 'cat-1' }, 'user-1'),
-      ).rejects.toThrow(ConflictException);
+      const res = await service.apply({ category_id: 'cat-1' }, 'user-1');
+      expect(res.status).toBe(MembershipStatus.PENDING);
+      expect(membershipsRepo.save).toHaveBeenCalled();
     });
 
     it('allows applicant to apply again if previous membership was REJECTED', async () => {
