@@ -1,4 +1,5 @@
-import {
+﻿import {
+  BadRequestException,
   Body,
   Controller,
   Delete,
@@ -92,7 +93,11 @@ export class DocumentsController {
   ) {
     const isAdmin = req.user?.roles?.includes('ADMIN') ?? false;
     const document = await this.documentsService.getById(id, user.sub, isAdmin);
-    const absolutePath = path.join(process.cwd(), document.storage_path);
+    const basePath = path.resolve(process.cwd(), 'uploads');
+    const absolutePath = path.resolve(process.cwd(), document.storage_path);
+    if (!absolutePath.startsWith(basePath)) {
+      throw new BadRequestException('Invalid or dangerous document storage path');
+    }
     return res.download(absolutePath, document.original_file_name);
   }
 

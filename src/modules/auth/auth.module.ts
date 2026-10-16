@@ -10,6 +10,7 @@ import { UserEntity } from '../users/entities/user.entity';
 import { UsersModule } from '../users/users.module';
 import { AuthController } from './controllers/auth.controller';
 import { AuthService } from './services/auth.service';
+import { PasswordResetDeliveryService } from './delivery/password-reset-delivery.service';
 
 @Module({
   imports: [
@@ -32,7 +33,7 @@ import { AuthService } from './services/auth.service';
     AuditModule,
   ],
   controllers: [AuthController],
-  providers: [AuthService, JwtAuthGuard],
-  exports: [AuthService],
+  providers: [AuthService, JwtAuthGuard, PasswordResetDeliveryService],
+  exports: [AuthService, PasswordResetDeliveryService],
 })
 export class AuthModule {}

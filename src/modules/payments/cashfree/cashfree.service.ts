@@ -1,4 +1,4 @@
-import {
+﻿import {
   BadGatewayException,
   BadRequestException,
   Injectable,
@@ -163,22 +163,57 @@ export class CashfreeService {
       return false;
     }
 
-    const expected = crypto
-      .createHmac('sha256', this.webhookSecret)
-      .update(Buffer.concat([Buffer.from(timestamp, 'utf8'), rawBody]))
-      .digest('base64');
+    try {
+      const expected = crypto
+        .createHmac('sha256', this.webhookSecret)
+        .update(Buffer.concat([Buffer.from(timestamp, 'utf8'), rawBody]))
+        .digest('base64');
 
-    const expectedBuffer = Buffer.from(expected, 'utf8');
-    const receivedBuffer = Buffer.from(signature, 'utf8');
+      const expectedBuffer = Buffer.from(expected, 'utf8');
+      const receivedBuffer = Buffer.from(signature, 'utf8');
 
-    if (expectedBuffer.length !== receivedBuffer.length) {
+      if (expectedBuffer.length !== receivedBuffer.length) {
+        return false;
+      }
+
+      return crypto.timingSafeEqual(expectedBuffer, receivedBuffer);
+    } catch {
       return false;
     }
-
-    return crypto.timingSafeEqual(expectedBuffer, receivedBuffer);
   }
 
-  assertWebhookSignature(rawBody: Buffer, timestamp: string, signature: string): void {
+  assertWebhookSignature(
+    rawBody: Buffer,
+    timestamp: string | undefined,
+    signature: string | undefined,
+    maxAgeSeconds = 300,
+  ): void {
+    if (!timestamp || !timestamp.trim()) {
+      throw new UnauthorizedException('Missing required x-webhook-timestamp header');
+    }
+
+    if (!signature || !signature.trim()) {
+      throw new UnauthorizedException('Missing required x-webhook-signature header');
+    }
+
+    const tsNum = Number(timestamp);
+    if (!Number.isFinite(tsNum) || tsNum <= 0) {
+      throw new UnauthorizedException('Invalid x-webhook-timestamp format');
+    }
+
+    const nowSec = Math.floor(Date.now() / 1000);
+    const tsSec = tsNum > 1e11 ? Math.floor(tsNum / 1000) : tsNum;
+    const diffSec = Math.abs(nowSec - tsSec);
+    if (diffSec > maxAgeSeconds) {
+      throw new UnauthorizedException(
+        `Webhook timestamp expired or out of allowed window (${diffSec}s difference, max allowed: ${maxAgeSeconds}s)`,
+      );
+    }
+
+    if (!rawBody || rawBody.length === 0) {
+      throw new BadRequestException('Missing raw request body for webhook verification');
+    }
+
     if (!this.verifyWebhookSignature(rawBody, timestamp, signature)) {
       throw new UnauthorizedException('Invalid Cashfree webhook signature');
     }
