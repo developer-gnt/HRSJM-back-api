@@ -100,14 +100,14 @@ export class MembershipsService {
           }
         }
 
-        // Create new user with default password '123456' and role 'MEMBER'
+        // Create new user with default password '123456' and role 'USER'
         const passwordHash = await bcrypt.hash('123456', 10);
         const newUser = await this.usersService.createUserWithRole({
           full_name: dto.full_name || 'Applicant',
           mobile_number: dto.mobile_number,
           email: dto.email ? dto.email.toLowerCase() : null,
           password_hash: passwordHash,
-          roleName: 'MEMBER',
+          roleName: 'USER',
         });
         targetUserId = newUser.id;
       }
@@ -522,6 +522,21 @@ export class MembershipsService {
       }
     } else if (dto.status === MembershipStatus.REJECTED) {
       membership.rejection_reason = dto.rejection_reason ?? 'Application rejected by admin';
+      if (membership.user_id) {
+        try {
+          await this.usersService.assignUserRole(membership.user_id);
+        } catch (roleErr) {
+          console.warn('Could not revert to USER role for rejected applicant:', roleErr);
+        }
+      }
+    } else if (dto.status === MembershipStatus.PENDING || dto.status === MembershipStatus.UNDER_REVIEW) {
+      if (membership.user_id) {
+        try {
+          await this.usersService.assignUserRole(membership.user_id);
+        } catch (roleErr) {
+          console.warn('Could not revert to USER role for pending applicant:', roleErr);
+        }
+      }
     }
 
     const saved = await this.memberships.save(membership);
