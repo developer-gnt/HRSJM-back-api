@@ -99,8 +99,7 @@ async function seedTestUsers(): Promise<void> {
         userId = userResult[0].id;
       }
 
-      // 4. Assign role in user_roles (clear existing roles to avoid multiple conflicting roles)
-      await dataSource.query(`DELETE FROM "user_roles" WHERE "user_id" = $1`, [userId]);
+      // 4. Assign role in user_roles
       await dataSource.query(
         `INSERT INTO "user_roles" ("user_id", "role_id")
          VALUES ($1, $2)

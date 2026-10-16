@@ -208,46 +208,6 @@ export class UsersService {
     });
   }
 
-  /**
-   * Reverts a user account to the USER role if membership is pending, under review, or rejected.
-   * Replaces the MEMBER role with USER.
-   */
-  async assignUserRole(userId: string): Promise<void> {
-    await this.dataSource.transaction(async (manager) => {
-      const roleRepo = manager.getRepository(RoleEntity);
-      const userRoleRepo = manager.getRepository(UserRoleEntity);
-
-      const memberRole = await roleRepo.findOne({ where: { name: 'MEMBER' } });
-      const userRole = await roleRepo.findOne({ where: { name: 'USER' } });
-
-      if (!userRole) {
-        return;
-      }
-
-      // Remove MEMBER role
-      if (memberRole) {
-        await userRoleRepo.delete({
-          user_id: userId,
-          role_id: memberRole.id,
-        });
-      }
-
-      // Check if user already has USER role
-      const existingUser = await userRoleRepo.findOne({
-        where: { user_id: userId, role_id: userRole.id },
-      });
-
-      if (!existingUser) {
-        await userRoleRepo.save(
-          userRoleRepo.create({
-            user_id: userId,
-            role_id: userRole.id,
-          }),
-        );
-      }
-    });
-  }
-
   async assertNoDuplicates(mobile: string, email?: string | null): Promise<void> {
     const clash = await this.users.findOne({
       where: [
