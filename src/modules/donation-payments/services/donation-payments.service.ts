@@ -94,7 +94,7 @@ export class DonationPaymentsService {
 
     const transaction = this.transactions.create({
       donation_payment_id: savedPayment.id,
-      gateway_name: 'RAZORPAY',
+      gateway_name: 'CASHFREE',
       amount: savedPayment.amount,
       status: 'INITIATED',
       created_by: actingUserId ?? null,
@@ -249,7 +249,7 @@ export class DonationPaymentsService {
       // Record transaction line
       const tx = manager.create(PaymentTransactionEntity, {
         donation_payment_id: savedPayment.id,
-        gateway_name: 'RAZORPAY',
+        gateway_name: 'CASHFREE',
         gateway_order_id: dto.gateway_order_id ?? null,
         gateway_payment_id: dto.gateway_payment_id,
         amount: savedPayment.amount,

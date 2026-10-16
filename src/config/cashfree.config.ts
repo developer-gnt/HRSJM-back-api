@@ -3,10 +3,10 @@ import { registerAs } from '@nestjs/config';
 export default registerAs('cashfree', () => {
   const env = (process.env.CASHFREE_ENV ?? 'SANDBOX').toUpperCase();
   return {
-    appId: process.env.CASHFREE_APP_ID ?? 'TEST_MOCK_APP_ID',
-    secretKey: process.env.CASHFREE_SECRET_KEY ?? 'TEST_MOCK_SECRET_KEY',
+    appId: process.env.CASHFREE_APP_ID ?? '',
+    secretKey: process.env.CASHFREE_SECRET_KEY ?? '',
     apiVersion: process.env.CASHFREE_API_VERSION ?? '2023-08-01',
-    webhookSecret: process.env.CASHFREE_WEBHOOK_SECRET ?? 'hrsjm_cashfree_sandbox_webhook_secret',
+    webhookSecret: process.env.CASHFREE_WEBHOOK_SECRET ?? '',
     environment: env,
     apiBaseUrl:
       env === 'PRODUCTION'

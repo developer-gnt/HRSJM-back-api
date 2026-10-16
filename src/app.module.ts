@@ -29,6 +29,7 @@ import { ReceiptsModule } from './modules/receipts/receipts.module';
 import { EventsModule } from './modules/events/events.module';
 import { NewsModule } from './modules/news/news.module';
 import { BlogsModule } from './modules/blogs/blogs.module';
+import { RightsModule } from './modules/rights/rights.module';
 import { MockGatewayModule } from './modules/mock-gateway/mock-gateway.module';
 import paymentConfig from './config/payment.config';
 import cashfreeConfig from './config/cashfree.config';
@@ -70,6 +71,7 @@ import { CashfreeModule } from './modules/payments/cashfree/cashfree.module';
     EventsModule,
     NewsModule,
     BlogsModule,
+    RightsModule,
     MockGatewayModule,
     CashfreeModule,
   ],

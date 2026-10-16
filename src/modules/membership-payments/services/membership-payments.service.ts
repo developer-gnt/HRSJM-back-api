@@ -92,7 +92,7 @@ export class MembershipPaymentsService {
 
     const transaction = this.transactions.create({
       membership_payment_id: savedPayment.id,
-      gateway_name: 'RAZORPAY',
+      gateway_name: 'CASHFREE',
       amount,
       status: 'INITIATED',
       created_by: actingUserId,
@@ -260,7 +260,7 @@ export class MembershipPaymentsService {
       // Record transaction line
       const tx = manager.create(PaymentTransactionEntity, {
         membership_payment_id: savedPayment.id,
-        gateway_name: 'RAZORPAY',
+        gateway_name: 'CASHFREE',
         gateway_order_id: dto.gateway_order_id ?? null,
         gateway_payment_id: dto.gateway_payment_id,
         amount: savedPayment.amount,

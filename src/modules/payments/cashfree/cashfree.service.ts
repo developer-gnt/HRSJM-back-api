@@ -51,24 +51,26 @@ export class CashfreeService {
   private readonly apiVersion: string;
   private readonly returnUrl: string;
   private readonly webhookUrl: string;
+  private readonly appId: string;
+  private readonly secretKey: string;
 
   constructor(config: ConfigService) {
-    this.webhookSecret = config.get<string>('cashfree.webhookSecret') || 'default_secret';
+    this.webhookSecret = config.get<string>('cashfree.webhookSecret') || '';
     this.apiVersion = config.get<string>('cashfree.apiVersion') || '2023-08-01';
     this.returnUrl = config.get<string>('cashfree.returnUrl') || 'https://hrsjm.org/payments/callback?order_id={order_id}';
     this.webhookUrl = config.get<string>('cashfree.webhookUrl') || 'http://localhost:3000/api/v1/payments/cashfree/webhook';
     
     const baseURL = config.get<string>('cashfree.apiBaseUrl') || 'https://sandbox.cashfree.com/pg';
-    const appId = config.get<string>('cashfree.appId') || 'TEST_APP_ID';
-    const secretKey = config.get<string>('cashfree.secretKey') || 'TEST_SECRET_KEY';
+    this.appId = config.get<string>('cashfree.appId') || '';
+    this.secretKey = config.get<string>('cashfree.secretKey') || '';
     const timeout = config.get<number>('cashfree.timeoutMs', 10000);
 
     this.http = axios.create({
       baseURL,
       timeout,
       headers: {
-        'x-client-id': appId,
-        'x-client-secret': secretKey,
+        'x-client-id': this.appId,
+        'x-client-secret': this.secretKey,
         'x-api-version': this.apiVersion,
         'content-type': 'application/json',
       },
@@ -78,6 +80,12 @@ export class CashfreeService {
   async createOrder(input: CreateOrderParams): Promise<CashfreeOrderResponse> {
     if (!Number.isFinite(input.amount) || input.amount <= 0) {
       throw new BadRequestException('Invalid order amount');
+    }
+
+    if (!this.appId || this.appId.startsWith('TEST_MOCK') || !this.secretKey || this.secretKey.startsWith('TEST_MOCK')) {
+      throw new BadGatewayException(
+        'Cashfree Payment Gateway is not configured with valid API credentials. Please set CASHFREE_APP_ID and CASHFREE_SECRET_KEY in server .env.',
+      );
     }
 
     try {

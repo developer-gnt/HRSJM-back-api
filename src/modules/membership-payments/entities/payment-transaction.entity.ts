@@ -24,7 +24,7 @@ export class PaymentTransactionEntity extends BaseEntity {
   @Column({ type: 'uuid', nullable: true })
   donation_payment_id: string | null;
 
-  @Column({ type: 'varchar', length: 50, default: 'RAZORPAY' })
+  @Column({ type: 'varchar', length: 50, default: 'CASHFREE' })
   gateway_name: string;
 
   @Column({ type: 'varchar', length: 150, nullable: true })
