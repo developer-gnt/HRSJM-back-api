@@ -33,7 +33,7 @@ export function validateCashfreeConfig(
     if (!secretKey || secretKey === 'TEST_MOCK_SECRET_KEY') {
       missing.push('CASHFREE_SECRET_KEY');
     }
-    if (!webhookSecret || webhookSecret === 'hrsjm_cashfree_sandbox_webhook_secret') {
+    if (isAppProduction && (!webhookSecret || webhookSecret === 'hrsjm_cashfree_sandbox_webhook_secret')) {
       missing.push('CASHFREE_WEBHOOK_SECRET');
     }
 

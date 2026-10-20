@@ -111,6 +111,7 @@ export class CashfreeOrdersService {
       currency: 'INR',
       purpose: 'donation',
       reference_id: payment.id,
+      environment: this.cashfreeService.environment,
     };
   }
 
@@ -180,6 +181,7 @@ export class CashfreeOrdersService {
       currency: 'INR',
       purpose: 'membership',
       reference_id: payment.id,
+      environment: this.cashfreeService.environment,
     };
   }
 

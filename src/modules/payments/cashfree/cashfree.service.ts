@@ -1,4 +1,4 @@
-﻿import {
+import {
   BadGatewayException,
   BadRequestException,
   Injectable,
@@ -53,12 +53,14 @@ export class CashfreeService {
   private readonly webhookUrl: string;
   private readonly appId: string;
   private readonly secretKey: string;
+  public readonly environment: string;
 
   constructor(config: ConfigService) {
     this.webhookSecret = config.get<string>('cashfree.webhookSecret') || '';
     this.apiVersion = config.get<string>('cashfree.apiVersion') || '2023-08-01';
     this.returnUrl = config.get<string>('cashfree.returnUrl') || 'https://hrsjm.org/payments/callback?order_id={order_id}';
     this.webhookUrl = config.get<string>('cashfree.webhookUrl') || 'http://localhost:3000/api/v1/payments/cashfree/webhook';
+    this.environment = (config.get<string>('cashfree.environment') || 'SANDBOX').toUpperCase();
     
     const baseURL = config.get<string>('cashfree.apiBaseUrl') || 'https://sandbox.cashfree.com/pg';
     this.appId = config.get<string>('cashfree.appId') || '';
