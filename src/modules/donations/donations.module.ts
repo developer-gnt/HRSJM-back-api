@@ -3,6 +3,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { DonationEntity } from './entities/donation.entity';
 import { DonationRefundEntity } from './entities/donation-refund.entity';
 import { DonationPaymentEntity } from '../donation-payments/entities/donation-payment.entity';
+import { ReceiptEntryEntity } from '../receipt-entries/entities/receipt-entry.entity';
 import { DonationsController } from './controllers/donations.controller';
 import { DonationsService } from './services/donations.service';
 import { AccountingModule } from '../accounting/accounting.module';
@@ -19,6 +20,7 @@ import { AuditModule } from '../audit/audit.module';
       DonationEntity,
       DonationRefundEntity,
       DonationPaymentEntity,
+      ReceiptEntryEntity,
     ]),
     AccountingModule,
     AuditModule,

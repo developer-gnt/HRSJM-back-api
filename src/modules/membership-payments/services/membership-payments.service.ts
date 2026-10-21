@@ -2,14 +2,24 @@ import {
   BadRequestException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
+  OnModuleInit,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Brackets, DataSource, Repository } from 'typeorm';
+import { Brackets, DataSource, EntityManager, Repository } from 'typeorm';
 import { MembershipPaymentEntity } from '../entities/membership-payment.entity';
 import { ReceiptEntity } from '../entities/receipt.entity';
 import { PaymentTransactionEntity } from '../entities/payment-transaction.entity';
 import { MembershipEntity } from '../../memberships/entities/membership.entity';
+import { UserEntity } from '../../users/entities/user.entity';
+import { AccountEntity } from '../../accounting/entities/account.entity';
+import { AccountType } from '../../accounting/enums/accounting.enums';
+import { ReceiptEntryEntity } from '../../receipt-entries/entities/receipt-entry.entity';
+import {
+  ReceiptPaymentMethod,
+  ReceiptStatus,
+} from '../../receipt-entries/enums/receipt-entry.enums';
 import { CreateMembershipPaymentDto } from '../dto/create-membership-payment.dto';
 import { VerifyMembershipPaymentDto } from '../dto/verify-membership-payment.dto';
 import { UpdateMembershipPaymentStatusDto } from '../dto/update-membership-payment-status.dto';
@@ -20,11 +30,19 @@ import { AuditService } from '../../audit/services/audit.service';
 import { AccountingPostingService } from '../../accounting/services/accounting-posting.service';
 import { ACCOUNT_CODES } from '../../accounting/accounting.constants';
 import { ReferenceType } from '../../accounting/enums/accounting.enums';
-
 import { NotificationsService } from '../../notifications/services/notifications.service';
 
+function formatVoucherNumber(receiptDate: Date, seq: number): string {
+  const y = receiptDate.getUTCFullYear();
+  const m = String(receiptDate.getUTCMonth() + 1).padStart(2, '0');
+  const d = String(receiptDate.getUTCDate()).padStart(2, '0');
+  return `REC-${y}${m}${d}-${String(seq).padStart(5, '0')}`;
+}
+
 @Injectable()
-export class MembershipPaymentsService {
+export class MembershipPaymentsService implements OnModuleInit {
+  private readonly logger = new Logger(MembershipPaymentsService.name);
+
   constructor(
     @InjectRepository(MembershipPaymentEntity)
     private readonly payments: Repository<MembershipPaymentEntity>,
@@ -39,6 +57,10 @@ export class MembershipPaymentsService {
     private readonly posting: AccountingPostingService,
     private readonly notifications: NotificationsService,
   ) {}
+
+  async onModuleInit() {
+    await this.syncMissingReceiptEntries();
+  }
 
   async create(
     dto: CreateMembershipPaymentDto,
@@ -321,7 +343,7 @@ export class MembershipPaymentsService {
       // Activate membership
       const membership = await manager.findOne(MembershipEntity, {
         where: { id: payment.membership_id },
-        relations: ['category'],
+        relations: ['category', 'user'],
       });
 
       if (membership) {
@@ -348,6 +370,16 @@ export class MembershipPaymentsService {
         membership.updated_by = actingUserId;
         await manager.save(membership);
       }
+
+      // Generate Income Receipts entry (receipt_entries)
+      await this.createReceiptVoucherForMembership(
+        manager,
+        savedPayment,
+        membership,
+        entry.id,
+        actingUserId,
+        now,
+      );
 
       return { payment: savedPayment, receipt: savedReceipt };
     });
@@ -447,5 +479,177 @@ export class MembershipPaymentsService {
     }
 
     return receipt;
+  }
+
+  /**
+   * Internal helper to create a posted receipt voucher in `receipt_entries`
+   * linked to the membership payment and its accounting entry.
+   * Ensures every successful membership payment appears in Admin Income Receipts.
+   */
+  async createReceiptVoucherForMembership(
+    manager: EntityManager,
+    savedPayment: MembershipPaymentEntity,
+    membership: MembershipEntity | null,
+    accountingEntryId: string,
+    actingUserId?: string | null,
+    receiptDate: Date = new Date(),
+  ): Promise<ReceiptEntryEntity | null> {
+    try {
+      const existing = await manager.findOne(ReceiptEntryEntity, {
+        where: { accounting_entry_id: accountingEntryId },
+      });
+      if (existing) return existing;
+
+      // 1. Resolve Membership Income Account (4001)
+      let membershipIncomeAccount = await manager.findOne(AccountEntity, {
+        where: { account_code: ACCOUNT_CODES.MEMBERSHIP_INCOME },
+      });
+      if (!membershipIncomeAccount) {
+        membershipIncomeAccount = await manager.findOne(AccountEntity, {
+          where: { account_type: AccountType.INCOME },
+        });
+      }
+
+      // 2. Resolve Receiving Account (1001 Bank / 1002 Cash)
+      const isCash = savedPayment.payment_method === 'CASH';
+      const receivingCode = isCash ? ACCOUNT_CODES.CASH : ACCOUNT_CODES.BANK;
+      let receivedInAccount = await manager.findOne(AccountEntity, {
+        where: { account_code: receivingCode },
+      });
+      if (!receivedInAccount) {
+        receivedInAccount = await manager.findOne(AccountEntity, {
+          where: { account_type: AccountType.ASSET },
+        });
+      }
+
+      if (!membershipIncomeAccount || !receivedInAccount) {
+        this.logger.warn('Unable to create receipt voucher: missing accounting accounts');
+        return null;
+      }
+
+      // 3. Resolve member / user details
+      let memberUser: UserEntity | null | undefined = savedPayment.user;
+      if (!memberUser && savedPayment.user_id) {
+        memberUser = await manager.findOne(UserEntity, {
+          where: { id: savedPayment.user_id },
+        });
+      }
+
+      const memberName = memberUser?.full_name || 'Member';
+      const donorPhone = memberUser?.mobile_number || '';
+      const donorEmail = memberUser?.email || '';
+      const contactParts = [donorPhone, donorEmail].filter(Boolean).join(' / ');
+      const memberNumber = membership?.membership_number || 'Pending';
+      const categoryName = membership?.category?.name || 'Annual Membership';
+      const receivedFrom = `${memberName} (Member: ${memberNumber})`.slice(0, 150).trim();
+
+      const isRenewal = savedPayment.notes?.toLowerCase().includes('renewal') || false;
+      const refNum =
+        savedPayment.gateway_payment_id ||
+        savedPayment.transaction_id ||
+        savedPayment.gateway_order_id ||
+        'N/A';
+
+      let description: string;
+      if (isRenewal) {
+        description = `Membership Renewal | Member: ${memberName}${contactParts ? ` (${contactParts})` : ''} | Status: Renewed Member (ID: ${memberNumber}) | Category: ${categoryName} | Payment ID: ${refNum}`;
+      } else {
+        description = `New Membership Registration | Member: ${memberName}${contactParts ? ` (${contactParts})` : ''} | Status: New Member (ID: ${memberNumber}) | Category: ${categoryName} | Payment ID: ${refNum}`;
+      }
+
+      // 4. Map payment method
+      let receiptPaymentMethod: ReceiptPaymentMethod = ReceiptPaymentMethod.BANK_TRANSFER;
+      const rawMethod = String(savedPayment.payment_method || '').toUpperCase();
+      if (rawMethod === 'CASH') {
+        receiptPaymentMethod = ReceiptPaymentMethod.CASH;
+      } else if (rawMethod === 'CHEQUE') {
+        receiptPaymentMethod = ReceiptPaymentMethod.CHEQUE;
+      } else if (rawMethod === 'CARD') {
+        receiptPaymentMethod = ReceiptPaymentMethod.CARD;
+      } else if (rawMethod === 'UPI' || rawMethod === 'CASHFREE' || rawMethod.includes('ONLINE')) {
+        receiptPaymentMethod = ReceiptPaymentMethod.UPI;
+      }
+
+      // 5. Generate Voucher Number
+      let seq = 1;
+      try {
+        const result: { seq: string }[] = await manager.query(
+          `SELECT nextval('receipt_voucher_number_seq') AS seq`,
+        );
+        seq = parseInt(result?.[0]?.seq ?? '1', 10);
+      } catch {
+        seq = Math.floor(1000 + Math.random() * 9000);
+      }
+      const voucherNumber = formatVoucherNumber(receiptDate, seq);
+
+      const receiptEntry = manager.create(ReceiptEntryEntity, {
+        voucher_number: voucherNumber,
+        receipt_date: receiptDate,
+        received_from: receivedFrom,
+        income_account_id: membershipIncomeAccount.id,
+        received_in_account_id: receivedInAccount.id,
+        amount: savedPayment.amount,
+        payment_method: receiptPaymentMethod,
+        reference_number: (refNum !== 'N/A' ? refNum : `REF-${voucherNumber}`).slice(0, 100),
+        description,
+        attachment_url: null,
+        status: ReceiptStatus.POSTED,
+        accounting_entry_id: accountingEntryId,
+        created_by: actingUserId ?? null,
+        updated_by: actingUserId ?? null,
+      });
+
+      return await manager.save(receiptEntry);
+    } catch (err) {
+      this.logger.warn(`Failed to create receipt voucher for membership payment: ${err}`);
+      return null;
+    }
+  }
+
+  /**
+   * Backfills receipt vouchers for any verified membership payments that do not
+   * yet have an entry in `receipt_entries`.
+   */
+  async syncMissingReceiptEntries(): Promise<void> {
+    try {
+      const verifiedPayments = await this.payments.find({
+        where: { payment_status: PaymentStatus.SUCCESS },
+        relations: ['user', 'membership', 'membership.category'],
+      });
+
+      if (!verifiedPayments || verifiedPayments.length === 0) return;
+
+      for (const payment of verifiedPayments) {
+        const journals = await this.dataSource.query(
+          `SELECT id, entry_date FROM accounting_entries WHERE reference_type = 'MEMBERSHIP_PAYMENT' AND reference_id = $1 AND entry_type = 'JOURNAL' LIMIT 1`,
+          [payment.id],
+        );
+        const journal = journals?.[0];
+        if (!journal?.id) continue;
+
+        const exists = await this.dataSource.query(
+          `SELECT id FROM receipt_entries WHERE accounting_entry_id = $1 LIMIT 1`,
+          [journal.id],
+        );
+        if (exists && exists.length > 0) continue;
+
+        const entryDate = journal.entry_date
+          ? new Date(journal.entry_date)
+          : payment.payment_date || new Date();
+
+        await this.dataSource.transaction(async (manager) => {
+          await this.createReceiptVoucherForMembership(
+            manager,
+            payment,
+            payment.membership || null,
+            journal.id,
+            payment.updated_by || payment.created_by,
+            entryDate,
+          );
+        });
+      }
+    } catch (err) {
+      this.logger.warn(`Failed syncing missing membership receipt vouchers: ${err}`);
+    }
   }
 }

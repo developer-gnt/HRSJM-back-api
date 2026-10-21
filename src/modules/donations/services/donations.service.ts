@@ -20,6 +20,8 @@ import { CreateDonationDto } from '../dto/create-donation.dto';
 import { ListDonationsDto } from '../dto/list-donations.dto';
 import { RefundDonationDto } from '../dto/refund-donation.dto';
 import { AuditService } from '../../audit/services/audit.service';
+import { ReceiptEntryEntity } from '../../receipt-entries/entities/receipt-entry.entity';
+import { ReceiptStatus } from '../../receipt-entries/enums/receipt-entry.enums';
 
 @Injectable()
 export class DonationsService {
@@ -208,6 +210,17 @@ export class DonationsService {
         updated_by: actingUserId,
       });
       const savedRefund = await manager.save(DonationRefundEntity, refund);
+
+      // Cancel linked receipt voucher in receipt_entries if present
+      const receiptEntry = await manager.findOne(ReceiptEntryEntity, {
+        where: { accounting_entry_id: journal.id },
+      });
+      if (receiptEntry) {
+        receiptEntry.status = ReceiptStatus.CANCELLED;
+        receiptEntry.description = `${receiptEntry.description || ''} [CANCELLED - REFUNDED: ${dto.reason || 'Donation refunded'}]`.trim();
+        receiptEntry.updated_by = actingUserId;
+        await manager.save(ReceiptEntryEntity, receiptEntry);
+      }
 
       return {
         donation: savedDonation,

@@ -163,4 +163,31 @@ describe('CashfreeService', () => {
       ).rejects.toThrow(BadRequestException);
     });
   });
+
+  describe('validateUpiFormat', () => {
+    it('should validate syntax correctly for valid UPI format and mark providerVerified as false', () => {
+      const result = service.validateUpiFormat('99358777442@paytm');
+      expect(result.valid).toBe(true);
+      expect(result.formatValid).toBe(true);
+      expect(result.providerVerified).toBe(false);
+      expect(result.message).toContain('Format looks valid');
+      expect(result.upiId).toBe('99358777442@paytm');
+    });
+
+    it('should reject invalid or malformed VPAs', () => {
+      expect(service.validateUpiFormat('').valid).toBe(false);
+      expect(service.validateUpiFormat('invalid').valid).toBe(false);
+      expect(service.validateUpiFormat('a@b').valid).toBe(false);
+      expect(service.validateUpiFormat('user@').valid).toBe(false);
+      expect(service.validateUpiFormat('@bank').valid).toBe(false);
+      expect(service.validateUpiFormat('   ').valid).toBe(false);
+    });
+
+    it('should trim surrounding whitespace', () => {
+      const result = service.validateUpiFormat('  9888880002@upi  ');
+      expect(result.valid).toBe(true);
+      expect(result.upiId).toBe('9888880002@upi');
+      expect(result.providerVerified).toBe(false);
+    });
+  });
 });

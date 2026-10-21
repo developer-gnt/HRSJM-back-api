@@ -35,15 +35,15 @@ export class CashfreeOrdersService {
 
   async createOrder(dto: CreateCashfreeOrderDto, actingUserId: string, idempotencyKey?: string) {
     if (dto.purpose === 'donation') {
-      return this.createDonationOrder(dto.reference_id, actingUserId, idempotencyKey);
+      return this.createDonationOrder(dto.reference_id, actingUserId, idempotencyKey, dto.return_url);
     } else if (dto.purpose === 'membership') {
-      return this.createMembershipOrder(dto.reference_id, actingUserId, idempotencyKey);
+      return this.createMembershipOrder(dto.reference_id, actingUserId, idempotencyKey, dto.return_url);
     } else {
       throw new BadRequestException(`Unsupported payment purpose: ${dto.purpose}`);
     }
   }
 
-  private async createDonationOrder(paymentId: string, actingUserId: string, idempotencyKey?: string) {
+  private async createDonationOrder(paymentId: string, actingUserId: string, idempotencyKey?: string, returnUrl?: string) {
     const payment = await this.donationPaymentsRepo.findOne({
       where: { id: paymentId },
       relations: ['donation'],
@@ -82,6 +82,7 @@ export class CashfreeOrdersService {
       customerPhone,
       purpose: `Donation: ${causeNote}`,
       idempotencyKey,
+      returnUrl,
     });
 
     // Save gateway_order_id on payment
@@ -115,7 +116,7 @@ export class CashfreeOrdersService {
     };
   }
 
-  private async createMembershipOrder(paymentId: string, actingUserId: string, idempotencyKey?: string) {
+  private async createMembershipOrder(paymentId: string, actingUserId: string, idempotencyKey?: string, returnUrl?: string) {
     const payment = await this.membershipPaymentsRepo.findOne({
       where: { id: paymentId },
       relations: ['user', 'membership'],
@@ -152,6 +153,7 @@ export class CashfreeOrdersService {
       customerPhone,
       purpose: `Membership Fee - ${payment.membership_id}`,
       idempotencyKey,
+      returnUrl,
     });
 
     // Save gateway_order_id on payment
@@ -227,11 +229,14 @@ export class CashfreeOrdersService {
 
     if (!successfulAttempt) {
       this.logger.warn(`Verification called for order ${orderId}, but no SUCCESS attempt found. Status remains PENDING.`);
+      const latestAttempt = attempts.length > 0 ? attempts[attempts.length - 1] : null;
       return {
         status: 'PENDING',
         message: 'No successful payment attempt confirmed yet by Cashfree',
         order_id: orderId,
         attempts_count: attempts.length,
+        latest_status: (latestAttempt?.payment_status as string) || undefined,
+        latest_message: ((latestAttempt as any)?.payment_message as string) || undefined,
       };
     }
 

@@ -29,6 +29,7 @@ export interface CreateOrderParams {
   customerPhone: string;
   purpose: string;
   idempotencyKey?: string;
+  returnUrl?: string;
 }
 
 export interface CashfreeOrderResponse {
@@ -107,7 +108,7 @@ export class CashfreeService {
           customer_phone: input.customerPhone || '9999999999',
         },
         order_meta: {
-          return_url: this.returnUrl,
+          return_url: input.returnUrl || this.returnUrl,
           notify_url: this.webhookUrl,
         },
         order_note: (input.purpose || 'HRSJM Payment').slice(0, 250),
@@ -219,5 +220,26 @@ export class CashfreeService {
     if (!this.verifyWebhookSignature(rawBody, timestamp, signature)) {
       throw new UnauthorizedException('Invalid Cashfree webhook signature');
     }
+  }
+
+  /**
+   * Validates UPI VPA format against standard UPI syntax.
+   * Note: This validates syntax only and explicitly labels the result as not yet provider-verified,
+   * avoiding false claims that a nonexistent account is verified.
+   */
+  validateUpiFormat(upiId: string) {
+    const trimmed = typeof upiId === 'string' ? upiId.trim() : '';
+    const vpaRegex = /^[A-Za-z0-9._-]{2,}@[A-Za-z0-9.-]{2,}$/;
+    const isValidFormat = vpaRegex.test(trimmed) && trimmed.length >= 5 && trimmed.length <= 100;
+
+    return {
+      valid: isValidFormat,
+      formatValid: isValidFormat,
+      providerVerified: false,
+      message: isValidFormat
+        ? 'Format looks valid. Account existence will be verified by payment provider during authorization.'
+        : 'Enter a UPI ID in a supported format (e.g. username@bank)',
+      upiId: trimmed,
+    };
   }
 }

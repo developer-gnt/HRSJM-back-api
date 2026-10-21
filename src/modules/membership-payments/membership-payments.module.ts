@@ -10,6 +10,9 @@ import { AuditModule } from '../audit/audit.module';
 import { AccountingModule } from '../accounting/accounting.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 
+import { ReceiptEntryEntity } from '../receipt-entries/entities/receipt-entry.entity';
+import { AccountEntity } from '../accounting/entities/account.entity';
+
 @Module({
   imports: [
     TypeOrmModule.forFeature([
@@ -17,6 +20,8 @@ import { NotificationsModule } from '../notifications/notifications.module';
       ReceiptEntity,
       PaymentTransactionEntity,
       MembershipEntity,
+      ReceiptEntryEntity,
+      AccountEntity,
     ]),
     AccountingModule,
     AuditModule,

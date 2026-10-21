@@ -2,10 +2,12 @@ import {
   BadRequestException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
+  OnModuleInit,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Brackets, DataSource, Repository } from 'typeorm';
+import { Brackets, DataSource, EntityManager, Repository } from 'typeorm';
 import { DonationEntity } from '../../donations/entities/donation.entity';
 import { DonationPaymentEntity } from '../entities/donation-payment.entity';
 import { PaymentTransactionEntity } from '../../membership-payments/entities/payment-transaction.entity';
@@ -17,11 +19,25 @@ import { ListDonationPaymentsDto } from '../dto/list-donation-payments.dto';
 import { PaymentStatus } from '../../../common/enums/payment-status.enum';
 import { AccountingPostingService } from '../../accounting/services/accounting-posting.service';
 import { ACCOUNT_CODES } from '../../accounting/accounting.constants';
-import { ReferenceType } from '../../accounting/enums/accounting.enums';
+import { AccountType, ReferenceType } from '../../accounting/enums/accounting.enums';
 import { AuditService } from '../../audit/services/audit.service';
+import { ReceiptEntryEntity } from '../../receipt-entries/entities/receipt-entry.entity';
+import { ReceiptPaymentMethod, ReceiptStatus } from '../../receipt-entries/enums/receipt-entry.enums';
+import { AccountEntity } from '../../accounting/entities/account.entity';
+import { UserEntity } from '../../users/entities/user.entity';
+import { MembershipEntity } from '../../memberships/entities/membership.entity';
+
+function formatVoucherNumber(receiptDate: Date, seq: number): string {
+  const y = receiptDate.getUTCFullYear();
+  const m = String(receiptDate.getUTCMonth() + 1).padStart(2, '0');
+  const d = String(receiptDate.getUTCDate()).padStart(2, '0');
+  return `REC-${y}${m}${d}-${String(seq).padStart(5, '0')}`;
+}
 
 @Injectable()
-export class DonationPaymentsService {
+export class DonationPaymentsService implements OnModuleInit {
+  private readonly logger = new Logger(DonationPaymentsService.name);
+
   constructor(
     @InjectRepository(DonationPaymentEntity)
     private readonly payments: Repository<DonationPaymentEntity>,
@@ -35,6 +51,10 @@ export class DonationPaymentsService {
     private readonly posting: AccountingPostingService,
     private readonly audit: AuditService,
   ) {}
+
+  async onModuleInit() {
+    await this.syncMissingReceiptEntries();
+  }
 
   async create(
     dto: CreateDonationPaymentDto,
@@ -307,6 +327,16 @@ export class DonationPaymentsService {
       });
       const savedReceipt = await manager.save(receipt);
 
+      // Create posted receipt voucher in receipt_entries (Income Receipts)
+      await this.createReceiptVoucherForDonation(
+        manager,
+        savedPayment,
+        entry.id,
+        actingUserId,
+        dto.gateway_payload,
+        now,
+      );
+
       // Reflect financial status on the donation record
       const donation = await manager.findOne(DonationEntity, {
         where: { id: payment.donation_id },
@@ -410,6 +440,214 @@ export class DonationPaymentsService {
     }
 
     return receipt;
+  }
+
+  /**
+   * Internal helper to create a posted receipt voucher in `receipt_entries`
+   * linked to the donation payment and its accounting entry.
+   * This ensures every successful donation appears in Admin Income Receipts
+   * with full details of the member/user and the cause.
+   */
+  async createReceiptVoucherForDonation(
+    manager: EntityManager,
+    savedPayment: DonationPaymentEntity,
+    accountingEntryId: string,
+    actingUserId?: string | null,
+    gatewayPayload?: Record<string, unknown>,
+    receiptDate: Date = new Date(),
+  ): Promise<ReceiptEntryEntity | null> {
+    try {
+      // Idempotency: verify if already generated for this accounting entry
+      const existing = await manager.findOne(ReceiptEntryEntity, {
+        where: { accounting_entry_id: accountingEntryId },
+      });
+      if (existing) {
+        return existing;
+      }
+
+      // 1. Resolve Donation Income Account (4003)
+      let donationIncomeAccount = await manager.findOne(AccountEntity, {
+        where: { account_code: ACCOUNT_CODES.DONATION_INCOME },
+      });
+      if (!donationIncomeAccount) {
+        donationIncomeAccount = await manager.findOne(AccountEntity, {
+          where: { account_type: AccountType.INCOME },
+        });
+      }
+
+      // 2. Resolve Receiving Account (1001 Bank / 1002 Cash)
+      const isCash = savedPayment.payment_method === 'CASH';
+      const receivingCode = isCash ? ACCOUNT_CODES.CASH : ACCOUNT_CODES.BANK;
+      let receivedInAccount = await manager.findOne(AccountEntity, {
+        where: { account_code: receivingCode },
+      });
+      if (!receivedInAccount) {
+        receivedInAccount = await manager.findOne(AccountEntity, {
+          where: { account_type: AccountType.ASSET },
+        });
+      }
+
+      if (!donationIncomeAccount || !receivedInAccount) {
+        this.logger.warn(
+          `Unable to create receipt voucher: missing accounts (income: ${donationIncomeAccount?.id}, asset: ${receivedInAccount?.id})`,
+        );
+        return null;
+      }
+
+      // 3. Resolve Member / User details
+      let donorUser: UserEntity | null = null;
+      let donorMembership: MembershipEntity | null = null;
+
+      if (savedPayment.user_id) {
+        try {
+          donorUser = await manager.findOne(UserEntity, {
+            where: { id: savedPayment.user_id },
+          });
+          donorMembership = await manager.findOne(MembershipEntity, {
+            where: { user_id: savedPayment.user_id },
+            order: { created_at: 'DESC' },
+          });
+        } catch (lookupErr) {
+          this.logger.warn(`Failed to resolve user/membership for receipt voucher: ${lookupErr}`);
+        }
+      }
+
+      // 4. Build Received From (Name + Member/User status)
+      const donorDisplayName =
+        savedPayment.donation?.donor_name ||
+        donorUser?.full_name ||
+        'Donor';
+
+      let memberBadge = '';
+      if (donorMembership?.membership_number) {
+        memberBadge = ` (Member: ${donorMembership.membership_number})`;
+      } else if (donorUser) {
+        memberBadge = ` (Member/User)`;
+      }
+
+      const receivedFrom = `${donorDisplayName}${memberBadge}`.slice(0, 150).trim();
+
+      // 5. Map Payment Method to ReceiptPaymentMethod enum
+      let receiptPaymentMethod: ReceiptPaymentMethod = ReceiptPaymentMethod.BANK_TRANSFER;
+      const rawMethod = String(savedPayment.payment_method || '').toUpperCase();
+      const gatewayGroup = String((gatewayPayload as any)?.payment_group || '').toLowerCase();
+      const gatewayMethodObj = (gatewayPayload as any)?.payment_method;
+
+      if (rawMethod === 'CASH') {
+        receiptPaymentMethod = ReceiptPaymentMethod.CASH;
+      } else if (rawMethod === 'CHEQUE') {
+        receiptPaymentMethod = ReceiptPaymentMethod.CHEQUE;
+      } else if (rawMethod === 'CARD' || gatewayGroup === 'card' || gatewayMethodObj?.card) {
+        receiptPaymentMethod = ReceiptPaymentMethod.CARD;
+      } else if (
+        rawMethod === 'UPI' ||
+        gatewayGroup === 'upi' ||
+        gatewayMethodObj?.upi ||
+        rawMethod === 'CASHFREE' ||
+        rawMethod.includes('ONLINE')
+      ) {
+        receiptPaymentMethod = ReceiptPaymentMethod.UPI;
+      }
+
+      // 6. Build Narrative / Description with Full Details
+      const causeTitle = savedPayment.donation?.cause || 'General Donation';
+      const donorPhone = savedPayment.donation?.donor_mobile || donorUser?.mobile_number || '';
+      const donorEmail = savedPayment.donation?.donor_email || donorUser?.email || '';
+      const contactParts = [donorPhone, donorEmail].filter(Boolean).join(' / ');
+      const refNum =
+        savedPayment.gateway_payment_id ||
+        savedPayment.gateway_order_id ||
+        'N/A';
+
+      let memberDetails = 'Public/Guest Donor';
+      if (donorMembership?.membership_number) {
+        memberDetails = `Member: ${donorUser?.full_name || donorDisplayName} (ID: ${donorMembership.membership_number})`;
+      } else if (donorUser) {
+        memberDetails = `Registered User: ${donorUser.full_name} (${donorUser.mobile_number})`;
+      }
+
+      const description = `Donation for Cause: ${causeTitle} | Donor: ${donorDisplayName}${contactParts ? ` (${contactParts})` : ''} | Status: ${memberDetails} | Payment ID: ${refNum}`;
+
+      // 7. Generate Voucher Number (REC-YYYYMMDD-#####)
+      let seq = 1;
+      try {
+        const result: { seq: string }[] = await manager.query(
+          `SELECT nextval('receipt_voucher_number_seq') AS seq`,
+        );
+        seq = parseInt(result?.[0]?.seq ?? '1', 10);
+      } catch {
+        seq = Math.floor(1000 + Math.random() * 9000);
+      }
+      const voucherNumber = formatVoucherNumber(receiptDate, seq);
+
+      // 8. Create and Persist Receipt Voucher
+      const receiptEntry = manager.create(ReceiptEntryEntity, {
+        voucher_number: voucherNumber,
+        receipt_date: receiptDate,
+        received_from: receivedFrom,
+        income_account_id: donationIncomeAccount.id,
+        received_in_account_id: receivedInAccount.id,
+        amount: savedPayment.amount,
+        payment_method: receiptPaymentMethod,
+        reference_number: (refNum !== 'N/A' ? refNum : `REF-${voucherNumber}`).slice(0, 100),
+        description,
+        attachment_url: null,
+        status: ReceiptStatus.POSTED,
+        accounting_entry_id: accountingEntryId,
+        created_by: actingUserId ?? null,
+        updated_by: actingUserId ?? null,
+      });
+
+      return await manager.save(ReceiptEntryEntity, receiptEntry);
+    } catch (err) {
+      this.logger.error(`Failed to create receipt voucher for donation payment ${savedPayment.id}: ${err}`);
+      return null;
+    }
+  }
+
+  /**
+   * Backfills receipt vouchers for any verified donation payments that do not
+   * yet have an entry in `receipt_entries`.
+   */
+  async syncMissingReceiptEntries(): Promise<void> {
+    try {
+      const verifiedPayments = await this.payments.find({
+        where: { payment_status: PaymentStatus.SUCCESS },
+        relations: ['donation'],
+      });
+
+      if (!verifiedPayments || verifiedPayments.length === 0) return;
+
+      for (const payment of verifiedPayments) {
+        const journals = await this.dataSource.query(
+          `SELECT id, entry_date FROM accounting_entries WHERE reference_type = 'DONATION_PAYMENT' AND reference_id = $1 AND entry_type = 'JOURNAL' LIMIT 1`,
+          [payment.id],
+        );
+        const journal = journals?.[0];
+        if (!journal?.id) continue;
+
+        const exists = await this.dataSource.query(
+          `SELECT id FROM receipt_entries WHERE accounting_entry_id = $1 LIMIT 1`,
+          [journal.id],
+        );
+        if (exists && exists.length > 0) continue;
+
+        const entryDate = journal.entry_date ? new Date(journal.entry_date) : (payment.payment_date || new Date());
+
+        await this.dataSource.transaction(async (manager) => {
+          await this.createReceiptVoucherForDonation(
+            manager,
+            payment,
+            journal.id,
+            payment.updated_by || payment.created_by,
+            payment.gateway_response || undefined,
+            entryDate,
+          );
+        });
+      }
+    } catch (err) {
+      this.logger.warn(`Could not complete initial receipt voucher sync: ${err}`);
+    }
   }
 }
 
