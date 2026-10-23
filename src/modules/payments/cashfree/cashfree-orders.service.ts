@@ -35,9 +35,9 @@ export class CashfreeOrdersService {
 
   async createOrder(dto: CreateCashfreeOrderDto, actingUserId: string, idempotencyKey?: string) {
     if (dto.purpose === 'donation') {
-      return this.createDonationOrder(dto.reference_id, actingUserId, idempotencyKey);
+      return this.createDonationOrder(dto.reference_id!, actingUserId, idempotencyKey);
     } else if (dto.purpose === 'membership') {
-      return this.createMembershipOrder(dto.reference_id, actingUserId, idempotencyKey);
+      return this.createMembershipOrder(dto, actingUserId, idempotencyKey);
     } else {
       throw new BadRequestException(`Unsupported payment purpose: ${dto.purpose}`);
     }
@@ -115,60 +115,117 @@ export class CashfreeOrdersService {
     };
   }
 
-  private async createMembershipOrder(paymentId: string, actingUserId: string, idempotencyKey?: string) {
-    const payment = await this.membershipPaymentsRepo.findOne({
-      where: { id: paymentId },
-      relations: ['user', 'membership'],
-    });
-
-    if (!payment) {
-      throw new NotFoundException(`Membership payment ${paymentId} not found`);
+  private async createMembershipOrder(dto: CreateCashfreeOrderDto, actingUserId: string, idempotencyKey?: string) {
+    let payment: MembershipPaymentEntity | null = null;
+    if (dto.reference_id) {
+      payment = await this.membershipPaymentsRepo.findOne({
+        where: { id: dto.reference_id },
+        relations: ['user', 'membership'],
+      });
     }
 
-    if (payment.payment_status === PaymentStatus.SUCCESS) {
-      throw new BadRequestException('Membership payment has already been completed');
+    if (payment) {
+      if (payment.payment_status === PaymentStatus.SUCCESS) {
+        throw new BadRequestException('Membership payment has already been completed');
+      }
+
+      if (actingUserId && payment.user_id && payment.user_id !== actingUserId) {
+        throw new ForbiddenException('You do not own this membership payment');
+      }
+
+      const orderAmount = Number(dto.amount !== undefined && dto.amount > 0 ? dto.amount : payment.amount);
+      const orderId = `hrsjm_mem_${payment.id.replace(/-/g, '').slice(0, 16)}_${Date.now().toString(36)}`;
+
+      const rawPhone = dto.customer_phone || payment.user?.mobile_number || '';
+      const cleanPhone = rawPhone.replace(/\D/g, '').slice(-10);
+      const customerPhone = cleanPhone.length === 10 ? cleanPhone : '9999999999';
+
+      const customerId = (payment.user_id || actingUserId || 'applicant').replace(/-/g, '').slice(0, 45);
+      const customerName = dto.customer_name || payment.user?.full_name || 'HRSJM Member';
+      const customerEmail = dto.customer_email || payment.user?.email || 'member@hrsjm.org';
+      const purposeNote = dto.order_note || `Membership Fee - ${payment.membership_id}`;
+
+      const cfOrder = await this.cashfreeService.createOrder({
+        orderId,
+        amount: orderAmount,
+        customerId,
+        customerName,
+        customerEmail,
+        customerPhone,
+        purpose: purposeNote,
+        idempotencyKey,
+      });
+
+      payment.gateway_order_id = cfOrder.order_id;
+      payment.payment_method = 'CASHFREE';
+      payment.amount = orderAmount;
+      await this.membershipPaymentsRepo.save(payment);
+
+      const tx = this.transactionsRepo.create({
+        membership_payment_id: payment.id,
+        gateway_name: 'CASHFREE',
+        gateway_order_id: cfOrder.order_id,
+        amount: orderAmount,
+        status: 'INITIATED',
+        raw_payload: cfOrder as Record<string, unknown>,
+        created_by: actingUserId,
+        updated_by: actingUserId,
+      });
+      await this.transactionsRepo.save(tx);
+
+      return {
+        order_id: cfOrder.order_id,
+        payment_session_id: cfOrder.payment_session_id,
+        cf_order_id: cfOrder.cf_order_id,
+        order_status: cfOrder.order_status,
+        amount: orderAmount,
+        currency: 'INR',
+        purpose: 'membership',
+        reference_id: payment.id,
+        environment: this.cashfreeService.environment,
+      };
     }
 
-    if (payment.user_id !== actingUserId) {
-      throw new ForbiddenException('You do not own this membership payment');
+    // Direct registration checkout with specified amount
+    const orderAmount = Number(dto.amount);
+    if (!Number.isFinite(orderAmount) || orderAmount <= 0) {
+      if (dto.reference_id) {
+        throw new NotFoundException(`Membership payment ${dto.reference_id} not found`);
+      }
+      throw new BadRequestException('Membership payment order requires a valid positive amount');
     }
 
-    const orderId = `hrsjm_mem_${payment.id.replace(/-/g, '').slice(0, 16)}_${Date.now().toString(36)}`;
+    const safeRef = (dto.reference_id || `reg_${Date.now()}`).replace(/[^a-zA-Z0-9]/g, '').slice(0, 14);
+    const orderId = `hrsjm_mem_${safeRef}_${Date.now().toString(36)}`;
 
-    const rawPhone = payment.user?.mobile_number || '';
+    const rawPhone = dto.customer_phone || '';
     const cleanPhone = rawPhone.replace(/\D/g, '').slice(-10);
     const customerPhone = cleanPhone.length === 10 ? cleanPhone : '9999999999';
 
-    const customerId = payment.user_id.replace(/-/g, '').slice(0, 45);
-    const customerName = payment.user?.full_name || 'HRSJM Member';
-    const customerEmail = payment.user?.email || 'member@hrsjm.org';
+    const customerId = (actingUserId || `cust_${Date.now()}`).replace(/-/g, '').slice(0, 45);
+    const customerName = dto.customer_name || 'HRSJM Member Applicant';
+    const customerEmail = dto.customer_email || 'member@hrsjm.org';
+    const purposeNote = dto.order_note || 'Membership Registration Fee';
 
     const cfOrder = await this.cashfreeService.createOrder({
       orderId,
-      amount: Number(payment.amount),
+      amount: orderAmount,
       customerId,
       customerName,
       customerEmail,
       customerPhone,
-      purpose: `Membership Fee - ${payment.membership_id}`,
+      purpose: purposeNote,
       idempotencyKey,
     });
 
-    // Save gateway_order_id on payment
-    payment.gateway_order_id = cfOrder.order_id;
-    payment.payment_method = 'CASHFREE';
-    await this.membershipPaymentsRepo.save(payment);
-
-    // Record initial transaction
     const tx = this.transactionsRepo.create({
-      membership_payment_id: payment.id,
       gateway_name: 'CASHFREE',
       gateway_order_id: cfOrder.order_id,
-      amount: Number(payment.amount),
+      amount: orderAmount,
       status: 'INITIATED',
       raw_payload: cfOrder as Record<string, unknown>,
-      created_by: actingUserId,
-      updated_by: actingUserId,
+      created_by: actingUserId || undefined,
+      updated_by: actingUserId || undefined,
     });
     await this.transactionsRepo.save(tx);
 
@@ -177,10 +234,10 @@ export class CashfreeOrdersService {
       payment_session_id: cfOrder.payment_session_id,
       cf_order_id: cfOrder.cf_order_id,
       order_status: cfOrder.order_status,
-      amount: Number(payment.amount),
+      amount: orderAmount,
       currency: 'INR',
       purpose: 'membership',
-      reference_id: payment.id,
+      reference_id: dto.reference_id || cfOrder.order_id,
       environment: this.cashfreeService.environment,
     };
   }
@@ -199,25 +256,45 @@ export class CashfreeOrdersService {
         })
       : null;
 
-    if (!donationPayment && !membershipPayment) {
+    const existingTx = (!donationPayment && !membershipPayment)
+      ? await this.transactionsRepo.findOne({
+          where: { gateway_order_id: orderId },
+        })
+      : null;
+
+    if (!donationPayment && !membershipPayment && !existingTx) {
       throw new NotFoundException(`No payment record found with gateway_order_id: ${orderId}`);
     }
 
     const isDonation = !!donationPayment;
-    const payment = (isDonation ? donationPayment : membershipPayment)!;
+    const payment = isDonation ? donationPayment : membershipPayment;
 
     // Optional ownership check when called from authenticated user endpoint
-    if (actingUserId && payment.user_id && payment.user_id !== actingUserId) {
+    if (actingUserId && payment?.user_id && payment.user_id !== actingUserId) {
       throw new ForbiddenException('You do not have permission to verify this order');
     }
 
     // Idempotency: if already SUCCESS, return safely
-    if (payment.payment_status === PaymentStatus.SUCCESS) {
+    if (payment && payment.payment_status === PaymentStatus.SUCCESS) {
       return {
         status: 'SUCCESS',
         message: 'Payment has already been verified',
         order_id: orderId,
         payment,
+      };
+    }
+
+    if (existingTx && existingTx.status === 'SUCCESS') {
+      return {
+        status: 'SUCCESS',
+        message: 'Payment has already been verified',
+        order_id: orderId,
+        payment: {
+          id: existingTx.id,
+          amount: Number(existingTx.amount),
+          gateway_order_id: orderId,
+          payment_status: 'SUCCESS',
+        },
       };
     }
 
@@ -236,10 +313,10 @@ export class CashfreeOrdersService {
     }
 
     // 3. Amount & Currency checks
-    const expectedAmount = Number(payment.amount);
+    const expectedAmount = payment ? Number(payment.amount) : Number(existingTx?.amount || 0);
     const paidAmount = Number(successfulAttempt.payment_amount);
 
-    if (Math.abs(paidAmount - expectedAmount) > 0.01) {
+    if (paidAmount > 0 && Math.abs(paidAmount - expectedAmount) > 0.01) {
       throw new BadRequestException(
         `Payment amount mismatch: expected INR ${expectedAmount}, received INR ${paidAmount}`,
       );
@@ -251,17 +328,35 @@ export class CashfreeOrdersService {
 
     const cfPaymentId = String(successfulAttempt.cf_payment_id);
 
+    if (!payment && existingTx) {
+      existingTx.status = 'SUCCESS';
+      existingTx.gateway_payment_id = cfPaymentId;
+      await this.transactionsRepo.save(existingTx);
+      return {
+        status: 'SUCCESS',
+        order_id: orderId,
+        message: 'Membership registration payment confirmed',
+        payment: {
+          id: existingTx.id,
+          amount: expectedAmount,
+          gateway_order_id: orderId,
+          gateway_payment_id: cfPaymentId,
+          payment_status: 'SUCCESS',
+        },
+      };
+    }
+
     // 4. Delegate atomically to the verified service contract
     if (isDonation) {
       const verifyResult = await this.donationPaymentsService.verify(
-        payment.id,
+        payment!.id,
         {
           gateway_payment_id: cfPaymentId,
           gateway_order_id: orderId,
           gateway_signature: String(successfulAttempt.payment_time || 'CASHFREE_VERIFIED'),
           gateway_payload: successfulAttempt as Record<string, unknown>,
         },
-        actingUserId || payment.user_id || 'SYSTEM_CASHFREE',
+        actingUserId || payment!.user_id || 'SYSTEM_CASHFREE',
         true,
       );
 
@@ -283,14 +378,14 @@ export class CashfreeOrdersService {
       };
     } else {
       const verifyResult = await this.membershipPaymentsService.verify(
-        payment.id,
+        payment!.id,
         {
           gateway_payment_id: cfPaymentId,
           gateway_order_id: orderId,
           gateway_signature: String(successfulAttempt.payment_time || 'CASHFREE_VERIFIED'),
           gateway_payload: successfulAttempt as Record<string, unknown>,
         },
-        actingUserId || payment.user_id || 'SYSTEM_CASHFREE',
+        actingUserId || payment!.user_id || 'SYSTEM_CASHFREE',
         true,
       );
 

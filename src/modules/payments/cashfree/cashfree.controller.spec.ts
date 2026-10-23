@@ -6,6 +6,14 @@ jest.mock('../../../common/guards/jwt-auth.guard', () => ({
   },
 }));
 
+jest.mock('../../../common/guards/optional-jwt-auth.guard', () => ({
+  OptionalJwtAuthGuard: class MockOptionalJwtAuthGuard {
+    canActivate() {
+      return true;
+    }
+  },
+}));
+
 import { UnauthorizedException, BadRequestException } from '@nestjs/common';
 import { CashfreeController } from './cashfree.controller';
 import { CashfreeService } from './cashfree.service';

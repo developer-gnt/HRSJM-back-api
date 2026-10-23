@@ -10,6 +10,7 @@ import { DonationEntity } from '../../donations/entities/donation.entity';
 import { DonationPaymentEntity } from '../entities/donation-payment.entity';
 import { PaymentTransactionEntity } from '../../membership-payments/entities/payment-transaction.entity';
 import { ReceiptEntity } from '../../membership-payments/entities/receipt.entity';
+import { UserEntity } from '../../users/entities/user.entity';
 import { CreateDonationPaymentDto } from '../dto/create-donation-payment.dto';
 import { VerifyDonationPaymentDto } from '../dto/verify-donation-payment.dto';
 import { UpdateDonationPaymentStatusDto } from '../dto/update-donation-payment-status.dto';
@@ -213,7 +214,7 @@ export class DonationPaymentsService {
   async verify(
     id: string,
     dto: VerifyDonationPaymentDto,
-    actingUserId: string,
+    actingUserId?: string,
     isAdmin = false,
   ): Promise<{ payment: DonationPaymentEntity; receipt: ReceiptEntity }> {
     const payment = await this.getById(id, actingUserId, isAdmin);
@@ -242,7 +243,7 @@ export class DonationPaymentsService {
         payment.gateway_response = dto.gateway_payload;
       }
       payment.payment_date = now;
-      payment.updated_by = actingUserId;
+      payment.updated_by = actingUserId ?? null;
 
       const savedPayment = await manager.save(DonationPaymentEntity, payment);
 
@@ -255,8 +256,8 @@ export class DonationPaymentsService {
         amount: savedPayment.amount,
         status: 'SUCCESS',
         raw_payload: dto.gateway_payload ?? null,
-        created_by: actingUserId,
-        updated_by: actingUserId,
+        created_by: actingUserId ?? null,
+        updated_by: actingUserId ?? null,
       });
       await manager.save(tx);
 
@@ -291,10 +292,24 @@ export class DonationPaymentsService {
       const rand = Math.floor(10000 + Math.random() * 90000);
       const receiptNumber = `HRSJM-REC-${year}-${rand}`;
 
+      let receiptUserId = payment.user_id;
+      if (!receiptUserId && actingUserId && actingUserId !== 'GUEST_USER') {
+        receiptUserId = actingUserId;
+      }
+      if (!receiptUserId) {
+        const anyUser = await manager.getRepository(UserEntity).findOne({
+          select: ['id'],
+          where: {},
+        });
+        if (anyUser) {
+          receiptUserId = anyUser.id;
+        }
+      }
+
       const receipt = manager.create(ReceiptEntity, {
         receipt_number: receiptNumber,
         receipt_date: now,
-        user_id: payment.user_id ?? actingUserId,
+        user_id: receiptUserId || '00000000-0000-0000-0000-000000000000',
         donation_payment_id: payment.id,
         amount: savedPayment.amount,
         payment_method: savedPayment.payment_method,
@@ -302,8 +317,8 @@ export class DonationPaymentsService {
         issued_to: savedPayment.donation?.donor_name ?? 'Donor',
         notes: `Donation payment verified via ${savedPayment.payment_method}`,
         accounting_entry_id: entry.id,
-        created_by: actingUserId,
-        updated_by: actingUserId,
+        created_by: actingUserId ?? null,
+        updated_by: actingUserId ?? null,
       });
       const savedReceipt = await manager.save(receipt);
 
@@ -387,7 +402,7 @@ export class DonationPaymentsService {
 
   async getReceipt(
     id: string,
-    actingUserId: string,
+    actingUserId?: string,
     isAdmin = false,
   ): Promise<ReceiptEntity> {
     const payment = await this.getById(id, actingUserId, isAdmin);

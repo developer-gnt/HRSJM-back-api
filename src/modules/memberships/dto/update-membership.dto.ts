@@ -16,5 +16,13 @@ export class UpdateMembershipDto {
 
   @IsOptional()
   @IsString()
+  police_station?: string;
+
+  @IsOptional()
+  @IsString()
+  password?: string;
+
+  @IsOptional()
+  @IsString()
   admin_notes?: string;
 }

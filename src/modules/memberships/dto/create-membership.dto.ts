@@ -38,6 +38,17 @@ export class CreateMembershipDto {
   @MaxLength(255)
   email?: string;
 
+  @ApiPropertyOptional({ description: 'Password for applicant account (min. 6 characters)', example: 'Secret123' })
+  @IsOptional()
+  @IsString()
+  @MinLength(6)
+  password?: string;
+
+  @ApiPropertyOptional({ description: 'Nearby police station', example: 'Connaught Place Police Station' })
+  @IsOptional()
+  @IsString()
+  police_station?: string;
+
   @ApiPropertyOptional({
     description: 'Personal details (dob, gender, address)',
     example: { dob: '1990-01-01', gender: 'MALE', address: '123 Main St, New Delhi' },
