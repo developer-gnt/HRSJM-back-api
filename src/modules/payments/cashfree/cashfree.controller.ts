@@ -14,7 +14,6 @@ import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import { Request } from 'express';
 import { AuthenticatedUser } from '../../../common/decorators/current-user.decorator';
-import { JwtAuthGuard } from '../../../common/guards/jwt-auth.guard';
 import { OptionalJwtAuthGuard } from '../../../common/guards/optional-jwt-auth.guard';
 import { CashfreeService } from './cashfree.service';
 import { CashfreeOrdersService } from './cashfree-orders.service';
@@ -38,29 +37,29 @@ export class CashfreeController {
   }
 
   @Post('orders')
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(OptionalJwtAuthGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Create Cashfree checkout order from an internal payment record' })
   async createOrder(
     @Body() dto: CreateCashfreeOrderDto,
     @Headers('x-idempotency-key') key: string | undefined,
-    @AuthenticatedUser() user: { sub: string },
+    @AuthenticatedUser() user?: { sub: string },
   ) {
     if (key && (key.length < 8 || key.length > 128)) {
       throw new BadRequestException('Invalid x-idempotency-key length (8-128 chars)');
     }
-    return this.orders.createOrder(dto, user.sub, key);
+    return this.orders.createOrder(dto, user?.sub || 'GUEST_USER', key);
   }
 
   @Get('orders/:orderId/verify')
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(OptionalJwtAuthGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Verify payment attempts with Cashfree' })
   async verifyOrder(
     @Param('orderId') orderId: string,
-    @AuthenticatedUser() user: { sub: string },
+    @AuthenticatedUser() user?: { sub: string },
   ) {
-    return this.orders.verifyOrder(orderId, user.sub);
+    return this.orders.verifyOrder(orderId, user?.sub);
   }
 
   @Get('callback')

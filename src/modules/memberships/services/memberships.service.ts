@@ -72,6 +72,13 @@ export class MembershipsService {
 
     if (actingUserId && !isAdmin) {
       targetUserId = actingUserId;
+      if (dto.password && dto.password.trim().length >= 6) {
+        const actingUser = await this.usersService.findById(actingUserId);
+        if (actingUser) {
+          const passwordHash = await bcrypt.hash(dto.password.trim(), 10);
+          await this.usersService.updatePassword(actingUser, passwordHash);
+        }
+      }
     } else if (dto.mobile_number) {
       // Validate mobile number and optional email for applicant
       const existingUser = await this.usersService.findByLoginIdentifier(dto.mobile_number);
@@ -85,6 +92,10 @@ export class MembershipsService {
               details: { email: dto.email },
             });
           }
+        }
+        if (dto.password && dto.password.trim().length >= 6) {
+          const passwordHash = await bcrypt.hash(dto.password.trim(), 10);
+          await this.usersService.updatePassword(existingUser, passwordHash);
         }
         targetUserId = existingUser.id;
       } else {
@@ -100,8 +111,9 @@ export class MembershipsService {
           }
         }
 
-        // Create new user with default password '123456' and role 'MEMBER'
-        const passwordHash = await bcrypt.hash('123456', 10);
+        // Create new user with provided password (or default '123456') and role 'MEMBER'
+        const rawPassword = dto.password && dto.password.trim().length >= 6 ? dto.password.trim() : '123456';
+        const passwordHash = await bcrypt.hash(rawPassword, 10);
         const newUser = await this.usersService.createUserWithRole({
           full_name: dto.full_name || 'Applicant',
           mobile_number: dto.mobile_number,
@@ -137,13 +149,26 @@ export class MembershipsService {
       order: { created_at: 'DESC' },
     });
 
+    const policeStation =
+      dto.police_station?.trim() ||
+      (dto.personal_details as any)?.police_station?.trim() ||
+      (dto.personal_details as any)?.nearby_police_station?.trim() ||
+      (dto.application_data as any)?.police_station?.trim() ||
+      (dto.application_data as any)?.nearby_police_station?.trim();
+
+    const personalDetails = {
+      ...(dto.personal_details ?? {}),
+      ...(policeStation ? { police_station: policeStation } : {}),
+    };
+
     // Merge personal_details and application_data
     const appData = {
       ...(dto.application_data ?? {}),
-      ...(dto.personal_details ? { personal_details: dto.personal_details } : {}),
+      ...(Object.keys(personalDetails).length > 0 ? { personal_details: personalDetails } : {}),
       ...(dto.full_name ? { full_name: dto.full_name } : {}),
       ...(dto.mobile_number ? { mobile_number: dto.mobile_number } : {}),
       ...(dto.email ? { email: dto.email } : {}),
+      ...(policeStation ? { police_station: policeStation } : {}),
     };
 
     if (existingActiveOrPending) {

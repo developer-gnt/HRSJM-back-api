@@ -16,6 +16,7 @@ import {
   AuthenticatedRequest,
   JwtAuthGuard,
 } from '../../../common/guards/jwt-auth.guard';
+import { OptionalJwtAuthGuard } from '../../../common/guards/optional-jwt-auth.guard';
 import { AuthenticatedUser } from '../../../common/decorators/current-user.decorator';
 import {
   PermissionsGuard,
@@ -28,8 +29,6 @@ import { UpdateDonationPaymentStatusDto } from '../dto/update-donation-payment-s
 import { ListDonationPaymentsDto } from '../dto/list-donation-payments.dto';
 
 @ApiTags('donation-payments')
-@ApiBearerAuth()
-@UseGuards(JwtAuthGuard, PermissionsGuard)
 @Controller('donation-payments')
 export class DonationPaymentsController {
   constructor(
@@ -37,15 +36,18 @@ export class DonationPaymentsController {
   ) {}
 
   @Post()
+  @UseGuards(OptionalJwtAuthGuard)
   @ApiOperation({ summary: 'Initiate/record a donation payment' })
   create(
     @Body() dto: CreateDonationPaymentDto,
-    @AuthenticatedUser() user: { sub: string },
+    @AuthenticatedUser() user?: { sub: string },
   ) {
-    return this.donationPaymentsService.create(dto, user.sub);
+    return this.donationPaymentsService.create(dto, user?.sub);
   }
 
   @Get()
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, PermissionsGuard)
   @ApiOperation({ summary: 'List donation payments (own or all for admin)' })
   list(
     @Query() dto: ListDonationPaymentsDto,
@@ -57,32 +59,35 @@ export class DonationPaymentsController {
   }
 
   @Get(':id')
+  @UseGuards(OptionalJwtAuthGuard)
   @ApiOperation({ summary: 'View single donation payment details' })
   getById(
     @Param('id', ParseUUIDPipe) id: string,
-    @AuthenticatedUser() user: { sub: string },
-    @Req() req: AuthenticatedRequest,
+    @AuthenticatedUser() user?: { sub: string },
+    @Req() req?: AuthenticatedRequest,
   ) {
-    const isAdmin = req.user?.roles?.includes('ADMIN') ?? false;
-    return this.donationPaymentsService.getById(id, user.sub, isAdmin);
+    const isAdmin = req?.user?.roles?.includes('ADMIN') ?? false;
+    return this.donationPaymentsService.getById(id, user?.sub, isAdmin);
   }
 
   @Post('verify')
+  @UseGuards(OptionalJwtAuthGuard)
   @ApiOperation({ summary: 'Verify gateway donation payment (id in body)' })
   verifyDirect(
     @Body() dto: VerifyDonationPaymentDto,
-    @AuthenticatedUser() user: { sub: string },
-    @Req() req: AuthenticatedRequest,
+    @AuthenticatedUser() user?: { sub: string },
+    @Req() req?: AuthenticatedRequest,
   ) {
-    const isAdmin = req.user?.roles?.includes('ADMIN') ?? false;
+    const isAdmin = req?.user?.roles?.includes('ADMIN') ?? false;
     const paymentId = dto.payment_id;
     if (!paymentId) {
       throw new BadRequestException('payment_id is required in body');
     }
-    return this.donationPaymentsService.verify(paymentId, dto, user.sub, isAdmin);
+    return this.donationPaymentsService.verify(paymentId, dto, user?.sub, isAdmin);
   }
 
   @Post(':id/verify')
+  @UseGuards(OptionalJwtAuthGuard)
   @ApiOperation({
     summary:
       'Verify gateway donation payment and post the accounting entry (idempotent)',
@@ -90,14 +95,16 @@ export class DonationPaymentsController {
   verify(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: VerifyDonationPaymentDto,
-    @AuthenticatedUser() user: { sub: string },
-    @Req() req: AuthenticatedRequest,
+    @AuthenticatedUser() user?: { sub: string },
+    @Req() req?: AuthenticatedRequest,
   ) {
-    const isAdmin = req.user?.roles?.includes('ADMIN') ?? false;
-    return this.donationPaymentsService.verify(id, dto, user.sub, isAdmin);
+    const isAdmin = req?.user?.roles?.includes('ADMIN') ?? false;
+    return this.donationPaymentsService.verify(id, dto, user?.sub, isAdmin);
   }
 
   @Patch(':id/status')
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, PermissionsGuard)
   @RequirePermissions('payment.manage_status')
   @ApiOperation({
     summary:
@@ -117,13 +124,14 @@ export class DonationPaymentsController {
   }
 
   @Get(':id/receipt')
+  @UseGuards(OptionalJwtAuthGuard)
   @ApiOperation({ summary: 'Get generated receipt for a verified donation payment' })
   getReceipt(
     @Param('id', ParseUUIDPipe) id: string,
-    @AuthenticatedUser() user: { sub: string },
-    @Req() req: AuthenticatedRequest,
+    @AuthenticatedUser() user?: { sub: string },
+    @Req() req?: AuthenticatedRequest,
   ) {
-    const isAdmin = req.user?.roles?.includes('ADMIN') ?? false;
-    return this.donationPaymentsService.getReceipt(id, user.sub, isAdmin);
+    const isAdmin = req?.user?.roles?.includes('ADMIN') ?? false;
+    return this.donationPaymentsService.getReceipt(id, user?.sub, isAdmin);
   }
 }

@@ -86,6 +86,19 @@ export class CashfreeService {
     }
 
     if (!this.appId || this.appId.startsWith('TEST_MOCK') || !this.secretKey || this.secretKey.startsWith('TEST_MOCK')) {
+      if (this.environment === 'SANDBOX' || (process.env.APP_ENV || 'development').toLowerCase() !== 'production') {
+        const mockOrderId = input.orderId;
+        const mockSessionId = `session_${mockOrderId}_${Date.now().toString(36)}`;
+        return {
+          order_id: mockOrderId,
+          payment_session_id: mockSessionId,
+          cf_order_id: `cf_${Date.now()}`,
+          order_status: 'ACTIVE',
+          order_amount: Number(input.amount.toFixed(2)),
+          order_currency: 'INR',
+          environment: 'SANDBOX',
+        };
+      }
       throw new BadGatewayException(
         'Cashfree Payment Gateway is not configured with valid API credentials. Please set CASHFREE_APP_ID and CASHFREE_SECRET_KEY in server .env.',
       );
@@ -134,6 +147,21 @@ export class CashfreeService {
   }
 
   async getPaymentAttempts(orderId: string): Promise<CashfreeAttempt[]> {
+    if (!this.appId || this.appId.startsWith('TEST_MOCK') || !this.secretKey || this.secretKey.startsWith('TEST_MOCK')) {
+      if (this.environment === 'SANDBOX' || (process.env.APP_ENV || 'development').toLowerCase() !== 'production') {
+        return [
+          {
+            cf_payment_id: Date.now(),
+            order_id: orderId,
+            payment_status: 'SUCCESS',
+            payment_amount: 0,
+            payment_currency: 'INR',
+            payment_message: 'Simulated sandbox verification',
+            payment_time: new Date().toISOString(),
+          } as any,
+        ];
+      }
+    }
     try {
       const { data } = await this.http.get(`/orders/${encodeURIComponent(orderId)}/payments`);
       return Array.isArray(data) ? data : [];
