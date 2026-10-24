@@ -16,6 +16,11 @@ import { MembershipPaymentsService } from '../../membership-payments/services/me
 import { CashfreeService } from './cashfree.service';
 import { CreateCashfreeOrderDto } from './dto/create-cashfree-order.dto';
 
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+function toValidUuid(val?: string | null): string | undefined {
+  return val && UUID_REGEX.test(val) ? val : undefined;
+}
+
 @Injectable()
 export class CashfreeOrdersService {
   private readonly logger = new Logger(CashfreeOrdersService.name);
@@ -57,7 +62,8 @@ export class CashfreeOrdersService {
       throw new BadRequestException('Donation payment has already been completed');
     }
 
-    if (payment.user_id && payment.user_id !== actingUserId) {
+    const safeActingUuid = toValidUuid(actingUserId);
+    if (payment.user_id && safeActingUuid && payment.user_id !== safeActingUuid) {
       throw new ForbiddenException('You do not own this donation payment');
     }
 
@@ -98,8 +104,8 @@ export class CashfreeOrdersService {
       amount: Number(payment.amount),
       status: 'INITIATED',
       raw_payload: cfOrder as Record<string, unknown>,
-      created_by: actingUserId,
-      updated_by: actingUserId,
+      created_by: safeActingUuid,
+      updated_by: safeActingUuid,
     });
     await this.transactionsRepo.save(tx);
 
@@ -130,12 +136,13 @@ export class CashfreeOrdersService {
       });
     }
 
+    const safeActingUuid = toValidUuid(actingUserId);
     if (payment) {
       if (payment.payment_status === PaymentStatus.SUCCESS) {
         throw new BadRequestException('Membership payment has already been completed');
       }
 
-      if (actingUserId && payment.user_id && payment.user_id !== actingUserId) {
+      if (payment.user_id && safeActingUuid && payment.user_id !== safeActingUuid) {
         throw new ForbiddenException('You do not own this membership payment');
       }
 
@@ -146,7 +153,7 @@ export class CashfreeOrdersService {
       const cleanPhone = rawPhone.replace(/\D/g, '').slice(-10);
       const customerPhone = cleanPhone.length === 10 ? cleanPhone : '9999999999';
 
-      const customerId = (payment.user_id || actingUserId || 'applicant').replace(/-/g, '').slice(0, 45);
+      const customerId = (payment.user_id || safeActingUuid || 'applicant').replace(/-/g, '').slice(0, 45);
       const customerName = dto.customer_name || payment.user?.full_name || 'HRSJM Member';
       const customerEmail = dto.customer_email || payment.user?.email || 'member@hrsjm.org';
       const purposeNote = dto.order_note || `Membership Fee - ${payment.membership_id}`;
@@ -175,8 +182,8 @@ export class CashfreeOrdersService {
         amount: orderAmount,
         status: 'INITIATED',
         raw_payload: cfOrder as Record<string, unknown>,
-        created_by: actingUserId,
-        updated_by: actingUserId,
+        created_by: safeActingUuid,
+        updated_by: safeActingUuid,
       });
       await this.transactionsRepo.save(tx);
 
@@ -232,8 +239,8 @@ export class CashfreeOrdersService {
       amount: orderAmount,
       status: 'INITIATED',
       raw_payload: cfOrder as Record<string, unknown>,
-      created_by: actingUserId || undefined,
-      updated_by: actingUserId || undefined,
+      created_by: safeActingUuid,
+      updated_by: safeActingUuid,
     });
     await this.transactionsRepo.save(tx);
 
