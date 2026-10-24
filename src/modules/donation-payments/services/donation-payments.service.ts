@@ -25,7 +25,6 @@ import { AuditService } from '../../audit/services/audit.service';
 import { ReceiptEntryEntity } from '../../receipt-entries/entities/receipt-entry.entity';
 import { ReceiptPaymentMethod, ReceiptStatus } from '../../receipt-entries/enums/receipt-entry.enums';
 import { AccountEntity } from '../../accounting/entities/account.entity';
-import { UserEntity } from '../../users/entities/user.entity';
 import { MembershipEntity } from '../../memberships/entities/membership.entity';
 
 function formatVoucherNumber(receiptDate: Date, seq: number): string {
