@@ -1,4 +1,4 @@
-﻿import { ValidationPipe } from '@nestjs/common';
+import { ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import helmet from 'helmet';
@@ -132,7 +132,7 @@ async function bootstrap() {
   }
 
   const port = Number(process.env.APP_PORT ?? 3000);
-  await app.listen(port);
+  await app.listen(port, '0.0.0.0');
   console.log(
     `HRSJM API running at http://localhost:${port}/api/v1 — Swagger: ${
       swaggerEnabled ? `http://localhost:${port}/docs` : 'disabled'
