@@ -23,6 +23,7 @@ import {
   ResetPasswordDto,
   UpdateProfileDto,
 } from '../dto/password.dto';
+import { CheckDuplicatesDto } from '../dto/check-duplicates.dto';
 
 @ApiTags('auth')
 @Controller('auth')
@@ -34,6 +35,14 @@ export class AuthController {
       ip: req.ip ?? null,
       userAgent: (req.headers['user-agent'] as string) ?? null,
     };
+  }
+
+  @Throttle({ default: { limit: 30, ttl: 60000 } })
+  @Post('check-duplicates')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Check if mobile number or email already exists in database' })
+  checkDuplicates(@Body() dto: CheckDuplicatesDto) {
+    return this.authService.checkDuplicates(dto);
   }
 
   @Throttle({ default: { limit: 10, ttl: 60000 } })

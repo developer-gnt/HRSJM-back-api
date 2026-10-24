@@ -1,4 +1,4 @@
-﻿import {
+import {
   BadRequestException,
   ForbiddenException,
   Injectable,
@@ -18,9 +18,18 @@ import { parseDurationToMs } from '../../../common/utils/parse-duration.util';
 import { PasswordResetTokenEntity } from '../../users/entities/password-reset-token.entity';
 import { RefreshTokenEntity } from '../../users/entities/refresh-token.entity';
 import { UserEntity } from '../../users/entities/user.entity';
+import { MembershipEntity } from '../../memberships/entities/membership.entity';
+import { MembershipCategoryEntity } from '../../membership-categories/entities/membership-category.entity';
+import { MembershipStatus } from '../../../common/enums/membership-status.enum';
+import { CommonStatus } from '../../../common/enums/common-status.enum';
 import { UsersService, UserProfile } from '../../users/services/users.service';
 import { RegisterDto } from '../dto/register.dto';
 import { ChangePasswordDto, ResetPasswordDto } from '../dto/password.dto';
+import { CheckDuplicatesDto } from '../dto/check-duplicates.dto';
+import {
+  AssistanceRequestEntity,
+  AssistanceRequestStatus,
+} from '../../assistance/entities/assistance-request.entity';
 
 const BCRYPT_ROUNDS = 10;
 const RESET_TOKEN_TTL_MS = 30 * 60 * 1000;
@@ -58,6 +67,11 @@ export class AuthService {
       dto.email ?? null,
     );
 
+    const isDonationSeekerRequest = dto.role_name === 'DONATION_SEEKER';
+    // When someone creates an account as Donation Seeker, they are provisioned with
+    // initial role USER while their application goes to the admin for verification/approval.
+    const initialRoleName = isDonationSeekerRequest ? 'USER' : (dto.role_name ?? 'USER');
+
     const password_hash = await bcrypt.hash(dto.password, BCRYPT_ROUNDS);
     const user = await this.usersService.createUserWithRole({
       full_name: dto.full_name,
@@ -65,10 +79,31 @@ export class AuthService {
       email: dto.email ? dto.email.toLowerCase() : null,
       password_hash,
       roleId: dto.role_id,
-      // Self-service registration may pick a public role by name (never ADMIN);
-      // defaults to USER when unspecified.
-      roleName: dto.role_id ? undefined : dto.role_name ?? 'USER',
+      // Self-service registration picks role by name (never ADMIN);
+      // defaults to USER when unspecified or when seeker application is pending admin approval.
+      roleName: dto.role_id ? undefined : initialRoleName,
     });
+
+    if (isDonationSeekerRequest) {
+      try {
+        const assistanceRepo = this.dataSource.getRepository(AssistanceRequestEntity);
+        const initialRequest = assistanceRepo.create({
+          user_id: user.id,
+          full_name: dto.full_name.trim(),
+          mobile: dto.mobile_number.trim(),
+          email: dto.email ? dto.email.trim().toLowerCase() : null,
+          requested_amount: 0,
+          reason: 'Donation Seeker Account Verification',
+          description: 'New donation seeker registration pending administrator verification and approval.',
+          status: AssistanceRequestStatus.PENDING,
+          created_by: user.id,
+          updated_by: user.id,
+        });
+        await assistanceRepo.save(initialRequest);
+      } catch (err) {
+        console.warn('Could not record initial assistance request for donation seeker:', err);
+      }
+    }
 
     await this.auditService.record({
       event: 'AUTH_REGISTER',
@@ -77,7 +112,11 @@ export class AuthService {
       entityId: user.id,
       ip,
       userAgent,
-      metadata: { has_email: Boolean(dto.email) },
+      metadata: {
+        has_email: Boolean(dto.email),
+        requested_role: dto.role_name,
+        provisioned_role: initialRoleName,
+      },
     });
 
     const tokens = await this.issueTokens(user, ip, userAgent);
@@ -122,7 +161,35 @@ export class AuthService {
         userAgent,
       });
       throw new ForbiddenException({
-        message: 'Account is disabled',
+        message: 'Your account has been deactivated. Contact the HRSJM office.',
+        code: 'ACCOUNT_DISABLED',
+        details: null,
+      });
+    }
+
+    // Verify if member account has been suspended
+    const suspendedMembership = await this.dataSource
+      .getRepository(MembershipEntity)
+      .findOne({
+        where: { user_id: user.id, status: MembershipStatus.SUSPENDED },
+      });
+
+    if (suspendedMembership) {
+      if (user.status === CommonStatus.ACTIVE) {
+        await this.dataSource
+          .getRepository(UserEntity)
+          .update({ id: user.id }, { status: CommonStatus.INACTIVE });
+      }
+      await this.auditService.record({
+        event: 'AUTH_LOGIN_BLOCKED_MEMBERSHIP_SUSPENDED',
+        actorId: user.id,
+        entityType: 'user',
+        entityId: user.id,
+        ip,
+        userAgent,
+      });
+      throw new ForbiddenException({
+        message: 'Your account has been deactivated. Contact the HRSJM office.',
         code: 'ACCOUNT_DISABLED',
         details: null,
       });
@@ -171,7 +238,21 @@ export class AuthService {
     }
     if (user.status !== 'ACTIVE') {
       throw new ForbiddenException({
-        message: 'Account is disabled',
+        message: 'Your account has been deactivated. Contact the HRSJM office.',
+        code: 'ACCOUNT_DISABLED',
+        details: null,
+      });
+    }
+
+    const suspendedMembership = await this.dataSource
+      .getRepository(MembershipEntity)
+      .findOne({
+        where: { user_id: user.id, status: MembershipStatus.SUSPENDED },
+      });
+
+    if (suspendedMembership) {
+      throw new ForbiddenException({
+        message: 'Your account has been deactivated. Contact the HRSJM office.',
         code: 'ACCOUNT_DISABLED',
         details: null,
       });
@@ -233,6 +314,50 @@ export class AuthService {
       });
     }
     // Idempotent: unknown or already-revoked tokens still succeed (TC-AUTH-028).
+  }
+
+  async checkDuplicates(
+    dto: CheckDuplicatesDto,
+  ): Promise<{
+    available: boolean;
+    mobile_taken: boolean;
+    email_taken: boolean;
+    mobile_message?: string;
+    email_message?: string;
+  }> {
+    let mobile_taken = false;
+    let email_taken = false;
+    let mobile_message: string | undefined;
+    let email_message: string | undefined;
+
+    const cleanMobile = dto.mobile_number
+      ? dto.mobile_number.replace(/\D/g, '').slice(-10)
+      : undefined;
+    const cleanEmail = dto.email ? dto.email.trim().toLowerCase() : undefined;
+
+    if (cleanMobile && cleanMobile.length === 10) {
+      const userWithMobile = await this.usersService.findByLoginIdentifier(cleanMobile);
+      if (userWithMobile) {
+        mobile_taken = true;
+        mobile_message = 'Mobile number is already registered. Please sign in or use another number.';
+      }
+    }
+
+    if (cleanEmail && cleanEmail.includes('@')) {
+      const userWithEmail = await this.usersService.findByLoginIdentifier(cleanEmail);
+      if (userWithEmail) {
+        email_taken = true;
+        email_message = 'Email address is already registered. Please sign in or use another email.';
+      }
+    }
+
+    return {
+      available: !mobile_taken && !email_taken,
+      mobile_taken,
+      email_taken,
+      mobile_message,
+      email_message,
+    };
   }
 
   async forgotPassword(

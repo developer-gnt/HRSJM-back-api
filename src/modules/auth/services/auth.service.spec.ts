@@ -53,7 +53,15 @@ describe('AuthService', () => {
           : { env: 'development' },
       ),
     };
-    dataSource = { transaction: jest.fn() };
+    dataSource = {
+      transaction: jest.fn(),
+      getRepository: jest.fn().mockReturnValue({
+        findOne: jest.fn().mockResolvedValue(null),
+        create: jest.fn((x) => x),
+        update: jest.fn().mockResolvedValue(undefined),
+        save: jest.fn().mockResolvedValue(undefined),
+      }),
+    };
     refreshTokens = {
       findOne: jest.fn().mockResolvedValue(null),
       save: jest.fn(async (x) => ({ ...x, id: 'rt-new' })),
@@ -117,6 +125,27 @@ describe('AuthService', () => {
         null,
       ),
     ).rejects.toBeInstanceOf(ConflictException);
+  });
+
+  it('TC-AUTH-005: register with DONATION_SEEKER provisions initial role USER pending admin approval', async () => {
+    await service.register(
+      {
+        full_name: 'Donation Seeker Applicant',
+        mobile_number: '9876543210',
+        email: 'applicant@example.com',
+        password: 'password123',
+        confirm_password: 'password123',
+        role_name: 'DONATION_SEEKER',
+      },
+      null,
+      null,
+    );
+
+    expect(usersService.createUserWithRole).toHaveBeenCalledWith(
+      expect.objectContaining({
+        roleName: 'USER',
+      }),
+    );
   });
 
   it('TC-AUTH-012: login with wrong password throws INVALID_CREDENTIALS', async () => {
@@ -212,6 +241,25 @@ describe('AuthService', () => {
     expect(resetTokens.insert).not.toHaveBeenCalled();
   });
 
+  it('forgot password for an existing account inserts token into database and returns dev token', async () => {
+    usersService.findByLoginIdentifier = jest.fn().mockResolvedValue({
+      id: 'u1',
+      email: 'member@hrsjm.org',
+      mobile_number: '9876543210',
+    });
+
+    const result = await service.forgotPassword('member@hrsjm.org', '127.0.0.1', 'jest-agent');
+    expect(result.delivered_mechanism).toBe('TBC');
+    expect(result.reset_token).toBeDefined();
+    expect(resetTokens.insert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        user_id: 'u1',
+        token_hash: expect.any(String),
+        expires_at: expect.any(Date),
+      }),
+    );
+  });
+
   it('TC-AUTH-032: reset password with an unknown token throws RESET_TOKEN_INVALID', async () => {
     resetTokens.findOne = jest.fn().mockResolvedValue(null);
 
@@ -222,5 +270,103 @@ describe('AuthService', () => {
         null,
       ),
     ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('reset password with a valid token updates user password in database and revokes sessions', async () => {
+    const validStoredToken = {
+      id: 'tok-1',
+      user_id: 'u1',
+      token_hash: 'hash-abc',
+      expires_at: new Date(Date.now() + 1800000), // 30 min in future
+      used_at: null,
+    };
+    resetTokens.findOne = jest.fn().mockResolvedValue(validStoredToken);
+
+    const mockManagerRepo = {
+      findOne: jest.fn().mockResolvedValue({ id: 'u1', password_hash: 'old-hash' }),
+      save: jest.fn().mockResolvedValue(undefined),
+      update: jest.fn().mockResolvedValue(undefined),
+    };
+    dataSource.transaction = jest.fn(async (cb: (manager: unknown) => Promise<unknown>) => {
+      const manager = {
+        getRepository: jest.fn().mockReturnValue(mockManagerRepo),
+      };
+      return cb(manager);
+    });
+
+    await service.resetPassword(
+      { token: 'valid-token', password: 'NewStrongPassword123!', confirm_password: 'NewStrongPassword123!' },
+      '127.0.0.1',
+      'jest-agent',
+    );
+
+    // Verifies user password hash saved
+    expect(mockManagerRepo.save).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: 'u1',
+        password_hash: expect.any(String),
+      }),
+    );
+    // Verifies token marked used
+    expect(mockManagerRepo.save).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: 'tok-1',
+        used_at: expect.any(Date),
+      }),
+    );
+    // Verifies refresh tokens revoked
+    expect(mockManagerRepo.update).toHaveBeenCalledWith(
+      expect.objectContaining({ user_id: 'u1' }),
+      expect.objectContaining({ revoked_at: expect.any(Date) }),
+    );
+  });
+
+  describe('checkDuplicates', () => {
+    it('returns available: true when neither mobile nor email exist in database', async () => {
+      usersService.findByLoginIdentifier = jest.fn().mockResolvedValue(null);
+
+      const res = await service.checkDuplicates({
+        mobile_number: '9876543210',
+        email: 'fresh@hrsjm.org',
+      });
+
+      expect(res.available).toBe(true);
+      expect(res.mobile_taken).toBe(false);
+      expect(res.email_taken).toBe(false);
+    });
+
+    it('returns mobile_taken: true when mobile number is already registered in database', async () => {
+      usersService.findByLoginIdentifier = jest.fn((id: string) => {
+        if (id === '9876543210') return Promise.resolve({ id: 'u-existing' });
+        return Promise.resolve(null);
+      });
+
+      const res = await service.checkDuplicates({
+        mobile_number: '9876543210',
+        email: 'fresh@hrsjm.org',
+      });
+
+      expect(res.available).toBe(false);
+      expect(res.mobile_taken).toBe(true);
+      expect(res.email_taken).toBe(false);
+      expect(res.mobile_message).toContain('Mobile number is already registered');
+    });
+
+    it('returns email_taken: true when email address is already registered in database', async () => {
+      usersService.findByLoginIdentifier = jest.fn((id: string) => {
+        if (id === 'registered@hrsjm.org') return Promise.resolve({ id: 'u-existing' });
+        return Promise.resolve(null);
+      });
+
+      const res = await service.checkDuplicates({
+        mobile_number: '9123456789',
+        email: 'registered@hrsjm.org',
+      });
+
+      expect(res.available).toBe(false);
+      expect(res.mobile_taken).toBe(false);
+      expect(res.email_taken).toBe(true);
+      expect(res.email_message).toContain('Email address is already registered');
+    });
   });
 });

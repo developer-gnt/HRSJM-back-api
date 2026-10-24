@@ -208,6 +208,49 @@ export class UsersService {
     });
   }
 
+  /**
+   * Upgrades a user account to the DONATION_SEEKER role upon seeker application approval.
+   * Replaces the base USER role with DONATION_SEEKER so the account gets full donation seeker privileges.
+   */
+  async assignSeekerRole(userId: string): Promise<void> {
+    await this.dataSource.transaction(async (manager) => {
+      const roleRepo = manager.getRepository(RoleEntity);
+      const userRoleRepo = manager.getRepository(UserRoleEntity);
+
+      const seekerRole = await roleRepo.findOne({
+        where: [{ name: 'DONATION_SEEKER' }, { name: 'SEEKER' }],
+      });
+      const userRole = await roleRepo.findOne({ where: { name: 'USER' } });
+
+      if (!seekerRole) {
+        return;
+      }
+
+      // Check if user already has DONATION_SEEKER role
+      const existingSeeker = await userRoleRepo.findOne({
+        where: { user_id: userId, role_id: seekerRole.id },
+      });
+
+      // Remove standard USER role so user is now exclusively a DONATION_SEEKER
+      if (userRole) {
+        await userRoleRepo.delete({
+          user_id: userId,
+          role_id: userRole.id,
+        });
+      }
+
+      if (!existingSeeker) {
+        // Add DONATION_SEEKER role
+        await userRoleRepo.save(
+          userRoleRepo.create({
+            user_id: userId,
+            role_id: seekerRole.id,
+          }),
+        );
+      }
+    });
+  }
+
   async assertNoDuplicates(mobile: string, email?: string | null): Promise<void> {
     const clash = await this.users.findOne({
       where: [

@@ -24,6 +24,7 @@ import { CreateMembershipDto } from '../dto/create-membership.dto';
 import { UpdateMembershipDto } from '../dto/update-membership.dto';
 import { ListMembershipsDto } from '../dto/list-memberships.dto';
 import { UpdateMembershipStatusDto } from '../dto/update-membership-status.dto';
+import { AdminResetPasswordDto } from '../dto/admin-reset-password.dto';
 import { OptionalJwtAuthGuard } from '../../../common/guards/optional-jwt-auth.guard';
 
 @ApiTags('memberships')
@@ -105,6 +106,18 @@ export class MembershipsController {
     @AuthenticatedUser() user: { sub: string },
   ) {
     return this.membershipsService.updateStatus(id, dto, user.sub);
+  }
+
+  @Post('memberships/:id/reset-password')
+  @UseGuards(JwtAuthGuard, PermissionsGuard)
+  @RequirePermissions('membership.manage_status')
+  @ApiOperation({ summary: 'Admin reset password for a member (database connected)' })
+  resetPassword(
+    @Param('id') id: string,
+    @Body() dto: AdminResetPasswordDto,
+    @AuthenticatedUser() user: { sub: string },
+  ) {
+    return this.membershipsService.adminResetPassword(id, dto, user.sub);
   }
 
   @Get('memberships/:id/documents')

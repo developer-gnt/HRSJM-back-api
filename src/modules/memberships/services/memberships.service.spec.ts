@@ -14,6 +14,8 @@ describe('MembershipsService', () => {
   let categoriesRepo: Record<string, jest.Mock>;
   let audit: Record<string, jest.Mock>;
   let qb: Record<string, jest.Mock>;
+  let mockRepo: Record<string, jest.Mock>;
+  let dataSource: Record<string, jest.Mock>;
 
   const activeCategory = {
     id: 'cat-1',
@@ -72,6 +74,16 @@ describe('MembershipsService', () => {
       sendToAdmins: jest.fn().mockResolvedValue(undefined),
     };
 
+    mockRepo = {
+      update: jest.fn().mockResolvedValue(undefined),
+      insert: jest.fn().mockResolvedValue(undefined),
+      findOne: jest.fn().mockResolvedValue(null),
+    };
+
+    dataSource = {
+      getRepository: jest.fn().mockReturnValue(mockRepo),
+    };
+
     service = new MembershipsService(
       membershipsRepo as never,
       categoriesRepo as never,
@@ -81,6 +93,7 @@ describe('MembershipsService', () => {
       documentsService as never,
       usersService as never,
       notificationsService as never,
+      dataSource as never,
     );
   });
 
@@ -296,6 +309,100 @@ describe('MembershipsService', () => {
           rejection_reason: 'Incomplete KYC',
         }),
       );
+    });
+
+    it('suspends membership, deactivates user account in database, and revokes tokens', async () => {
+      const mockMembership = {
+        id: 'mem-1',
+        user_id: 'user-1',
+        status: MembershipStatus.ACTIVE,
+        category: activeCategory,
+      };
+      membershipsRepo.findOne.mockResolvedValue(mockMembership);
+
+      await service.updateStatus(
+        'mem-1',
+        { status: MembershipStatus.SUSPENDED },
+        'admin-1',
+      );
+
+      expect(membershipsRepo.save).toHaveBeenCalledWith(
+        expect.objectContaining({
+          status: MembershipStatus.SUSPENDED,
+        }),
+      );
+      // Confirms database updates to UserEntity and RefreshTokenEntity
+      expect(mockRepo.update).toHaveBeenCalledWith(
+        { id: 'user-1' },
+        expect.objectContaining({ status: CommonStatus.INACTIVE }),
+      );
+      expect(mockRepo.update).toHaveBeenCalledWith(
+        expect.objectContaining({ user_id: 'user-1' }),
+        expect.objectContaining({ revoked_at: expect.any(Date) }),
+      );
+    });
+  });
+
+  describe('adminResetPassword', () => {
+    it('sets a new password directly when new_password is provided and revokes active tokens', async () => {
+      const mockMembership = {
+        id: 'mem-1',
+        membership_number: 'HRSJM-MEM-2026-92035',
+        user: { id: 'user-1', full_name: 'Test Member' },
+      };
+      membershipsRepo.findOne.mockResolvedValue(mockMembership);
+
+      const result = await service.adminResetPassword(
+        'mem-1',
+        { new_password: 'NewStrongPassword123!' },
+        'admin-1',
+      );
+
+      expect(result.success).toBe(true);
+      expect(mockRepo.update).toHaveBeenCalledWith(
+        { id: 'user-1' },
+        expect.objectContaining({
+          password_hash: expect.any(String),
+          updated_by: 'admin-1',
+        }),
+      );
+      expect(mockRepo.update).toHaveBeenCalledWith(
+        expect.objectContaining({ user_id: 'user-1' }),
+        expect.objectContaining({ revoked_at: expect.any(Date) }),
+      );
+    });
+
+    it('generates a secure reset token in database when no new_password is provided', async () => {
+      const mockMembership = {
+        id: 'mem-1',
+        membership_number: 'HRSJM-MEM-2026-92035',
+        user: { id: 'user-1', full_name: 'Test Member' },
+      };
+      membershipsRepo.findOne.mockResolvedValue(mockMembership);
+
+      const result = await service.adminResetPassword(
+        'mem-1',
+        {},
+        'admin-1',
+      );
+
+      expect(result.success).toBe(true);
+      expect(result.reset_token).toBeDefined();
+      expect(mockRepo.insert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          user_id: 'user-1',
+          token_hash: expect.any(String),
+          expires_at: expect.any(Date),
+        }),
+      );
+    });
+
+    it('throws NotFoundException if membership or linked user does not exist', async () => {
+      membershipsRepo.findOne.mockResolvedValue(null);
+
+      await expect(
+        service.adminResetPassword('invalid-id', {}, 'admin-1'),
+      ).rejects.toThrow(NotFoundException);
     });
   });
 });

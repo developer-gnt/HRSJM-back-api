@@ -23,8 +23,20 @@ describe('UsersAdminService', () => {
       getProfile: jest.fn(),
       findById: jest.fn(),
       updateProfile: jest.fn(),
+      assignSeekerRole: jest.fn().mockResolvedValue(undefined),
     };
-    service = new UsersAdminService(usersRepo as never, usersService as never);
+    const dataSource = {
+      getRepository: jest.fn().mockReturnValue({
+        update: jest.fn().mockResolvedValue(undefined),
+        find: jest.fn().mockResolvedValue([]),
+        save: jest.fn().mockResolvedValue(undefined),
+      }),
+    };
+    service = new UsersAdminService(
+      usersRepo as never,
+      usersService as never,
+      dataSource as never,
+    );
   });
 
   describe('getUser', () => {
@@ -87,6 +99,32 @@ describe('UsersAdminService', () => {
       await expect(
         service.updateUserStatus('u2', { status: CommonStatus.INACTIVE }, 'admin-1'),
       ).rejects.toThrow(NotFoundException);
+    });
+  });
+
+  describe('approveSeeker', () => {
+    it('upgrades user to DONATION_SEEKER role and marks user ACTIVE', async () => {
+      const user = { id: 'u3', status: CommonStatus.INACTIVE };
+      usersService.findById.mockResolvedValue(user);
+      usersService.getProfile.mockResolvedValue({
+        id: 'u3',
+        status: CommonStatus.ACTIVE,
+        roles: [{ id: 'r-seeker', name: 'DONATION_SEEKER' }],
+      });
+
+      const result = await service.approveSeeker('u3', 'admin-1');
+
+      expect(usersService.assignSeekerRole).toHaveBeenCalledWith('u3');
+      expect(usersRepo.save).toHaveBeenCalledWith(
+        expect.objectContaining({
+          id: 'u3',
+          status: CommonStatus.ACTIVE,
+          updated_by: 'admin-1',
+        }),
+      );
+      expect(result.roles).toEqual(
+        expect.arrayContaining([{ id: 'r-seeker', name: 'DONATION_SEEKER' }]),
+      );
     });
   });
 });

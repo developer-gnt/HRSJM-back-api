@@ -6,6 +6,7 @@ export const MembershipStatus = {
   ACTIVE: 'ACTIVE',
   EXPIRED: 'EXPIRED',
   CANCELLED: 'CANCELLED',
+  SUSPENDED: 'SUSPENDED',
 } as const;
 
 export type MembershipStatus =
