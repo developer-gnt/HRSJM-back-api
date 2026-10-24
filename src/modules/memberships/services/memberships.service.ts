@@ -6,9 +6,13 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Brackets, In, Repository } from 'typeorm';
+import { Brackets, DataSource, In, IsNull, Repository } from 'typeorm';
 import * as bcrypt from 'bcryptjs';
+import { createHash, randomBytes } from 'crypto';
 import { UserEntity } from '../../users/entities/user.entity';
+import { RefreshTokenEntity } from '../../users/entities/refresh-token.entity';
+import { PasswordResetTokenEntity } from '../../users/entities/password-reset-token.entity';
+import { AdminResetPasswordDto } from '../dto/admin-reset-password.dto';
 import { MembershipEntity } from '../entities/membership.entity';
 import { MembershipCategoryEntity } from '../../membership-categories/entities/membership-category.entity';
 import { MembershipPaymentEntity } from '../../membership-payments/entities/membership-payment.entity';
@@ -41,6 +45,7 @@ export class MembershipsService {
     private readonly documentsService: DocumentsService,
     private readonly usersService: UsersService,
     private readonly notifications: NotificationsService,
+    private readonly dataSource: DataSource,
   ) {}
 
   async apply(
@@ -512,12 +517,52 @@ export class MembershipsService {
       }
       membership.rejection_reason = null;
 
-      // Convert applicant to MEMBER role so they have full member access
+      // Reactivate user in users table if previously deactivated
       if (membership.user_id) {
         try {
-          await this.usersService.assignMemberRole(membership.user_id);
+          await this.dataSource.getRepository(UserEntity).update(
+            { id: membership.user_id },
+            { status: CommonStatus.ACTIVE, updated_by: actingUserId },
+          );
+        } catch (uErr) {
+          console.warn('Could not reactivate user status:', uErr);
+        }
+      }
+
+      // Convert applicant to appropriate role (MEMBER or DONATION_SEEKER)
+      if (membership.user_id) {
+        try {
+          const isSeekerApp =
+            membership.membership_number?.startsWith('HRSJM-SEK') ||
+            (membership.application_data as any)?.type === 'DONATION_SEEKER' ||
+            (membership.application_data as any)?.membership_type === 'Donation Seeker';
+
+          if (isSeekerApp) {
+            await this.usersService.assignSeekerRole(membership.user_id);
+          } else {
+            await this.usersService.assignMemberRole(membership.user_id);
+          }
         } catch (roleErr) {
-          console.warn('Could not assign MEMBER role to applicant:', roleErr);
+          console.warn('Could not assign role to applicant:', roleErr);
+        }
+      }
+    } else if (
+      dto.status === MembershipStatus.SUSPENDED ||
+      dto.status === MembershipStatus.CANCELLED
+    ) {
+      // Deactivate user in users table and revoke all active refresh tokens so they cannot login
+      if (membership.user_id) {
+        try {
+          await this.dataSource.getRepository(UserEntity).update(
+            { id: membership.user_id },
+            { status: CommonStatus.INACTIVE, updated_by: actingUserId },
+          );
+          await this.dataSource.getRepository(RefreshTokenEntity).update(
+            { user_id: membership.user_id, revoked_at: IsNull() },
+            { revoked_at: new Date() },
+          );
+        } catch (uErr) {
+          console.warn('Could not suspend user account in database:', uErr);
         }
       }
     } else if (dto.status === MembershipStatus.REJECTED) {
@@ -546,6 +591,13 @@ export class MembershipsService {
         `Congratulations! Your membership #${saved.membership_number} has been approved and is now active.`,
         actingUserId,
       );
+    } else if (saved.status === MembershipStatus.SUSPENDED) {
+      await this.notifications.sendToUser(
+        saved.user_id,
+        'Account Suspended',
+        'Your membership account has been suspended by an administrator. Please contact the HRSJM office.',
+        actingUserId,
+      );
     } else if (saved.status === MembershipStatus.REJECTED) {
       await this.notifications.sendToUser(
         saved.user_id,
@@ -560,6 +612,104 @@ export class MembershipsService {
     }
 
     return saved;
+  }
+
+  async adminResetPassword(
+    id: string,
+    dto: AdminResetPasswordDto,
+    actingUserId: string,
+  ): Promise<{ success: boolean; message: string; reset_token?: string; user_id: string; member_name: string }> {
+    const membership = await this.memberships.findOne({
+      where: { id },
+      relations: ['user'],
+    });
+
+    if (!membership || !membership.user) {
+      throw new NotFoundException({
+        message: 'Membership or linked user account not found',
+        code: 'MEMBER_NOT_FOUND',
+        details: { id },
+      });
+    }
+
+    const user = membership.user;
+
+    if (dto?.new_password) {
+      const password_hash = await bcrypt.hash(dto.new_password, 10);
+      await this.dataSource.getRepository(UserEntity).update(
+        { id: user.id },
+        { password_hash, updated_by: actingUserId },
+      );
+
+      // Invalidate existing sessions
+      await this.dataSource.getRepository(RefreshTokenEntity).update(
+        { user_id: user.id, revoked_at: IsNull() },
+        { revoked_at: new Date() },
+      );
+
+      await this.audit.record({
+        event: 'membership.password_reset_by_admin',
+        actorId: actingUserId,
+        entityType: 'memberships',
+        entityId: membership.id,
+        metadata: {
+          user_id: user.id,
+          method: 'direct_password_set',
+          membershipNumber: membership.membership_number,
+        },
+      });
+
+      await this.notifications.sendToUser(
+        user.id,
+        'Password Updated',
+        'Your account password was updated by an administrator. Please log in with your new password.',
+        actingUserId,
+      );
+
+      return {
+        success: true,
+        message: `Password has been reset successfully in the database for ${user.full_name || 'member'}.`,
+        user_id: user.id,
+        member_name: user.full_name || 'Member',
+      };
+    }
+
+    // Generate secure password reset token in database
+    const rawToken = randomBytes(32).toString('hex');
+    const tokenHash = createHash('sha256').update(rawToken).digest('hex');
+
+    await this.dataSource.getRepository(PasswordResetTokenEntity).insert({
+      user_id: user.id,
+      token_hash: tokenHash,
+      expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000), // 24 hours
+    });
+
+    await this.audit.record({
+      event: 'membership.password_reset_requested_by_admin',
+      actorId: actingUserId,
+      entityType: 'memberships',
+      entityId: membership.id,
+      metadata: {
+        user_id: user.id,
+        method: 'reset_token',
+        membershipNumber: membership.membership_number,
+      },
+    });
+
+    await this.notifications.sendToUser(
+      user.id,
+      'Password Reset Initiated',
+      'A secure password reset request was initiated by an administrator.',
+      actingUserId,
+    );
+
+    return {
+      success: true,
+      message: `Password reset token generated and saved in database for ${user.full_name || 'member'}.`,
+      reset_token: rawToken,
+      user_id: user.id,
+      member_name: user.full_name || 'Member',
+    };
   }
 
   async getDocuments(

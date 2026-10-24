@@ -4,9 +4,16 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Brackets, Repository } from 'typeorm';
+import { Brackets, DataSource, IsNull, Repository } from 'typeorm';
 import { CommonStatus } from '../../../common/enums/common-status.enum';
+import { MembershipStatus } from '../../../common/enums/membership-status.enum';
 import { UserEntity } from '../entities/user.entity';
+import { RefreshTokenEntity } from '../entities/refresh-token.entity';
+import { MembershipEntity } from '../../memberships/entities/membership.entity';
+import {
+  AssistanceRequestEntity,
+  AssistanceRequestStatus,
+} from '../../assistance/entities/assistance-request.entity';
 import { ListUsersDto, UpdateUserDto, UpdateUserStatusDto } from '../dto/user-admin.dto';
 import { UsersService, UserProfile } from './users.service';
 
@@ -16,6 +23,7 @@ export class UsersAdminService {
     @InjectRepository(UserEntity)
     private readonly users: Repository<UserEntity>,
     private readonly usersService: UsersService,
+    private readonly dataSource: DataSource,
   ) {}
 
   async listUsers(dto: ListUsersDto): Promise<{
@@ -117,6 +125,65 @@ export class UsersAdminService {
     user.status = dto.status as CommonStatus;
     user.updated_by = actingUserId;
     const saved = await this.users.save(user);
+
+    if (dto.status === CommonStatus.INACTIVE) {
+      // 1. Revoke all active refresh tokens so existing sessions are terminated
+      await this.dataSource.getRepository(RefreshTokenEntity).update(
+        { user_id: id, revoked_at: IsNull() },
+        { revoked_at: new Date() },
+      );
+      // 2. Sync associated membership status to SUSPENDED
+      await this.dataSource.getRepository(MembershipEntity).update(
+        { user_id: id, status: MembershipStatus.ACTIVE },
+        { status: MembershipStatus.SUSPENDED, updated_by: actingUserId },
+      );
+    } else if (dto.status === CommonStatus.ACTIVE) {
+      // Sync associated membership status back to ACTIVE
+      await this.dataSource.getRepository(MembershipEntity).update(
+        { user_id: id, status: MembershipStatus.SUSPENDED },
+        { status: MembershipStatus.ACTIVE, updated_by: actingUserId },
+      );
+    }
+
     return this.usersService.toProfile(saved);
+  }
+
+  async approveSeeker(id: string, actingUserId: string): Promise<UserProfile> {
+    const user = await this.usersService.findById(id);
+    if (!user) {
+      throw new NotFoundException({
+        message: 'User not found',
+        code: 'USER_NOT_FOUND',
+        details: null,
+      });
+    }
+
+    // 1. Upgrade user's role to DONATION_SEEKER in user_roles table
+    await this.usersService.assignSeekerRole(id);
+
+    // 2. Ensure user status is ACTIVE
+    user.status = CommonStatus.ACTIVE;
+    user.updated_by = actingUserId;
+    await this.users.save(user);
+
+    // 3. Mark any pending assistance requests for this user as APPROVED
+    try {
+      const assistanceRepo = this.dataSource.getRepository(AssistanceRequestEntity);
+      const pendingRequests = await assistanceRepo.find({
+        where: { user_id: id, status: AssistanceRequestStatus.PENDING },
+      });
+      for (const req of pendingRequests) {
+        req.status = AssistanceRequestStatus.APPROVED;
+        req.reviewed_by = actingUserId;
+        req.reviewed_at = new Date();
+        req.updated_by = actingUserId;
+        await assistanceRepo.save(req);
+      }
+    } catch (aErr) {
+      console.warn('Could not update assistance request status on seeker approval:', aErr);
+    }
+
+    const updatedProfile = await this.usersService.getProfile(id);
+    return updatedProfile || this.usersService.toProfile(user);
   }
 }

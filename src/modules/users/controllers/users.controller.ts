@@ -88,6 +88,16 @@ export class UsersController {
     return this.usersAdmin.updateUserStatus(id, dto, actingUser.sub);
   }
 
+  @Post(':id/approve-seeker')
+  @RequirePermissions('user.manage_status')
+  @ApiOperation({ summary: 'Approve a donation seeker and upgrade role to DONATION_SEEKER (admin)' })
+  approveSeeker(
+    @Param('id') id: string,
+    @AuthenticatedUser() actingUser: { sub: string },
+  ) {
+    return this.usersAdmin.approveSeeker(id, actingUser.sub);
+  }
+
   @Get(':id/roles')
   @RequirePermissions('user.read')
   @ApiOperation({ summary: 'View roles assigned to a user (admin)' })

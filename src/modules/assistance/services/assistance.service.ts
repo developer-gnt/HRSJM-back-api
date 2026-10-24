@@ -477,9 +477,16 @@ export class AssistanceService {
     }
     request.reviewed_by = actingUserId;
     request.reviewed_at = new Date();
-    request.updated_by = actingUserId;
-
     const saved = await this.assistance.save(request);
+
+    // If the request is approved, upgrade the applicant's role to DONATION_SEEKER
+    if (dto.status === AssistanceRequestStatus.APPROVED && saved.user_id) {
+      try {
+        await this.usersService.assignSeekerRole(saved.user_id);
+      } catch (roleErr) {
+        console.warn('Could not assign DONATION_SEEKER role to applicant on approval:', roleErr);
+      }
+    }
 
     await this.audit.record({
       event: 'assistance_request.status_updated',
