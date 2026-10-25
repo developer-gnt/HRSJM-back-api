@@ -24,8 +24,8 @@ export function validateCashfreeConfig(
   const secretKey = env.CASHFREE_SECRET_KEY?.trim();
   const webhookSecret = env.CASHFREE_WEBHOOK_SECRET?.trim();
 
-  // If running in production mode or Cashfree environment is explicitly PRODUCTION
-  if (isAppProduction || isCashfreeProduction) {
+  // If Cashfree environment is explicitly set to PRODUCTION, require live credentials
+  if (isCashfreeProduction) {
     const missing: string[] = [];
     if (!appId || appId === 'TEST_MOCK_APP_ID') {
       missing.push('CASHFREE_APP_ID');
@@ -33,7 +33,7 @@ export function validateCashfreeConfig(
     if (!secretKey || secretKey === 'TEST_MOCK_SECRET_KEY') {
       missing.push('CASHFREE_SECRET_KEY');
     }
-    if (isAppProduction && (!webhookSecret || webhookSecret === 'hrsjm_cashfree_sandbox_webhook_secret')) {
+    if (!webhookSecret || webhookSecret === 'hrsjm_cashfree_sandbox_webhook_secret') {
       missing.push('CASHFREE_WEBHOOK_SECRET');
     }
 
