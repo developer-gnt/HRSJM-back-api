@@ -29,6 +29,7 @@ import { RelatedEntityType } from '../../documents/entities/document.entity';
 
 import { RenewalRequestEntity } from '../../renewals/entities/renewal-request.entity';
 import { NotificationsService } from '../../notifications/services/notifications.service';
+import { MailService } from '../../mail/mail.service';
 
 @Injectable()
 export class MembershipsService {
@@ -45,6 +46,7 @@ export class MembershipsService {
     private readonly documentsService: DocumentsService,
     private readonly usersService: UsersService,
     private readonly notifications: NotificationsService,
+    private readonly mailService: MailService,
     private readonly dataSource: DataSource,
   ) {}
 
@@ -177,6 +179,37 @@ export class MembershipsService {
     };
 
     if (existingActiveOrPending) {
+      if (!isAdmin) {
+        if (
+          existingActiveOrPending.status === MembershipStatus.ACTIVE ||
+          existingActiveOrPending.status === MembershipStatus.APPROVED
+        ) {
+          throw new ConflictException({
+            message: `An active membership already exists for this mobile number or email (${existingActiveOrPending.membership_number || 'ACTIVE'}). Please renew or manage your existing membership.`,
+            code: 'ACTIVE_MEMBERSHIP_EXISTS',
+            details: {
+              membership_id: existingActiveOrPending.id,
+              membership_number: existingActiveOrPending.membership_number,
+              status: existingActiveOrPending.status,
+            },
+          });
+        }
+        if (
+          existingActiveOrPending.status === MembershipStatus.PENDING ||
+          existingActiveOrPending.status === MembershipStatus.UNDER_REVIEW
+        ) {
+          throw new ConflictException({
+            message: `A membership application is already submitted and currently under review for this mobile number / email (${existingActiveOrPending.membership_number || 'PENDING'}).`,
+            code: 'PENDING_APPLICATION_EXISTS',
+            details: {
+              membership_id: existingActiveOrPending.id,
+              membership_number: existingActiveOrPending.membership_number,
+              status: existingActiveOrPending.status,
+            },
+          });
+        }
+      }
+
       existingActiveOrPending.application_data = Object.keys(appData).length > 0 ? appData : null;
       existingActiveOrPending.category_id = category.id;
       existingActiveOrPending.status = MembershipStatus.PENDING;
@@ -187,6 +220,7 @@ export class MembershipsService {
       existingActiveOrPending.rejection_reason = null;
       existingActiveOrPending.updated_by = actingUserId || targetUserId;
       const saved = await this.memberships.save(existingActiveOrPending);
+      this.dispatchMembershipApplicationEmail(saved, category, dto, appData);
       return saved;
     }
 
@@ -228,7 +262,54 @@ export class MembershipsService {
       actingUserId || targetUserId,
     );
 
+    // Send confirmation email with payment and reference details
+    this.dispatchMembershipApplicationEmail(saved, category, dto, appData);
+
     return saved;
+  }
+
+  private dispatchMembershipApplicationEmail(
+    membership: MembershipEntity,
+    category: MembershipCategoryEntity,
+    dto: CreateMembershipDto,
+    appData: Record<string, unknown>,
+  ) {
+    const appRef =
+      membership.membership_number || `HRSJM-APP-${membership.id.slice(0, 8).toUpperCase()}`;
+    const applicantEmail = dto.email || (appData.email as string);
+
+    if (applicantEmail && applicantEmail.includes('@')) {
+      const feeAmount = category.fee
+        ? Number(category.fee)
+        : appData.package_fee
+          ? Number(String(appData.package_fee).replace(/[^0-9.]/g, ''))
+          : 0;
+
+      this.mailService
+        .sendMembershipPaymentSuccessEmail({
+          applicantName: dto.full_name || (appData.full_name as string) || 'Applicant',
+          applicantEmail,
+          applicantPhone: dto.mobile_number || (appData.mobile_number as string),
+          applicationRef: appRef,
+          categoryName: category.name || (appData.package_name as string) || 'Membership',
+          amount: feeAmount,
+          transactionId:
+            (appData.payment_order_id as string) ||
+            (appData.payment_reference as string) ||
+            (appData.gateway_payment_id as string),
+          paymentOrderRef:
+            (appData.payment_order_id as string) || (appData.payment_reference as string),
+          paymentMethod:
+            (appData.payment_mode as string) || 'Online (Cashfree Payment Gateway)',
+          paymentDate: new Date(),
+          status: membership.status,
+        })
+        .catch((mailErr) => {
+          console.error(
+            `[MembershipsService] Failed to dispatch membership payment success email: ${mailErr.message}`,
+          );
+        });
+    }
   }
 
   async list(dto: ListMembershipsDto): Promise<{
@@ -592,6 +673,21 @@ export class MembershipsService {
       }
     } else if (dto.status === MembershipStatus.REJECTED) {
       membership.rejection_reason = dto.rejection_reason ?? 'Application rejected by admin';
+      // Deactivate user in users table and revoke active refresh tokens so applicant cannot login
+      if (membership.user_id) {
+        try {
+          await this.dataSource.getRepository(UserEntity).update(
+            { id: membership.user_id },
+            { status: CommonStatus.INACTIVE, updated_by: actingUserId },
+          );
+          await this.dataSource.getRepository(RefreshTokenEntity).update(
+            { user_id: membership.user_id, revoked_at: IsNull() },
+            { revoked_at: new Date() },
+          );
+        } catch (uErr) {
+          console.warn('Could not deactivate rejected user account:', uErr);
+        }
+      }
     }
 
     const saved = await this.memberships.save(membership);
@@ -614,6 +710,13 @@ export class MembershipsService {
         saved.user_id,
         'Membership Approved! 🎉',
         `Congratulations! Your membership #${saved.membership_number} has been approved and is now active.`,
+        actingUserId,
+      );
+    } else if (saved.status === MembershipStatus.UNDER_REVIEW) {
+      await this.notifications.sendToUser(
+        saved.user_id,
+        'Application Under Review ⏳',
+        'Your membership application is currently under review by our administration team.',
         actingUserId,
       );
     } else if (saved.status === MembershipStatus.SUSPENDED) {
@@ -847,5 +950,85 @@ export class MembershipsService {
       membership_id: id,
       renewals: history,
     };
+  }
+
+  async checkDuplicate(email?: string, phone?: string): Promise<{
+    isDuplicate: boolean;
+    field?: 'email' | 'phone' | 'both';
+    message?: string;
+    existingStatus?: string;
+    membershipNumber?: string;
+  }> {
+    const cleanPhone = phone ? phone.replace(/\D/g, '').slice(-10) : '';
+    const cleanEmail = email ? email.trim().toLowerCase() : '';
+
+    let userByPhone: UserEntity | null = null;
+    let userByEmail: UserEntity | null = null;
+
+    if (cleanPhone && cleanPhone.length === 10) {
+      userByPhone = await this.usersService.findByLoginIdentifier(cleanPhone);
+    }
+    if (cleanEmail && cleanEmail.includes('@')) {
+      userByEmail = await this.usersService.findByLoginIdentifier(cleanEmail);
+    }
+
+    const targetUserIds = new Set<string>();
+    if (userByPhone) targetUserIds.add(userByPhone.id);
+    if (userByEmail) targetUserIds.add(userByEmail.id);
+
+    if (targetUserIds.size > 0) {
+      const activeOrPending = await this.memberships.findOne({
+        where: {
+          user_id: In([...targetUserIds]),
+          status: In([
+            MembershipStatus.PENDING,
+            MembershipStatus.UNDER_REVIEW,
+            MembershipStatus.APPROVED,
+            MembershipStatus.ACTIVE,
+          ]),
+        },
+        order: { created_at: 'DESC' },
+      });
+
+      if (activeOrPending) {
+        const isBoth = Boolean(userByPhone && userByEmail && userByPhone.id === userByEmail.id);
+        const field = isBoth ? 'both' : (userByPhone ? 'phone' : 'email');
+        const isApproved =
+          activeOrPending.status === MembershipStatus.ACTIVE ||
+          activeOrPending.status === MembershipStatus.APPROVED;
+        const msg = isApproved
+          ? `An active membership already exists with this ${field === 'both' ? 'mobile number and email' : (field === 'phone' ? 'mobile number' : 'email')} (Membership No: ${activeOrPending.membership_number || 'Active'}).`
+          : `A membership application with this ${field === 'both' ? 'mobile number and email' : (field === 'phone' ? 'mobile number' : 'email')} has already been submitted and is currently pending review (${activeOrPending.membership_number || 'Under Review'}).`;
+
+        return {
+          isDuplicate: true,
+          field,
+          message: msg,
+          existingStatus: activeOrPending.status,
+          membershipNumber: activeOrPending.membership_number || undefined,
+        };
+      }
+
+      if (userByPhone && userByEmail && userByPhone.id !== userByEmail.id) {
+        return {
+          isDuplicate: true,
+          field: 'email',
+          message: 'This email is already registered to another account. Please use your own email address.',
+        };
+      }
+
+      // Check if user account already exists with phone or email
+      if (userByPhone || userByEmail) {
+        const isBoth = Boolean(userByPhone && userByEmail);
+        const field = isBoth ? 'both' : (userByPhone ? 'phone' : 'email');
+        return {
+          isDuplicate: true,
+          field,
+          message: `An account is already registered with this ${field === 'both' ? 'mobile number and email' : (field === 'phone' ? 'mobile number' : 'email')}.`,
+        };
+      }
+    }
+
+    return { isDuplicate: false };
   }
 }

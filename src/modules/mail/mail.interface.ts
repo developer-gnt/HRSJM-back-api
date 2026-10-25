@@ -1,0 +1,47 @@
+export interface SendMailOptions {
+  to: string | string[];
+  subject: string;
+  text?: string;
+  html?: string;
+  from?: string;
+  replyTo?: string;
+  cc?: string | string[];
+  bcc?: string | string[];
+}
+
+export interface DonationThankYouMailPayload {
+  donorName: string;
+  donorEmail: string;
+  amount: number;
+  currency?: string;
+  receiptNumber: string;
+  receiptDate?: Date | string;
+  cause?: string;
+  paymentMethod?: string;
+  gatewayPaymentId?: string;
+}
+
+export interface MembershipWelcomeMailPayload {
+  memberName: string;
+  memberEmail: string;
+  membershipId?: string;
+  categoryName?: string;
+  amount?: number;
+  receiptNumber?: string;
+}
+
+export interface MembershipPaymentSuccessMailPayload {
+  applicantName: string;
+  applicantEmail: string;
+  applicantPhone?: string;
+  applicationRef: string;
+  categoryName: string;
+  amount: number;
+  currency?: string;
+  transactionId?: string;
+  paymentOrderRef?: string;
+  paymentMethod?: string;
+  paymentDate?: Date | string;
+  status?: string;
+}
+

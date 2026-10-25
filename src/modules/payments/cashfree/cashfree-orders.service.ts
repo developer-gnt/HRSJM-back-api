@@ -4,12 +4,15 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, DataSource } from 'typeorm';
 import { PaymentStatus } from '../../../common/enums/payment-status.enum';
+import { DonationEntity } from '../../donations/entities/donation.entity';
 import { DonationPaymentEntity } from '../../donation-payments/entities/donation-payment.entity';
 import { DonationPaymentsService } from '../../donation-payments/services/donation-payments.service';
+import { MembershipEntity } from '../../memberships/entities/membership.entity';
 import { MembershipPaymentEntity } from '../../membership-payments/entities/membership-payment.entity';
 import { PaymentTransactionEntity } from '../../membership-payments/entities/payment-transaction.entity';
 import { MembershipPaymentsService } from '../../membership-payments/services/membership-payments.service';
@@ -31,11 +34,47 @@ export class CashfreeOrdersService {
     @InjectRepository(PaymentTransactionEntity)
     private readonly transactionsRepo: Repository<PaymentTransactionEntity>,
     private readonly dataSource: DataSource,
+    @Optional()
+    @InjectRepository(DonationEntity)
+    private readonly donationsRepo?: Repository<DonationEntity>,
+    @Optional()
+    @InjectRepository(MembershipEntity)
+    private readonly membershipsRepo?: Repository<MembershipEntity>,
   ) {}
 
-  async createOrder(dto: CreateCashfreeOrderDto, actingUserId: string, idempotencyKey?: string) {
+  private getDonationsRepo(): Repository<DonationEntity> | null {
+    if (this.donationsRepo) return this.donationsRepo;
+    if (this.dataSource && typeof this.dataSource.getRepository === 'function') {
+      try {
+        return this.dataSource.getRepository(DonationEntity);
+      } catch {
+        return null;
+      }
+    }
+    return null;
+  }
+
+  private getMembershipsRepo(): Repository<MembershipEntity> | null {
+    if (this.membershipsRepo) return this.membershipsRepo;
+    if (this.dataSource && typeof this.dataSource.getRepository === 'function') {
+      try {
+        return this.dataSource.getRepository(MembershipEntity);
+      } catch {
+        return null;
+      }
+    }
+    return null;
+  }
+
+  private toValidUuidOrNull(val?: string | null): string | null {
+    if (!val) return null;
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    return uuidRegex.test(val) ? val : null;
+  }
+
+  async createOrder(dto: CreateCashfreeOrderDto, actingUserId?: string, idempotencyKey?: string) {
     if (dto.purpose === 'donation') {
-      return this.createDonationOrder(dto.reference_id!, actingUserId, idempotencyKey, dto.return_url);
+      return this.createDonationOrder(dto, actingUserId, idempotencyKey, dto.return_url);
     } else if (dto.purpose === 'membership') {
       return this.createMembershipOrder(dto, actingUserId, idempotencyKey, dto.return_url);
     } else {
@@ -43,44 +82,127 @@ export class CashfreeOrdersService {
     }
   }
 
-  private async createDonationOrder(paymentId: string, actingUserId: string, idempotencyKey?: string, returnUrl?: string) {
-    const payment = await this.donationPaymentsRepo.findOne({
-      where: { id: paymentId },
-      relations: ['donation'],
-    });
+  private async createDonationOrder(
+    dto: CreateCashfreeOrderDto,
+    actingUserId?: string,
+    idempotencyKey?: string,
+    returnUrl?: string,
+  ) {
+    let payment: DonationPaymentEntity | null = null;
+    const paymentId = dto.reference_id?.trim();
+    const validActingUserId = this.toValidUuidOrNull(actingUserId);
+
+    if (paymentId) {
+      payment = await this.donationPaymentsRepo.findOne({
+        where: { id: paymentId },
+        relations: ['donation'],
+      });
+
+      // If not a donation payment ID, check if it's a DonationEntity ID
+      if (!payment) {
+        const donationsRepo = this.getDonationsRepo();
+        if (donationsRepo) {
+          const donation = await donationsRepo.findOne({
+            where: { id: paymentId },
+          });
+
+          if (donation) {
+            payment = await this.donationPaymentsRepo.findOne({
+              where: { donation_id: donation.id, payment_status: PaymentStatus.PENDING },
+              relations: ['donation'],
+            });
+
+            if (!payment) {
+              const amount = Number(dto.amount !== undefined && dto.amount > 0 ? dto.amount : donation.amount);
+              payment = this.donationPaymentsRepo.create({
+                donation_id: donation.id,
+                user_id: this.toValidUuidOrNull(donation.created_by) || validActingUserId,
+                amount,
+                payment_method: 'CASHFREE',
+                payment_status: PaymentStatus.PENDING,
+                created_by: validActingUserId,
+                updated_by: validActingUserId,
+              });
+              payment = await this.donationPaymentsRepo.save(payment);
+              payment.donation = donation;
+            }
+          }
+        }
+      }
+    }
+
+    // Direct donation checkout when amount is supplied without prior record
+    if (!payment) {
+      const donationAmount = Number(dto.amount);
+      if (!Number.isFinite(donationAmount) || donationAmount <= 0) {
+        if (paymentId) {
+          throw new NotFoundException(`Donation payment record ${paymentId} not found`);
+        }
+        throw new BadRequestException('Donation payment order requires a valid positive amount');
+      }
+
+      const donationsRepo = this.getDonationsRepo();
+      if (donationsRepo) {
+        const newDonation = donationsRepo.create({
+          donor_name: dto.customer_name || 'Kind Citizen',
+          donor_mobile: dto.customer_phone || '',
+          donor_email: dto.customer_email || null,
+          cause: dto.order_note || 'General Support & Human Rights Protection',
+          amount: donationAmount,
+          status: 'PENDING',
+          remark: 'Donation from Website',
+          created_by: validActingUserId,
+          updated_by: validActingUserId,
+        });
+        const savedDonation = await donationsRepo.save(newDonation);
+
+        payment = this.donationPaymentsRepo.create({
+          donation_id: savedDonation.id,
+          user_id: validActingUserId,
+          amount: donationAmount,
+          payment_method: 'CASHFREE',
+          payment_status: PaymentStatus.PENDING,
+          created_by: validActingUserId,
+          updated_by: validActingUserId,
+        });
+        payment = await this.donationPaymentsRepo.save(payment);
+        payment.donation = savedDonation;
+      }
+    }
 
     if (!payment) {
-      throw new NotFoundException(`Donation payment ${paymentId} not found`);
+      throw new NotFoundException(`Donation payment ${paymentId || ''} not found`);
     }
 
     if (payment.payment_status === PaymentStatus.SUCCESS) {
       throw new BadRequestException('Donation payment has already been completed');
     }
 
-    if (payment.user_id && payment.user_id !== actingUserId) {
+    if (actingUserId && payment.user_id && payment.user_id !== actingUserId) {
       throw new ForbiddenException('You do not own this donation payment');
     }
 
+    const orderAmount = Number(dto.amount !== undefined && dto.amount > 0 ? dto.amount : payment.amount);
     // Cashfree order_id max length is 45 chars
     const orderId = `hrsjm_don_${payment.id.replace(/-/g, '').slice(0, 16)}_${Date.now().toString(36)}`;
 
-    const rawPhone = payment.donation?.donor_mobile || '';
+    const rawPhone = dto.customer_phone || payment.donation?.donor_mobile || '';
     const cleanPhone = rawPhone.replace(/\D/g, '').slice(-10);
-    const customerPhone = cleanPhone.length === 10 ? cleanPhone : '9999999999';
+    const customerPhone = cleanPhone.length === 10 ? cleanPhone : '9876543210';
 
-    const customerId = (payment.user_id || payment.id).replace(/-/g, '').slice(0, 45);
-    const customerName = payment.donation?.donor_name || 'HRSJM Donor';
-    const customerEmail = payment.donation?.donor_email || 'donor@hrsjm.org';
-    const causeNote = payment.donation?.cause || 'Donation';
+    const customerId = (payment.user_id || validActingUserId || payment.id).replace(/-/g, '').slice(0, 45);
+    const customerName = (dto.customer_name || payment.donation?.donor_name || 'HRSJM Donor').replace(/[^a-zA-Z0-9 ]/g, ' ').slice(0, 50).trim() || 'HRSJM Donor';
+    const customerEmail = dto.customer_email || payment.donation?.donor_email || 'donor@hrsjm.org';
+    const cleanCause = (dto.order_note || payment.donation?.cause || 'Donation').replace(/&amp;/g, '&').replace(/[^a-zA-Z0-9 -]/g, ' ').slice(0, 40);
 
     const cfOrder = await this.cashfreeService.createOrder({
       orderId,
-      amount: Number(payment.amount),
+      amount: orderAmount,
       customerId,
       customerName,
       customerEmail,
       customerPhone,
-      purpose: `Donation: ${causeNote}`,
+      purpose: `Donation: ${cleanCause}`.slice(0, 80),
       idempotencyKey,
       returnUrl,
     });
@@ -88,6 +210,7 @@ export class CashfreeOrdersService {
     // Save gateway_order_id on payment
     payment.gateway_order_id = cfOrder.order_id;
     payment.payment_method = 'CASHFREE';
+    payment.amount = orderAmount;
     await this.donationPaymentsRepo.save(payment);
 
     // Record initial transaction
@@ -95,11 +218,11 @@ export class CashfreeOrdersService {
       donation_payment_id: payment.id,
       gateway_name: 'CASHFREE',
       gateway_order_id: cfOrder.order_id,
-      amount: Number(payment.amount),
+      amount: orderAmount,
       status: 'INITIATED',
       raw_payload: cfOrder as Record<string, unknown>,
-      created_by: actingUserId,
-      updated_by: actingUserId,
+      created_by: validActingUserId,
+      updated_by: validActingUserId,
     });
     await this.transactionsRepo.save(tx);
 
@@ -108,7 +231,7 @@ export class CashfreeOrdersService {
       payment_session_id: cfOrder.payment_session_id,
       cf_order_id: cfOrder.cf_order_id,
       order_status: cfOrder.order_status,
-      amount: Number(payment.amount),
+      amount: orderAmount,
       currency: 'INR',
       purpose: 'donation',
       reference_id: payment.id,
@@ -118,16 +241,57 @@ export class CashfreeOrdersService {
 
   private async createMembershipOrder(
     dto: CreateCashfreeOrderDto,
-    actingUserId: string,
+    actingUserId?: string,
     idempotencyKey?: string,
     returnUrl?: string,
   ) {
     let payment: MembershipPaymentEntity | null = null;
-    if (dto.reference_id) {
+    const refId = dto.reference_id?.trim();
+    const validActingUserId = this.toValidUuidOrNull(actingUserId);
+
+    if (refId) {
       payment = await this.membershipPaymentsRepo.findOne({
-        where: { id: dto.reference_id },
+        where: { id: refId },
         relations: ['user', 'membership'],
       });
+
+      // If not a membership payment ID, check if it's a MembershipEntity ID
+      if (!payment) {
+        const membershipsRepo = this.getMembershipsRepo();
+        if (membershipsRepo) {
+          const membership = await membershipsRepo.findOne({
+            where: { id: refId },
+            relations: ['category', 'user'],
+          });
+
+          if (membership) {
+            payment = await this.membershipPaymentsRepo.findOne({
+              where: { membership_id: membership.id, payment_status: PaymentStatus.PENDING },
+              relations: ['user', 'membership'],
+            });
+
+            if (!payment) {
+              const amount = Number(
+                dto.amount !== undefined && dto.amount > 0
+                  ? dto.amount
+                  : (membership.category?.fee || 3000),
+              );
+              payment = this.membershipPaymentsRepo.create({
+                membership_id: membership.id,
+                user_id: this.toValidUuidOrNull(membership.user_id) || validActingUserId || membership.id,
+                amount,
+                payment_method: 'CASHFREE',
+                payment_status: PaymentStatus.PENDING,
+                created_by: validActingUserId || undefined,
+                updated_by: validActingUserId || undefined,
+              });
+              payment = await this.membershipPaymentsRepo.save(payment);
+              payment.membership = membership;
+              payment.user = membership.user;
+            }
+          }
+        }
+      }
     }
 
     if (payment) {
@@ -144,12 +308,12 @@ export class CashfreeOrdersService {
 
       const rawPhone = dto.customer_phone || payment.user?.mobile_number || '';
       const cleanPhone = rawPhone.replace(/\D/g, '').slice(-10);
-      const customerPhone = cleanPhone.length === 10 ? cleanPhone : '9999999999';
+      const customerPhone = cleanPhone.length === 10 ? cleanPhone : '9876543210';
 
-      const customerId = (payment.user_id || actingUserId || 'applicant').replace(/-/g, '').slice(0, 45);
-      const customerName = dto.customer_name || payment.user?.full_name || 'HRSJM Member';
+      const customerId = (payment.user_id || validActingUserId || 'applicant').replace(/-/g, '').slice(0, 45);
+      const customerName = (dto.customer_name || payment.user?.full_name || 'HRSJM Member').replace(/[^a-zA-Z0-9 ]/g, ' ').slice(0, 50).trim() || 'HRSJM Member';
       const customerEmail = dto.customer_email || payment.user?.email || 'member@hrsjm.org';
-      const purposeNote = dto.order_note || `Membership Fee - ${payment.membership_id}`;
+      const purposeNote = `Membership Fee ${payment.membership_id.slice(0, 8)}`.slice(0, 50);
 
       const cfOrder = await this.cashfreeService.createOrder({
         orderId,
@@ -175,8 +339,8 @@ export class CashfreeOrdersService {
         amount: orderAmount,
         status: 'INITIATED',
         raw_payload: cfOrder as Record<string, unknown>,
-        created_by: actingUserId,
-        updated_by: actingUserId,
+        created_by: validActingUserId || undefined,
+        updated_by: validActingUserId || undefined,
       });
       await this.transactionsRepo.save(tx);
 
@@ -207,12 +371,12 @@ export class CashfreeOrdersService {
 
     const rawPhone = dto.customer_phone || '';
     const cleanPhone = rawPhone.replace(/\D/g, '').slice(-10);
-    const customerPhone = cleanPhone.length === 10 ? cleanPhone : '9999999999';
+    const customerPhone = cleanPhone.length === 10 ? cleanPhone : '9876543210';
 
-    const customerId = (actingUserId || `cust_${Date.now()}`).replace(/-/g, '').slice(0, 45);
-    const customerName = dto.customer_name || 'HRSJM Member Applicant';
+    const customerId = (validActingUserId || `cust_${Date.now()}`).replace(/-/g, '').slice(0, 45);
+    const customerName = (dto.customer_name || 'HRSJM Member Applicant').replace(/[^a-zA-Z0-9 ]/g, ' ').slice(0, 50).trim() || 'HRSJM Member Applicant';
     const customerEmail = dto.customer_email || 'member@hrsjm.org';
-    const purposeNote = dto.order_note || 'Membership Registration Fee';
+    const purposeNote = (dto.order_note || 'Membership Registration Fee').replace(/[^a-zA-Z0-9 -]/g, ' ').slice(0, 50);
 
     const cfOrder = await this.cashfreeService.createOrder({
       orderId,
@@ -232,8 +396,8 @@ export class CashfreeOrdersService {
       amount: orderAmount,
       status: 'INITIATED',
       raw_payload: cfOrder as Record<string, unknown>,
-      created_by: actingUserId || undefined,
-      updated_by: actingUserId || undefined,
+      created_by: validActingUserId || undefined,
+      updated_by: validActingUserId || undefined,
     });
     await this.transactionsRepo.save(tx);
 
@@ -251,6 +415,8 @@ export class CashfreeOrdersService {
   }
 
   async verifyOrder(orderId: string, actingUserId?: string) {
+    const validActingUserId = this.toValidUuidOrNull(actingUserId);
+
     // 1. Identify which payment belongs to this orderId
     const donationPayment = await this.donationPaymentsRepo.findOne({
       where: { gateway_order_id: orderId },
@@ -307,7 +473,7 @@ export class CashfreeOrdersService {
     }
 
     // 2. Query Cashfree for actual payment attempts
-    const attempts = await this.cashfreeService.getPaymentAttempts(orderId);
+    const attempts = (await this.cashfreeService.getPaymentAttempts(orderId)) || [];
     const successfulAttempt = attempts.find((att) => att.payment_status === 'SUCCESS');
 
     if (!successfulAttempt) {
@@ -358,6 +524,9 @@ export class CashfreeOrdersService {
     }
 
     // 4. Delegate atomically to the verified service contract
+    const fallbackActorId = '6b481b29-d4ec-4bad-8bde-4e21d8bb2d26';
+    const actorId = validActingUserId || this.toValidUuidOrNull(payment!.user_id) || fallbackActorId;
+
     if (isDonation) {
       const verifyResult = await this.donationPaymentsService.verify(
         payment!.id,
@@ -367,7 +536,7 @@ export class CashfreeOrdersService {
           gateway_signature: String(successfulAttempt.payment_time || 'CASHFREE_VERIFIED'),
           gateway_payload: successfulAttempt as Record<string, unknown>,
         },
-        actingUserId || payment!.user_id || 'SYSTEM_CASHFREE',
+        actorId,
         true,
       );
 
@@ -396,7 +565,7 @@ export class CashfreeOrdersService {
           gateway_signature: String(successfulAttempt.payment_time || 'CASHFREE_VERIFIED'),
           gateway_payload: successfulAttempt as Record<string, unknown>,
         },
-        actingUserId || payment!.user_id || 'SYSTEM_CASHFREE',
+        actorId,
         true,
       );
 

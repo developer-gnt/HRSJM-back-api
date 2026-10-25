@@ -35,13 +35,15 @@ import { RightsModule } from './modules/rights/rights.module';
 import { MockGatewayModule } from './modules/mock-gateway/mock-gateway.module';
 import paymentConfig from './config/payment.config';
 import cashfreeConfig from './config/cashfree.config';
+import mailConfig from './config/mail.config';
 import { CashfreeModule } from './modules/payments/cashfree/cashfree.module';
+import { MailModule } from './modules/mail/mail.module';
 
 @Module({
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
-      load: [appConfig, databaseConfig, authConfig, paymentConfig, cashfreeConfig],
+      load: [appConfig, databaseConfig, authConfig, paymentConfig, cashfreeConfig, mailConfig],
     }),
     ThrottlerModule.forRoot([
       {
@@ -82,6 +84,7 @@ import { CashfreeModule } from './modules/payments/cashfree/cashfree.module';
     RightsModule,
     MockGatewayModule,
     CashfreeModule,
+    MailModule,
   ],
   providers: [
     {

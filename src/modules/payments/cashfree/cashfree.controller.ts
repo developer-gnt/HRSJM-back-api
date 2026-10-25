@@ -48,7 +48,7 @@ export class CashfreeController {
     if (key && (key.length < 8 || key.length > 128)) {
       throw new BadRequestException('Invalid x-idempotency-key length (8-128 chars)');
     }
-    return this.orders.createOrder(dto, user?.sub || 'GUEST_USER', key);
+    return this.orders.createOrder(dto, user?.sub, key);
   }
 
   @Get('orders/:orderId/verify')

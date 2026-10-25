@@ -395,6 +395,7 @@ export class AssistanceService {
             causeStr.includes(idStr) ||
             remarkStr.includes(idStr) ||
             (nameStr.length >= 3 && causeStr.includes(nameStr)) ||
+            (reasonStr.length >= 4 && (causeStr.includes(reasonStr) || reasonStr.includes(causeStr))) ||
             (causeStr.length >= 4 && (nameStr === causeStr || reasonStr === causeStr));
 
           if (isMatch) {

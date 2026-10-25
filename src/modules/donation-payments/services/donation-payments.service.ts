@@ -5,7 +5,9 @@ import {
   Logger,
   NotFoundException,
   OnModuleInit,
+  Optional,
 } from '@nestjs/common';
+import { MailService } from '../../mail/mail.service';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Brackets, DataSource, EntityManager, Repository } from 'typeorm';
 import { DonationEntity } from '../../donations/entities/donation.entity';
@@ -50,6 +52,8 @@ export class DonationPaymentsService implements OnModuleInit {
     private readonly dataSource: DataSource,
     private readonly posting: AccountingPostingService,
     private readonly audit: AuditService,
+    @Optional()
+    private readonly mailService?: MailService,
   ) {}
 
   async onModuleInit() {
@@ -311,12 +315,23 @@ export class DonationPaymentsService implements OnModuleInit {
       const rand = Math.floor(10000 + Math.random() * 90000);
       const receiptNumber = `HRSJM-REC-${year}-${rand}`;
 
-      let receiptUserId = payment.user_id;
+      let receiptUserId: string | null = null;
+      if (payment.user_id) {
+        const u = await manager.findOne(UserEntity, {
+          select: ['id'],
+          where: { id: payment.user_id },
+        });
+        if (u) receiptUserId = u.id;
+      }
       if (!receiptUserId && actingUserId && actingUserId !== 'GUEST_USER') {
-        receiptUserId = actingUserId;
+        const u = await manager.findOne(UserEntity, {
+          select: ['id'],
+          where: { id: actingUserId },
+        });
+        if (u) receiptUserId = u.id;
       }
       if (!receiptUserId) {
-        const anyUser = await manager.getRepository(UserEntity).findOne({
+        const anyUser = await manager.findOne(UserEntity, {
           select: ['id'],
           where: {},
         });
@@ -328,7 +343,7 @@ export class DonationPaymentsService implements OnModuleInit {
       const receipt = manager.create(ReceiptEntity, {
         receipt_number: receiptNumber,
         receipt_date: now,
-        user_id: receiptUserId || '00000000-0000-0000-0000-000000000000',
+        user_id: receiptUserId || '6b481b29-d4ec-4bad-8bde-4e21d8bb2d26',
         donation_payment_id: payment.id,
         amount: savedPayment.amount,
         payment_method: savedPayment.payment_method,
@@ -336,8 +351,8 @@ export class DonationPaymentsService implements OnModuleInit {
         issued_to: savedPayment.donation?.donor_name ?? 'Donor',
         notes: `Donation payment verified via ${savedPayment.payment_method}`,
         accounting_entry_id: entry.id,
-        created_by: actingUserId ?? null,
-        updated_by: actingUserId ?? null,
+        created_by: receiptUserId,
+        updated_by: receiptUserId,
       });
       const savedReceipt = await manager.save(receipt);
 
@@ -376,6 +391,44 @@ export class DonationPaymentsService implements OnModuleInit {
         donationId: result.payment.donation_id,
       },
     });
+
+    // Asynchronously dispatch official gratitude email to donor if email was provided
+    if (this.mailService) {
+      this.donations
+        .findOne({ where: { id: result.payment.donation_id } })
+        .then((donationRecord) => {
+          const donorEmail = donationRecord?.donor_email || payment.donation?.donor_email;
+          const donorName = donationRecord?.donor_name || payment.donation?.donor_name || 'Kind Donor';
+          const cause = donationRecord?.cause || payment.donation?.cause || 'General Support & Human Rights Protection';
+
+          this.logger.log(`Checking email dispatch for donation ${result.payment.donation_id}. Donor email: "${donorEmail}"`);
+
+          if (donorEmail && donorEmail.includes('@')) {
+            this.mailService!
+              .sendDonationThankYouEmail({
+                donorName,
+                donorEmail,
+                amount: Number(result.payment.amount),
+                receiptNumber: result.receipt.receipt_number,
+                receiptDate: result.receipt.receipt_date,
+                cause,
+                paymentMethod: result.payment.payment_method,
+                gatewayPaymentId: dto.gateway_payment_id,
+              })
+              .then((sent) => {
+                this.logger.log(`Donation thank you email dispatch status for ${donorEmail}: ${sent}`);
+              })
+              .catch((err) => {
+                this.logger.error(`Error sending thank you email to ${donorEmail}: ${err.message}`);
+              });
+          } else {
+            this.logger.log(`No valid donor email provided for donation ${result.payment.donation_id}. Skipping email.`);
+          }
+        })
+        .catch((err) => {
+          this.logger.error(`Error retrieving donation for email dispatch: ${err.message}`);
+        });
+    }
 
     return result;
   }
@@ -580,7 +633,10 @@ export class DonationPaymentsService implements OnModuleInit {
         memberDetails = `Registered User: ${donorUser.full_name} (${donorUser.mobile_number})`;
       }
 
-      const description = `Donation for Cause: ${causeTitle} | Donor: ${donorDisplayName}${contactParts ? ` (${contactParts})` : ''} | Status: ${memberDetails} | Payment ID: ${refNum}`;
+      const sourceTag =
+        savedPayment.donation?.remark ||
+        (savedPayment.payment_method === 'CASHFREE' ? 'Donation from Website' : 'Direct Donation');
+      const description = `[Website Donation] Donation for Cause: ${causeTitle} | Donor: ${donorDisplayName}${contactParts ? ` (${contactParts})` : ''} | Status: ${memberDetails} | Source: ${sourceTag} | Payment ID: ${refNum}`;
 
       // 7. Generate Voucher Number (REC-YYYYMMDD-#####)
       let seq = 1;

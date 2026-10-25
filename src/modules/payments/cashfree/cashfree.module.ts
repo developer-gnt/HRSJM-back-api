@@ -11,6 +11,9 @@ import { CashfreeController } from './cashfree.controller';
 import { CashfreeOrdersService } from './cashfree-orders.service';
 import { CashfreeService } from './cashfree.service';
 
+import { DonationEntity } from '../../donations/entities/donation.entity';
+import { MembershipEntity } from '../../memberships/entities/membership.entity';
+
 @Module({
   imports: [
     ConfigModule.forFeature(cashfreeConfig),
@@ -18,6 +21,8 @@ import { CashfreeService } from './cashfree.service';
       DonationPaymentEntity,
       MembershipPaymentEntity,
       PaymentTransactionEntity,
+      DonationEntity,
+      MembershipEntity,
     ]),
     DonationPaymentsModule,
     MembershipPaymentsModule,

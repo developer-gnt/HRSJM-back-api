@@ -167,33 +167,8 @@ export class AuthService {
       });
     }
 
-    // Verify if member account has been suspended
-    const suspendedMembership = await this.dataSource
-      .getRepository(MembershipEntity)
-      .findOne({
-        where: { user_id: user.id, status: MembershipStatus.SUSPENDED },
-      });
-
-    if (suspendedMembership) {
-      if (user.status === CommonStatus.ACTIVE) {
-        await this.dataSource
-          .getRepository(UserEntity)
-          .update({ id: user.id }, { status: CommonStatus.INACTIVE });
-      }
-      await this.auditService.record({
-        event: 'AUTH_LOGIN_BLOCKED_MEMBERSHIP_SUSPENDED',
-        actorId: user.id,
-        entityType: 'user',
-        entityId: user.id,
-        ip,
-        userAgent,
-      });
-      throw new ForbiddenException({
-        message: 'Your account has been deactivated. Contact the HRSJM office.',
-        code: 'ACCOUNT_DISABLED',
-        details: null,
-      });
-    }
+    // Enforce membership status gate: cannot login if pending, under review, or rejected
+    await this.verifyMemberAccessOrThrow(user.id, ip, userAgent);
 
     const tokens = await this.issueTokens(user, ip, userAgent);
     await this.auditService.record({
@@ -244,19 +219,7 @@ export class AuthService {
       });
     }
 
-    const suspendedMembership = await this.dataSource
-      .getRepository(MembershipEntity)
-      .findOne({
-        where: { user_id: user.id, status: MembershipStatus.SUSPENDED },
-      });
-
-    if (suspendedMembership) {
-      throw new ForbiddenException({
-        message: 'Your account has been deactivated. Contact the HRSJM office.',
-        code: 'ACCOUNT_DISABLED',
-        details: null,
-      });
-    }
+    await this.verifyMemberAccessOrThrow(user.id, ip, userAgent);
 
     // Rotation: the presented refresh token is revoked and replaced in one transaction.
     const rawToken = randomBytes(48).toString('hex');
@@ -623,5 +586,94 @@ export class AuthService {
     });
 
     return { access_token, refresh_token: rawToken };
+  }
+
+  private async verifyMemberAccessOrThrow(
+    userId: string,
+    ip: string | null = null,
+    userAgent: string | null = null,
+  ): Promise<void> {
+    const profile = await this.profileOrThrow(userId);
+    const roleNames = profile.roles.map((r) => r.name);
+    const isStaffOrAdmin = roleNames.some((r) =>
+      [
+        'SUPER_ADMIN',
+        'ADMIN',
+        'STATE_PRESIDENT',
+        'DISTRICT_PRESIDENT',
+        'CALL_CENTER_EXECUTIVE',
+        'ACCOUNTANT',
+      ].includes(r),
+    );
+
+    // Administrative staff are exempt from member review gates
+    if (isStaffOrAdmin) {
+      return;
+    }
+
+    const latestMembership = await this.dataSource
+      .getRepository(MembershipEntity)
+      .findOne({
+        where: { user_id: userId },
+        order: { created_at: 'DESC' },
+      });
+
+    if (!latestMembership) {
+      return;
+    }
+
+    if (latestMembership.status === MembershipStatus.REJECTED) {
+      await this.auditService.record({
+        event: 'AUTH_LOGIN_BLOCKED_MEMBERSHIP_REJECTED',
+        actorId: userId,
+        entityType: 'user',
+        entityId: userId,
+        ip,
+        userAgent,
+      });
+      throw new ForbiddenException({
+        message: 'Your membership application has been rejected by administration. Access to the portal and app is denied.',
+        code: 'MEMBERSHIP_REJECTED',
+        details: { rejection_reason: latestMembership.rejection_reason },
+      });
+    }
+
+    if (
+      latestMembership.status === MembershipStatus.PENDING ||
+      latestMembership.status === MembershipStatus.UNDER_REVIEW
+    ) {
+      await this.auditService.record({
+        event: 'AUTH_LOGIN_BLOCKED_MEMBERSHIP_PENDING',
+        actorId: userId,
+        entityType: 'user',
+        entityId: userId,
+        ip,
+        userAgent,
+      });
+      throw new ForbiddenException({
+        message: 'Your membership application is currently under review. Access will be activated once approved by administration.',
+        code: 'MEMBERSHIP_UNDER_REVIEW',
+        details: { status: latestMembership.status },
+      });
+    }
+
+    if (
+      latestMembership.status === MembershipStatus.SUSPENDED ||
+      latestMembership.status === MembershipStatus.CANCELLED
+    ) {
+      await this.auditService.record({
+        event: 'AUTH_LOGIN_BLOCKED_MEMBERSHIP_SUSPENDED',
+        actorId: userId,
+        entityType: 'user',
+        entityId: userId,
+        ip,
+        userAgent,
+      });
+      throw new ForbiddenException({
+        message: 'Your membership account has been suspended. Contact the HRSJM office.',
+        code: 'ACCOUNT_DISABLED',
+        details: null,
+      });
+    }
   }
 }

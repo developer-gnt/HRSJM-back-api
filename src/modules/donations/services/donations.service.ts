@@ -52,7 +52,7 @@ export class DonationsService {
       cause: cause.trim(),
       amount: dto.amount,
       status: 'PENDING',
-      remark: dto.remark?.trim() || null,
+      remark: dto.remark?.trim() || 'Donation from Website',
       created_by: actingUserId ?? null,
       updated_by: actingUserId ?? null,
     });

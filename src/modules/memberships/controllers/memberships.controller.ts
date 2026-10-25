@@ -71,6 +71,15 @@ export class MembershipsController {
     return this.membershipsService.getMyMembership(user.sub);
   }
 
+  @Get('memberships/check-duplicate')
+  @ApiOperation({ summary: 'Check if mobile number or email already has an existing membership or account' })
+  checkDuplicate(
+    @Query('email') email?: string,
+    @Query('phone') phone?: string,
+  ) {
+    return this.membershipsService.checkDuplicate(email, phone);
+  }
+
   @Get('memberships/:id')
   @UseGuards(JwtAuthGuard)
   @ApiOperation({ summary: 'View single membership details (owner or admin)' })
