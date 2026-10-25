@@ -282,7 +282,15 @@ ${dto.details.trim()}`;
       if (t.resolved_by_user) {
         delete (t.resolved_by_user as { password_hash?: string }).password_hash;
       }
-      return t;
+      const ticketRef = `HRSJM-CMP-${t.id.slice(0, 8).toUpperCase()}`;
+      const catMatch = t.subject.match(/^\[(?:Complaint:\s*)?(.*?)\]/i);
+      const category = catMatch ? catMatch[1].trim() : 'Assistance';
+      return Object.assign(t, {
+        ticket_number: ticketRef,
+        ticketId: ticketRef,
+        category,
+        priority: 'High',
+      });
     });
 
     return {
@@ -393,7 +401,15 @@ ${dto.details.trim()}`;
       delete (ticket.resolved_by_user as { password_hash?: string }).password_hash;
     }
 
-    return ticket;
+    const ticketRef = `HRSJM-CMP-${ticket.id.slice(0, 8).toUpperCase()}`;
+    const catMatch = ticket.subject.match(/^\[(?:Complaint:\s*)?(.*?)\]/i);
+    const category = catMatch ? catMatch[1].trim() : 'Assistance';
+    return Object.assign(ticket, {
+      ticket_number: ticketRef,
+      ticketId: ticketRef,
+      category,
+      priority: 'High',
+    });
   }
 
   async updateStatus(

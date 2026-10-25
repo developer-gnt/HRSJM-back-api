@@ -51,6 +51,15 @@ export class SupportController {
     return this.supportService.create(dto, user.sub);
   }
 
+  private checkIsAdmin(req: AuthenticatedRequest): boolean {
+    const roles = req.user?.roles || [];
+    return roles.some((r) =>
+      ['ADMIN', 'SUPER_ADMIN', 'SUPERADMIN', 'SUPPORT_AGENT'].includes(
+        String(r).toUpperCase(),
+      ),
+    );
+  }
+
   @Get()
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard)
@@ -60,7 +69,7 @@ export class SupportController {
     @AuthenticatedUser() user: { sub: string },
     @Req() req: AuthenticatedRequest,
   ) {
-    const isAdmin = req.user?.roles?.includes('ADMIN') ?? false;
+    const isAdmin = this.checkIsAdmin(req);
     return this.supportService.list(dto, user.sub, isAdmin);
   }
 
@@ -73,7 +82,7 @@ export class SupportController {
     @AuthenticatedUser() user: { sub: string },
     @Req() req: AuthenticatedRequest,
   ) {
-    const isAdmin = req.user?.roles?.includes('ADMIN') ?? false;
+    const isAdmin = this.checkIsAdmin(req);
     return this.supportService.getStats(dto, user.sub, isAdmin);
   }
 
@@ -86,7 +95,7 @@ export class SupportController {
     @AuthenticatedUser() user: { sub: string },
     @Req() req: AuthenticatedRequest,
   ) {
-    const isAdmin = req.user?.roles?.includes('ADMIN') ?? false;
+    const isAdmin = this.checkIsAdmin(req);
     return this.supportService.getById(id, user.sub, isAdmin);
   }
 
@@ -113,7 +122,7 @@ export class SupportController {
     @AuthenticatedUser() user: { sub: string },
     @Req() req: AuthenticatedRequest,
   ) {
-    const isAdmin = req.user?.roles?.includes('ADMIN') ?? false;
+    const isAdmin = this.checkIsAdmin(req);
     return this.supportService.addMessage(id, dto, user.sub, isAdmin);
   }
 
@@ -126,7 +135,7 @@ export class SupportController {
     @AuthenticatedUser() user: { sub: string },
     @Req() req: AuthenticatedRequest,
   ) {
-    const isAdmin = req.user?.roles?.includes('ADMIN') ?? false;
+    const isAdmin = this.checkIsAdmin(req);
     return this.supportService.listMessages(id, user.sub, isAdmin);
   }
 
