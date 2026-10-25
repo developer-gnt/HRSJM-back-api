@@ -45,3 +45,17 @@ export interface MembershipPaymentSuccessMailPayload {
   status?: string;
 }
 
+export interface ComplaintConfirmationMailPayload {
+  complainantName: string;
+  complainantEmail: string;
+  complainantPhone?: string;
+  ticketId: string;
+  complaintType: string;
+  state: string;
+  policeStation: string;
+  details: string;
+  submittedAt?: Date | string;
+  status?: string;
+}
+
+

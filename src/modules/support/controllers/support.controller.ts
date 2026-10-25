@@ -27,16 +27,23 @@ import { CreateTicketDto } from '../dto/create-ticket.dto';
 import { CreateTicketMessageDto } from '../dto/create-ticket-message.dto';
 import { ListTicketsDto } from '../dto/list-tickets.dto';
 import { UpdateTicketStatusDto } from '../dto/update-ticket-status.dto';
+import { CreatePublicComplaintDto } from '../dto/create-public-complaint.dto';
 
 @ApiTags('support-tickets')
-@ApiBearerAuth()
-@UseGuards(JwtAuthGuard, PermissionsGuard)
 @Controller('support-tickets')
 export class SupportController {
   constructor(private readonly supportService: SupportService) {}
 
+  @Post('public')
+  @ApiOperation({ summary: 'Submit a citizen complaint / support ticket without authentication' })
+  createPublicComplaint(@Body() dto: CreatePublicComplaintDto) {
+    return this.supportService.createPublicComplaint(dto);
+  }
+
   @Post()
-  @ApiOperation({ summary: 'Create a new support ticket' })
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard)
+  @ApiOperation({ summary: 'Create a new support ticket (authenticated user)' })
   create(
     @Body() dto: CreateTicketDto,
     @AuthenticatedUser() user: { sub: string },
@@ -45,6 +52,8 @@ export class SupportController {
   }
 
   @Get()
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard)
   @ApiOperation({ summary: 'List support tickets (own or all for admin)' })
   list(
     @Query() dto: ListTicketsDto,
@@ -56,6 +65,8 @@ export class SupportController {
   }
 
   @Get('stats/summary')
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard)
   @ApiOperation({ summary: 'Get support ticket statistics summary' })
   getStats(
     @Query() dto: ListTicketsDto,
@@ -67,6 +78,8 @@ export class SupportController {
   }
 
   @Get(':id')
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard)
   @ApiOperation({ summary: 'View single support ticket' })
   getById(
     @Param('id') id: string,
@@ -78,6 +91,8 @@ export class SupportController {
   }
 
   @Patch(':id/status')
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, PermissionsGuard)
   @RequirePermissions('support.manage')
   @ApiOperation({ summary: 'Update support ticket status (admin)' })
   updateStatus(
@@ -89,6 +104,8 @@ export class SupportController {
   }
 
   @Post(':id/messages')
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard)
   @ApiOperation({ summary: 'Add a reply message to support ticket' })
   addMessage(
     @Param('id') id: string,
@@ -101,6 +118,8 @@ export class SupportController {
   }
 
   @Get(':id/messages')
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard)
   @ApiOperation({ summary: 'List conversation messages for support ticket' })
   listMessages(
     @Param('id') id: string,
@@ -112,6 +131,8 @@ export class SupportController {
   }
 
   @Post(':id/attachments')
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard)
   @UseInterceptors(FileInterceptor('file'))
   @ApiConsumes('multipart/form-data')
   @ApiOperation({ summary: 'Upload an attachment to a support ticket' })

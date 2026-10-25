@@ -33,7 +33,11 @@ const ALLOWED_TRANSITIONS: Record<TicketStatus, TicketStatus[]> = {
   [TicketStatus.CLOSED]: [],
 };
 
+import * as bcrypt from 'bcryptjs';
 import { NotificationsService } from '../../notifications/services/notifications.service';
+import { UsersService } from '../../users/services/users.service';
+import { MailService } from '../../mail/mail.service';
+import { CreatePublicComplaintDto } from '../dto/create-public-complaint.dto';
 
 @Injectable()
 export class SupportService {
@@ -45,6 +49,8 @@ export class SupportService {
     private readonly documentsService: DocumentsService,
     private readonly audit: AuditService,
     private readonly notifications: NotificationsService,
+    private readonly usersService: UsersService,
+    private readonly mailService: MailService,
   ) {}
 
   async create(
@@ -84,6 +90,128 @@ export class SupportService {
     );
 
     return saved;
+  }
+
+  async createPublicComplaint(dto: CreatePublicComplaintDto): Promise<{
+    success: boolean;
+    ticketId: string;
+    id: string;
+    status: string;
+    complainantName: string;
+    complaintType: string;
+    message: string;
+    submittedAt: Date;
+  }> {
+    const cleanPhone = dto.phone.trim();
+    let targetUserId = '';
+
+    // Check if user exists by phone or email
+    const existingUser = await this.usersService.findByLoginIdentifier(cleanPhone);
+    if (existingUser) {
+      targetUserId = existingUser.id;
+    } else if (dto.email) {
+      const emailUser = await this.usersService.findByLoginIdentifier(dto.email.trim());
+      if (emailUser) {
+        targetUserId = emailUser.id;
+      }
+    }
+
+    // If new user, create a user record with role USER
+    if (!targetUserId) {
+      const passwordHash = await bcrypt.hash('Citizen@123', 10);
+      const newUser = await this.usersService.createUserWithRole({
+        full_name: dto.fullName.trim() || 'Citizen Complainant',
+        mobile_number: cleanPhone,
+        email: dto.email ? dto.email.trim().toLowerCase() : null,
+        password_hash: passwordHash,
+        roleName: 'USER',
+      });
+      targetUserId = newUser.id;
+    }
+
+    const subject = `[${dto.complaintType.trim()}] ${dto.fullName.trim()} - ${dto.policeStation.trim()}, ${dto.state.trim()}`;
+    const description = `Complainant Information:
+- Full Name: ${dto.fullName.trim()}
+- Phone: ${cleanPhone}
+- Email: ${dto.email ? dto.email.trim().toLowerCase() : 'Not Provided'}
+- State: ${dto.state.trim()}
+- Nearby Police Station: ${dto.policeStation.trim()}
+- Complaint Category: ${dto.complaintType.trim()}
+
+Details of Concern:
+${dto.details.trim()}`;
+
+    const ticket = this.tickets.create({
+      user_id: targetUserId,
+      subject,
+      description,
+      status: TicketStatus.SUBMITTED,
+      created_by: targetUserId,
+      updated_by: targetUserId,
+    });
+
+    const saved = await this.tickets.save(ticket);
+    const ticketRef = `HRSJM-CMP-${saved.id.slice(0, 8).toUpperCase()}`;
+
+    await this.audit.record({
+      event: 'support_ticket.public_complaint',
+      actorId: targetUserId,
+      entityType: 'support_tickets',
+      entityId: saved.id,
+      metadata: {
+        ticketRef,
+        subject: saved.subject,
+        complainantName: dto.fullName.trim(),
+        phone: cleanPhone,
+      },
+    });
+
+    // Send notifications to user and admin
+    await this.notifications.sendToUser(
+      targetUserId,
+      'Complaint Registered',
+      `Your complaint regarding "${dto.complaintType.trim()}" has been registered (Ticket ID: ${ticketRef}). Our team will review your case.`,
+      targetUserId,
+    );
+    await this.notifications.sendToAdmins(
+      'New Citizen Complaint',
+      `New complaint filed by ${dto.fullName.trim()} (${cleanPhone}) for "${dto.complaintType.trim()}" - Ref: ${ticketRef}.`,
+      targetUserId,
+    );
+
+    // Shoot confirmation email to complainant
+    if (dto.email && dto.email.includes('@')) {
+      this.mailService
+        .sendComplaintConfirmationEmail({
+          complainantName: dto.fullName.trim(),
+          complainantEmail: dto.email.trim().toLowerCase(),
+          complainantPhone: cleanPhone,
+          ticketId: ticketRef,
+          complaintType: dto.complaintType.trim(),
+          state: dto.state.trim(),
+          policeStation: dto.policeStation.trim(),
+          details: dto.details.trim(),
+          submittedAt: saved.created_at,
+          status: 'Submitted & Assigned for Review',
+        })
+        .catch((mailErr) => {
+          console.error(
+            `[SupportService] Failed to send complaint confirmation email: ${mailErr.message}`,
+          );
+        });
+    }
+
+    return {
+      success: true,
+      ticketId: ticketRef,
+      id: saved.id,
+      status: saved.status,
+      complainantName: dto.fullName.trim(),
+      complaintType: dto.complaintType.trim(),
+      message:
+        'Your complaint has been successfully registered and assigned for review. A confirmation email has been sent.',
+      submittedAt: saved.created_at,
+    };
   }
 
   async list(

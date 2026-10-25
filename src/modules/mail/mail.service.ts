@@ -2,6 +2,7 @@ import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as nodemailer from 'nodemailer';
 import {
+  ComplaintConfirmationMailPayload,
   DonationThankYouMailPayload,
   MembershipPaymentSuccessMailPayload,
   MembershipWelcomeMailPayload,
@@ -675,5 +676,308 @@ https://hrsjm.org
 
     return result.success;
   }
+
+  /**
+   * Shoot official Complaint / Grievance Confirmation Email to citizen.
+   */
+  async sendComplaintConfirmationEmail(
+    payload: ComplaintConfirmationMailPayload,
+  ): Promise<boolean> {
+    const {
+      complainantName,
+      complainantEmail,
+      complainantPhone,
+      ticketId,
+      complaintType,
+      state,
+      policeStation,
+      details,
+      submittedAt,
+      status,
+    } = payload;
+
+    if (!complainantEmail || !complainantEmail.includes('@')) {
+      this.logger.warn(
+        `Skipping complaint confirmation email for ticket ${ticketId}: missing recipient email (${complainantEmail})`,
+      );
+      return false;
+    }
+
+    const cleanName = complainantName?.trim() || 'Complainant';
+    const cleanPhone = complainantPhone?.trim() || 'Not Provided';
+    const displayDate = submittedAt
+      ? new Date(submittedAt).toLocaleString('en-IN', {
+          day: '2-digit',
+          month: 'long',
+          year: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit',
+          hour12: true,
+        })
+      : new Date().toLocaleString('en-IN', {
+          day: '2-digit',
+          month: 'long',
+          year: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit',
+          hour12: true,
+        });
+
+    const statusText = status || 'Submitted & Under Review (समीक्षाधीन)';
+    const subject = `Complaint Registered: HRSJM Grievance Acknowledgement (${ticketId})`;
+
+    const html = `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Complaint Registered - HRSJM</title>
+</head>
+<body style="margin: 0; padding: 0; background-color: #f1f5f9; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #1e293b; -webkit-font-smoothing: antialiased;">
+  <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%" style="background-color: #f1f5f9; padding: 30px 15px;">
+    <tr>
+      <td align="center">
+        <!-- Main Card Container -->
+        <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%" style="max-width: 600px; background-color: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1);">
+          
+          <!-- Header Bar -->
+          <tr>
+            <td style="background: linear-gradient(135deg, #1e3a8a 0%, #0f172a 100%); padding: 32px 30px; text-align: center;">
+              <h1 style="margin: 0 0 6px 0; color: #ffffff; font-size: 22px; font-weight: 700; letter-spacing: 0.5px;">
+                HUMAN RIGHTS & SOCIAL JUSTICE MISSION
+              </h1>
+              <p style="margin: 0; color: #fbbf24; font-size: 14px; font-weight: 600; letter-spacing: 1px;">
+                मानव अधिकार - सामाजिक न्याय
+              </p>
+            </td>
+          </tr>
+
+          <!-- Gold Accent Stripe -->
+          <tr>
+            <td height="4" style="background-color: #f59e0b; line-height: 4px; font-size: 4px;">&nbsp;</td>
+          </tr>
+
+          <!-- Alert Confirmation Banner -->
+          <tr>
+            <td style="padding: 24px 32px 0 32px;">
+              <div style="background-color: #eff6ff; border: 1px solid #bfdbfe; border-radius: 8px; padding: 16px 20px; text-align: center;">
+                <div style="display: inline-block; width: 32px; height: 32px; line-height: 32px; border-radius: 50%; background-color: #2563eb; color: #ffffff; font-size: 18px; font-weight: bold; margin-bottom: 8px;">ℹ</div>
+                <h2 style="margin: 0 0 4px 0; color: #1e40af; font-size: 18px; font-weight: 700;">
+                  Complaint Received & Under Review
+                </h2>
+                <p style="margin: 0; color: #1e3a8a; font-size: 13px; font-weight: 500;">
+                  आपकी शिकायत सफलतापूर्वक दर्ज कर ली गई है एवं समीक्षाधीन है।
+                </p>
+              </div>
+            </td>
+          </tr>
+
+          <!-- Body Content Area -->
+          <tr>
+            <td style="padding: 24px 32px 32px 32px;">
+              <!-- Salutation -->
+              <h3 style="margin: 0 0 12px 0; color: #0f172a; font-size: 17px; font-weight: 700;">
+                Dear ${cleanName},
+              </h3>
+
+              <p style="margin: 0 0 16px 0; font-size: 14px; line-height: 1.6; color: #334155;">
+                Thank you for reaching out to the <strong>Human Rights & Social Justice Mission (HRSJM)</strong>. We have successfully registered your grievance regarding <strong>${complaintType}</strong>.
+              </p>
+
+              <p style="margin: 0 0 20px 0; font-size: 14px; line-height: 1.6; color: #334155;">
+                Our legal aid and human rights grievance committee is currently going through the details you provided. An assigned representative will contact you on your registered phone or email regarding the next steps and available support.
+              </p>
+
+              <!-- Complaint Summary Box -->
+              <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%" style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; margin: 0 0 24px 0; overflow: hidden;">
+                <tr>
+                  <td colspan="2" style="background-color: #e0f2fe; padding: 12px 18px; border-bottom: 1px solid #bae6fd;">
+                    <span style="font-size: 12px; font-weight: 700; color: #0369a1; text-transform: uppercase; letter-spacing: 0.5px;">
+                      Official Complaint / Ticket Summary
+                    </span>
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding: 12px 18px; font-size: 13px; color: #64748b; border-bottom: 1px solid #f1f5f9; width: 42%;">
+                    Complaint / Ticket ID
+                  </td>
+                  <td style="padding: 12px 18px; font-size: 15px; font-weight: 800; color: #1d4ed8; font-family: monospace; border-bottom: 1px solid #f1f5f9;">
+                    ${ticketId}
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding: 12px 18px; font-size: 13px; color: #64748b; border-bottom: 1px solid #f1f5f9;">
+                    Complainant Name
+                  </td>
+                  <td style="padding: 12px 18px; font-size: 13px; font-weight: 600; color: #0f172a; border-bottom: 1px solid #f1f5f9;">
+                    ${cleanName}
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding: 12px 18px; font-size: 13px; color: #64748b; border-bottom: 1px solid #f1f5f9;">
+                    Contact Phone
+                  </td>
+                  <td style="padding: 12px 18px; font-size: 13px; color: #0f172a; border-bottom: 1px solid #f1f5f9;">
+                    ${cleanPhone}
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding: 12px 18px; font-size: 13px; color: #64748b; border-bottom: 1px solid #f1f5f9;">
+                    Registered Email
+                  </td>
+                  <td style="padding: 12px 18px; font-size: 13px; color: #0f172a; border-bottom: 1px solid #f1f5f9;">
+                    ${complainantEmail}
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding: 12px 18px; font-size: 13px; color: #64748b; border-bottom: 1px solid #f1f5f9;">
+                    Complaint Category
+                  </td>
+                  <td style="padding: 12px 18px; font-size: 13px; font-weight: 600; color: #0f172a; border-bottom: 1px solid #f1f5f9;">
+                    ${complaintType}
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding: 12px 18px; font-size: 13px; color: #64748b; border-bottom: 1px solid #f1f5f9;">
+                    State / Jurisdiction
+                  </td>
+                  <td style="padding: 12px 18px; font-size: 13px; color: #0f172a; border-bottom: 1px solid #f1f5f9;">
+                    ${state}
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding: 12px 18px; font-size: 13px; color: #64748b; border-bottom: 1px solid #f1f5f9;">
+                    Nearby Police Station
+                  </td>
+                  <td style="padding: 12px 18px; font-size: 13px; color: #0f172a; border-bottom: 1px solid #f1f5f9;">
+                    ${policeStation}
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding: 12px 18px; font-size: 13px; color: #64748b; border-bottom: 1px solid #f1f5f9;">
+                    Date & Time Filed
+                  </td>
+                  <td style="padding: 12px 18px; font-size: 13px; color: #0f172a; border-bottom: 1px solid #f1f5f9;">
+                    ${displayDate}
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding: 12px 18px; font-size: 13px; color: #64748b;">
+                    Current Status
+                  </td>
+                  <td style="padding: 12px 18px; font-size: 13px; font-weight: 700; color: #b45309;">
+                    ${statusText}
+                  </td>
+                </tr>
+              </table>
+
+              <!-- Concern Summary Highlight Box -->
+              <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%" style="background-color: #fefce8; border-left: 4px solid #eab308; border-radius: 4px; margin: 0 0 24px 0;">
+                <tr>
+                  <td style="padding: 14px 18px;">
+                    <p style="margin: 0 0 6px 0; font-size: 13px; font-weight: 700; color: #854d0e;">
+                      Reported Concern Summary:
+                    </p>
+                    <p style="margin: 0; font-size: 13px; line-height: 1.5; color: #713f12;">
+                      ${details.length > 300 ? details.slice(0, 300) + '...' : details}
+                    </p>
+                  </td>
+                </tr>
+              </table>
+
+              <!-- Confidentiality & Next Steps -->
+              <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%" style="background-color: #f8fafc; border-radius: 6px; margin: 0 0 24px 0;">
+                <tr>
+                  <td style="padding: 14px 18px;">
+                    <h4 style="margin: 0 0 6px 0; font-size: 13px; font-weight: 700; color: #334155;">
+                      Confidentiality & Assistance:
+                    </h4>
+                    <p style="margin: 0; font-size: 12px; line-height: 1.6; color: #64748b;">
+                      Your identity and submitted concern are treated with strict confidentiality in accordance with HRSJM citizen protection guidelines. Please quote your Reference ID (<strong>${ticketId}</strong>) in any follow-up communications.
+                    </p>
+                  </td>
+                </tr>
+              </table>
+
+              <!-- Closing -->
+              <p style="margin: 0; font-size: 14px; color: #334155;">
+                With warm regards,
+              </p>
+              <p style="margin: 4px 0 0 0; font-size: 15px; font-weight: 700; color: #0f172a;">
+                Human Rights & Social Justice Mission
+              </p>
+              <p style="margin: 2px 0 0 0; font-size: 12px; color: #64748b;">
+                National Grievance Cell &bull; <a href="https://hrsjm.org" style="color: #2563eb; text-decoration: none;">hrsjm.org</a>
+              </p>
+            </td>
+          </tr>
+
+          <!-- Footer Area -->
+          <tr>
+            <td style="background-color: #0f172a; padding: 20px 30px; text-align: center; color: #94a3b8; font-size: 12px; line-height: 1.5;">
+              <p style="margin: 0 0 6px 0; color: #cbd5e1; font-weight: 600;">
+                Human Rights & Social Justice Mission (HRSJM)
+              </p>
+              <p style="margin: 0;">
+                This is an automated grievance acknowledgment. Please retain your Ticket ID for tracking.
+              </p>
+            </td>
+          </tr>
+
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
+    `;
+
+    const plainText = `
+HUMAN RIGHTS & SOCIAL JUSTICE MISSION (HRSJM)
+मानव अधिकार - सामाजिक न्याय
+
+COMPLAINT / GRIEVANCE ACKNOWLEDGEMENT
+------------------------------------------------------
+Dear ${cleanName},
+
+Thank you for contacting Human Rights & Social Justice Mission (HRSJM).
+We have received your complaint regarding: ${complaintType}
+
+COMPLAINT DETAILS:
+- Ticket / Complaint ID : ${ticketId}
+- Complainant Name      : ${cleanName}
+- Contact Phone         : ${cleanPhone}
+- Registered Email      : ${complainantEmail}
+- Category              : ${complaintType}
+- State                 : ${state}
+- Nearby Police Station : ${policeStation}
+- Date & Time           : ${displayDate}
+- Status                : ${statusText}
+
+REPORTED CONCERN:
+${details}
+
+WHAT HAPPENS NEXT:
+Our human rights grievance committee is reviewing your submission and an assigned case officer will contact you shortly on your phone or email.
+Your information is kept strictly confidential.
+
+For any queries, quote your Ticket ID (${ticketId}) and contact grievance@hrsjm.org or support@hrsjm.org.
+
+Warm regards,
+Human Rights & Social Justice Mission (HRSJM)
+https://hrsjm.org
+    `.trim();
+
+    const result = await this.sendMail({
+      to: complainantEmail,
+      subject,
+      html,
+      text: plainText,
+    });
+
+    return result.success;
+  }
 }
+
 

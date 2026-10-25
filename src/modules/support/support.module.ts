@@ -8,6 +8,7 @@ import { DocumentsModule } from '../documents/documents.module';
 import { AuditModule } from '../audit/audit.module';
 
 import { NotificationsModule } from '../notifications/notifications.module';
+import { UsersModule } from '../users/users.module';
 
 @Module({
   imports: [
@@ -18,6 +19,7 @@ import { NotificationsModule } from '../notifications/notifications.module';
     DocumentsModule,
     AuditModule,
     NotificationsModule,
+    UsersModule,
   ],
   controllers: [SupportController],
   providers: [SupportService],
