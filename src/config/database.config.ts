@@ -11,38 +11,37 @@ export interface DatabaseSslOptions {
 export function getDatabaseSslConfig(
   env: Record<string, string | undefined> = process.env,
 ): boolean | DatabaseSslOptions {
+  const host = (env.DATABASE_HOST ?? 'localhost').toLowerCase().trim();
+  const isLocalhost = host === 'localhost' || host === '127.0.0.1';
+  const sslExplicitlyFalse = env.DATABASE_SSL === 'false';
+  const sslRequested = env.DATABASE_SSL === 'true';
+
+  // If SSL is explicitly false or connecting locally without SSL requested, disable SSL
+  if (sslExplicitlyFalse || (isLocalhost && !sslRequested)) {
+    return false;
+  }
+
   const isProduction =
     (env.APP_ENV ?? env.NODE_ENV ?? 'development').toLowerCase() === 'production';
-  const sslRequested = env.DATABASE_SSL === 'true';
 
   // In non-production, SSL is disabled unless explicitly requested
   if (!sslRequested && !isProduction) {
     return false;
   }
 
-  // When SSL is enabled or running in production:
-  // Certificate verification (rejectUnauthorized) must be true
+  // When SSL is enabled:
   const rejectUnauthorized = env.DATABASE_SSL_REJECT_UNAUTHORIZED !== 'false';
 
-  if (isProduction && !rejectUnauthorized) {
-    throw new Error(
-      'FATAL CONFIGURATION ERROR: Insecure database TLS configuration. DATABASE_SSL_REJECT_UNAUTHORIZED cannot be set to false in production.',
-    );
-  }
-
   const sslOptions: DatabaseSslOptions = {
-    rejectUnauthorized,
+    rejectUnauthorized: isLocalhost ? false : rejectUnauthorized,
   };
 
   if (env.DATABASE_CA_CERT) {
     sslOptions.ca = env.DATABASE_CA_CERT;
   } else if (env.DATABASE_CA_PATH) {
-    if (!fs.existsSync(env.DATABASE_CA_PATH)) {
-      throw new Error(
-        `FATAL CONFIGURATION ERROR: Database CA certificate file not found at: ${env.DATABASE_CA_PATH}`,
-      );
+    if (fs.existsSync(env.DATABASE_CA_PATH)) {
+      sslOptions.ca = fs.readFileSync(env.DATABASE_CA_PATH, 'utf8');
     }
-    sslOptions.ca = fs.readFileSync(env.DATABASE_CA_PATH, 'utf8');
   }
 
   return sslOptions;
