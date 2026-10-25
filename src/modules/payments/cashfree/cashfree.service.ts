@@ -57,16 +57,20 @@ export class CashfreeService {
   public readonly environment: string;
 
   constructor(config: ConfigService) {
-    this.webhookSecret = config.get<string>('cashfree.webhookSecret') || '';
-    this.apiVersion = config.get<string>('cashfree.apiVersion') || '2023-08-01';
-    this.returnUrl = config.get<string>('cashfree.returnUrl') || 'https://hrsjm.org/payments/callback?order_id={order_id}';
-    this.webhookUrl = config.get<string>('cashfree.webhookUrl') || 'http://localhost:3000/api/v1/payments/cashfree/webhook';
-    this.environment = (config.get<string>('cashfree.environment') || 'SANDBOX').toUpperCase();
+    this.webhookSecret = (config.get<string>('cashfree.webhookSecret') || process.env.CASHFREE_WEBHOOK_SECRET || '').trim();
+    this.apiVersion = (config.get<string>('cashfree.apiVersion') || process.env.CASHFREE_API_VERSION || '2023-08-01').trim();
+    this.returnUrl = (config.get<string>('cashfree.returnUrl') || process.env.CASHFREE_RETURN_URL || 'https://hrsjm.org/payments/callback?order_id={order_id}').trim();
+    this.webhookUrl = (config.get<string>('cashfree.webhookUrl') || process.env.CASHFREE_WEBHOOK_URL || 'http://localhost:3000/api/v1/payments/cashfree/webhook').trim();
+    this.environment = (config.get<string>('cashfree.environment') || process.env.CASHFREE_ENV || 'SANDBOX').toUpperCase().trim();
     
-    const baseURL = config.get<string>('cashfree.apiBaseUrl') || 'https://sandbox.cashfree.com/pg';
-    this.appId = config.get<string>('cashfree.appId') || '';
-    this.secretKey = config.get<string>('cashfree.secretKey') || '';
-    const timeout = config.get<number>('cashfree.timeoutMs', 10000);
+    this.appId = (config.get<string>('cashfree.appId') || process.env.CASHFREE_APP_ID || '').trim();
+    this.secretKey = (config.get<string>('cashfree.secretKey') || process.env.CASHFREE_SECRET_KEY || '').trim();
+
+    const defaultBaseURL = this.environment === 'PRODUCTION'
+      ? 'https://api.cashfree.com/pg'
+      : 'https://sandbox.cashfree.com/pg';
+    const baseURL = (config.get<string>('cashfree.apiBaseUrl') || process.env.CASHFREE_BASE_URL || defaultBaseURL).trim();
+    const timeout = Number(config.get<number>('cashfree.timeoutMs') || process.env.CASHFREE_API_TIMEOUT_MS || 10000);
 
     this.http = axios.create({
       baseURL,
@@ -86,21 +90,8 @@ export class CashfreeService {
     }
 
     if (!this.appId || this.appId.startsWith('TEST_MOCK') || !this.secretKey || this.secretKey.startsWith('TEST_MOCK')) {
-      if (this.environment === 'SANDBOX' || (process.env.APP_ENV || 'development').toLowerCase() !== 'production') {
-        const mockOrderId = input.orderId;
-        const mockSessionId = `session_${mockOrderId}_${Date.now().toString(36)}`;
-        return {
-          order_id: mockOrderId,
-          payment_session_id: mockSessionId,
-          cf_order_id: `cf_${Date.now()}`,
-          order_status: 'ACTIVE',
-          order_amount: Number(input.amount.toFixed(2)),
-          order_currency: 'INR',
-          environment: 'SANDBOX',
-        };
-      }
       throw new BadGatewayException(
-        'Cashfree Payment Gateway is not configured with valid API credentials. Please set CASHFREE_APP_ID and CASHFREE_SECRET_KEY in server .env.',
+        'Cashfree Payment Gateway credentials are not configured. Please verify CASHFREE_APP_ID and CASHFREE_SECRET_KEY in server .env.',
       );
     }
 
