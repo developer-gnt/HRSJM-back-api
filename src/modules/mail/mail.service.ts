@@ -87,6 +87,26 @@ export class MailService implements OnModuleInit {
     const { to, subject, html, text, replyTo, cc, bcc } = options;
     const formattedFrom = `"${this.fromName}" <${this.fromAddress}>`;
 
+    const toList = Array.isArray(to) ? to : [to || ''];
+    const isTestDomain = toList.some(addr => {
+      const clean = String(addr || '').trim().toLowerCase();
+      return (
+        /@(example\.(com|org|net)|test\.(com|org|net)|sample\.com|dummy\.com|localhost)$/i.test(clean) ||
+        clean.includes('example.com') ||
+        clean.includes('test.complainant')
+      );
+    });
+
+    if (isTestDomain) {
+      this.logger.log(
+        `[TEST RECIPIENT SUPPRESSED] To: ${to} | Subject: "${subject}" | (Skipped SMTP dispatch to prevent "Address not found" bounce notices)`,
+      );
+      return {
+        success: true,
+        messageId: `suppressed-test-email-${Date.now()}`,
+      };
+    }
+
     if (!this.transporter || !this.isConfigured) {
       this.logger.log(
         `[MOCK MAIL DISPATCH] To: ${to} | Subject: "${subject}" | (SMTP not configured or credentials missing)`,

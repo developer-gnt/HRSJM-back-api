@@ -10,6 +10,7 @@ import {
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../../../common/guards/jwt-auth.guard';
+import { OptionalJwtAuthGuard } from '../../../common/guards/optional-jwt-auth.guard';
 import {
   PermissionsGuard,
   RequirePermissions,
@@ -26,6 +27,7 @@ export class DonationsController {
   constructor(private readonly donationsService: DonationsService) {}
 
   @Post()
+  @UseGuards(OptionalJwtAuthGuard)
   @ApiOperation({ summary: 'Create a donation intent / record' })
   create(
     @Body() dto: CreateDonationDto,

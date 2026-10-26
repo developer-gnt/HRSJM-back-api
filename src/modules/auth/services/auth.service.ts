@@ -301,9 +301,11 @@ export class AuthService {
       : undefined;
     const cleanEmail = dto.email ? dto.email.trim().toLowerCase() : undefined;
 
+    const excludeId = (dto.exclude_user_id || dto.excludeUserId || '').trim();
+
     if (cleanMobile && cleanMobile.length === 10) {
       const userWithMobile = await this.usersService.findByLoginIdentifier(cleanMobile);
-      if (userWithMobile) {
+      if (userWithMobile && (!excludeId || userWithMobile.id !== excludeId)) {
         mobile_taken = true;
         mobile_message = 'Mobile number is already registered. Please sign in or use another number.';
       }
@@ -311,7 +313,7 @@ export class AuthService {
 
     if (cleanEmail && cleanEmail.includes('@')) {
       const userWithEmail = await this.usersService.findByLoginIdentifier(cleanEmail);
-      if (userWithEmail) {
+      if (userWithEmail && (!excludeId || userWithEmail.id !== excludeId)) {
         email_taken = true;
         email_message = 'Email address is already registered. Please sign in or use another email.';
       }
@@ -659,23 +661,13 @@ export class AuthService {
       });
     }
 
+    // Pending / under-review members are allowed to log in and access the User portal dashboard
+    // to track application status while admin verification is in progress.
     if (
       latestMembership.status === MembershipStatus.PENDING ||
       latestMembership.status === MembershipStatus.UNDER_REVIEW
     ) {
-      await this.auditService.record({
-        event: 'AUTH_LOGIN_BLOCKED_MEMBERSHIP_PENDING',
-        actorId: userId,
-        entityType: 'user',
-        entityId: userId,
-        ip,
-        userAgent,
-      });
-      throw new ForbiddenException({
-        message: 'Your membership application is currently under review. Access will be activated once approved by administration.',
-        code: 'MEMBERSHIP_UNDER_REVIEW',
-        details: { status: latestMembership.status },
-      });
+      return;
     }
 
     if (

@@ -22,6 +22,7 @@ import { RefundDonationDto } from '../dto/refund-donation.dto';
 import { AuditService } from '../../audit/services/audit.service';
 import { ReceiptEntryEntity } from '../../receipt-entries/entities/receipt-entry.entity';
 import { ReceiptStatus } from '../../receipt-entries/enums/receipt-entry.enums';
+import { UserEntity } from '../../users/entities/user.entity';
 
 @Injectable()
 export class DonationsService {
@@ -41,12 +42,28 @@ export class DonationsService {
     dto: CreateDonationDto,
     actingUserId?: string,
   ): Promise<DonationEntity> {
-    const mobile = dto.donor_mobile || dto.mobile_number || '';
-    const email = dto.donor_email || dto.email || null;
+    let dbUserMobile = '';
+    let dbUserName = '';
+    let dbUserEmail = '';
+    if (actingUserId && this.dataSource) {
+      try {
+        const usersRepo = this.dataSource.getRepository(UserEntity);
+        const user = await usersRepo.findOne({ where: { id: actingUserId } });
+        if (user) {
+          dbUserMobile = user.mobile_number || '';
+          dbUserName = user.full_name || '';
+          dbUserEmail = user.email || '';
+        }
+      } catch {}
+    }
+
+    const mobile = dbUserMobile || dto.donor_mobile || dto.mobile_number || '';
+    const email = dbUserEmail || dto.donor_email || dto.email || null;
     const cause = dto.cause || dto.campaign || 'General Donation';
+    const donorName = (dbUserName || dto.donor_name || 'HRSJM Donor').trim();
 
     const donation = this.donations.create({
-      donor_name: dto.donor_name.trim(),
+      donor_name: donorName,
       donor_mobile: mobile.trim(),
       donor_email: email ? email.trim().toLowerCase() : null,
       cause: cause.trim(),

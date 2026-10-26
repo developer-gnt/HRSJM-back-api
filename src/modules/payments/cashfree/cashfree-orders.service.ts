@@ -18,6 +18,7 @@ import { PaymentTransactionEntity } from '../../membership-payments/entities/pay
 import { MembershipPaymentsService } from '../../membership-payments/services/membership-payments.service';
 import { CashfreeService } from './cashfree.service';
 import { CreateCashfreeOrderDto } from './dto/create-cashfree-order.dto';
+import { UserEntity } from '../../users/entities/user.entity';
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 function toValidUuid(val?: string | null): string | undefined {
@@ -27,6 +28,18 @@ function toValidUuid(val?: string | null): string | undefined {
 @Injectable()
 export class CashfreeOrdersService {
   private readonly logger = new Logger(CashfreeOrdersService.name);
+
+  private async getDbUser(userId?: string | null): Promise<UserEntity | null> {
+    const validId = toValidUuid(userId);
+    if (!validId || !this.dataSource) return null;
+    try {
+      const usersRepo = this.dataSource.getRepository(UserEntity);
+      return await usersRepo.findOne({ where: { id: validId } });
+    } catch (err: any) {
+      this.logger.warn(`Could not lookup user ${validId}: ${err?.message}`);
+      return null;
+    }
+  }
 
   constructor(
     private readonly cashfreeService: CashfreeService,
@@ -148,10 +161,11 @@ export class CashfreeOrdersService {
 
       const donationsRepo = this.getDonationsRepo();
       if (donationsRepo) {
+        const dbUser = await this.getDbUser(validActingUserId);
         const newDonation = donationsRepo.create({
-          donor_name: dto.customer_name || 'Kind Citizen',
-          donor_mobile: dto.customer_phone || '',
-          donor_email: dto.customer_email || null,
+          donor_name: dbUser?.full_name || dto.customer_name || 'Kind Citizen',
+          donor_mobile: dbUser?.mobile_number || dto.customer_phone || '',
+          donor_email: dbUser?.email || dto.customer_email || null,
           cause: dto.order_note || 'General Support & Human Rights Protection',
           amount: donationAmount,
           status: 'PENDING',
@@ -188,17 +202,22 @@ export class CashfreeOrdersService {
       throw new ForbiddenException('You do not own this donation payment');
     }
 
+    // Authoritatively fetch current user's profile from database
+    const dbUser = await this.getDbUser(safeActingUuid || payment.user_id);
+
     const orderAmount = Number(dto.amount !== undefined && dto.amount > 0 ? dto.amount : payment.amount);
     // Cashfree order_id max length is 45 chars
     const orderId = `hrsjm_don_${payment.id.replace(/-/g, '').slice(0, 16)}_${Date.now().toString(36)}`;
 
-    const rawPhone = dto.customer_phone || payment.donation?.donor_mobile || '';
+    // Prioritize mobile number fetched from current user's database record
+    const rawPhone = dbUser?.mobile_number || dto.customer_phone || payment.donation?.donor_mobile || '';
     const cleanPhone = rawPhone.replace(/\D/g, '').slice(-10);
     const customerPhone = cleanPhone.length === 10 ? cleanPhone : '9876543210';
 
     const customerId = (payment.user_id || safeActingUuid || payment.id).replace(/-/g, '').slice(0, 45);
-    const customerName = (dto.customer_name || payment.donation?.donor_name || 'HRSJM Donor').replace(/[^a-zA-Z0-9 ]/g, ' ').slice(0, 50).trim() || 'HRSJM Donor';
-    const customerEmail = dto.customer_email || payment.donation?.donor_email || 'donor@hrsjm.org';
+    const rawName = dbUser?.full_name || dto.customer_name || payment.donation?.donor_name || 'HRSJM Donor';
+    const customerName = rawName.replace(/[^a-zA-Z0-9 ]/g, ' ').slice(0, 50).trim() || 'HRSJM Donor';
+    const customerEmail = dbUser?.email || dto.customer_email || payment.donation?.donor_email || 'donor@hrsjm.org';
     const cleanCause = (dto.order_note || payment.donation?.cause || 'Donation').replace(/&amp;/g, '&').replace(/[^a-zA-Z0-9 -]/g, ' ').slice(0, 40);
 
     const cfOrder = await this.cashfreeService.createOrder({
@@ -310,16 +329,21 @@ export class CashfreeOrdersService {
         throw new ForbiddenException('You do not own this membership payment');
       }
 
+      // Authoritatively fetch current user's profile from database
+      const dbUser = await this.getDbUser(safeActingUuid || payment.user_id);
+
       const orderAmount = Number(dto.amount !== undefined && dto.amount > 0 ? dto.amount : payment.amount);
       const orderId = `hrsjm_mem_${payment.id.replace(/-/g, '').slice(0, 16)}_${Date.now().toString(36)}`;
 
-      const rawPhone = dto.customer_phone || payment.user?.mobile_number || '';
+      // Prioritize mobile number fetched from current user's database record
+      const rawPhone = dbUser?.mobile_number || dto.customer_phone || payment.user?.mobile_number || '';
       const cleanPhone = rawPhone.replace(/\D/g, '').slice(-10);
       const customerPhone = cleanPhone.length === 10 ? cleanPhone : '9876543210';
 
       const customerId = (payment.user_id || safeActingUuid || validActingUserId || 'applicant').replace(/-/g, '').slice(0, 45);
-      const customerName = (dto.customer_name || payment.user?.full_name || 'HRSJM Member').replace(/[^a-zA-Z0-9 ]/g, ' ').slice(0, 50).trim() || 'HRSJM Member';
-      const customerEmail = dto.customer_email || payment.user?.email || 'member@hrsjm.org';
+      const rawName = dbUser?.full_name || dto.customer_name || payment.user?.full_name || 'HRSJM Member';
+      const customerName = rawName.replace(/[^a-zA-Z0-9 ]/g, ' ').slice(0, 50).trim() || 'HRSJM Member';
+      const customerEmail = dbUser?.email || dto.customer_email || payment.user?.email || 'member@hrsjm.org';
       const purposeNote = `Membership Fee ${payment.membership_id.slice(0, 8)}`.slice(0, 50);
 
       const cfOrder = await this.cashfreeService.createOrder({
@@ -479,20 +503,70 @@ export class CashfreeOrdersService {
       };
     }
 
-    // 2. Query Cashfree for actual payment attempts
-    const attempts = (await this.cashfreeService.getPaymentAttempts(orderId)) || [];
-    const successfulAttempt = attempts.find((att) => att.payment_status === 'SUCCESS');
+    // 2. Query Cashfree for actual payment attempts and order status
+    let attempts: any[] = [];
+    try {
+      attempts = (await this.cashfreeService.getPaymentAttempts(orderId)) || [];
+    } catch (err) {
+      this.logger.warn(`Could not fetch attempts for order ${orderId}: ${(err as Error).message}`);
+    }
+
+    let cfOrder: any = null;
+    try {
+      cfOrder = await this.cashfreeService.getOrder(orderId);
+    } catch (err) {
+      this.logger.warn(`Could not fetch order details for ${orderId}: ${(err as Error).message}`);
+    }
+
+    let successfulAttempt = attempts.find((att: any) => att.payment_status === 'SUCCESS');
+
+    // If order was marked PAID by Cashfree directly, treat as successful
+    if (!successfulAttempt && cfOrder?.order_status === 'PAID') {
+      successfulAttempt = {
+        cf_payment_id: Date.now(),
+        order_id: orderId,
+        payment_status: 'SUCCESS',
+        payment_amount: cfOrder.order_amount || (payment ? Number(payment.amount) : 0),
+        payment_currency: 'INR',
+        payment_message: 'Confirmed via Cashfree order status',
+        payment_time: new Date().toISOString(),
+      } as any;
+    }
 
     if (!successfulAttempt) {
-      this.logger.warn(`Verification called for order ${orderId}, but no SUCCESS attempt found. Status remains PENDING.`);
       const latestAttempt = attempts.length > 0 ? attempts[attempts.length - 1] : null;
+      const failureReason =
+        (latestAttempt as any)?.payment_message ||
+        (cfOrder?.order_status === 'EXPIRED'
+          ? 'Payment session expired'
+          : cfOrder?.order_status === 'TERMINATED'
+          ? 'Payment session terminated'
+          : 'Payment cancelled or not completed on Cashfree');
+
+      this.logger.warn(`Verification for order ${orderId}: no SUCCESS confirmed. Updating status to FAILED.`);
+
+      if (isDonation && donationPayment) {
+        donationPayment.payment_status = PaymentStatus.FAILED;
+        donationPayment.notes = failureReason;
+        await this.donationPaymentsRepo.save(donationPayment);
+      } else if (membershipPayment) {
+        membershipPayment.payment_status = PaymentStatus.FAILED;
+        membershipPayment.notes = failureReason;
+        await this.membershipPaymentsRepo.save(membershipPayment);
+      }
+
+      if (existingTx) {
+        existingTx.status = 'FAILED';
+        await this.transactionsRepo.save(existingTx);
+      }
+
       return {
-        status: 'PENDING',
-        message: 'No successful payment attempt confirmed yet by Cashfree',
+        status: 'FAILED',
+        message: failureReason,
         order_id: orderId,
         attempts_count: attempts.length,
-        latest_status: (latestAttempt?.payment_status as string) || undefined,
-        latest_message: ((latestAttempt as any)?.payment_message as string) || undefined,
+        latest_status: (latestAttempt?.payment_status as string) || cfOrder?.order_status || 'FAILED',
+        latest_message: failureReason,
       };
     }
 

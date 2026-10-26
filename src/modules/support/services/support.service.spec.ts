@@ -25,6 +25,12 @@ describe('SupportService', () => {
       sendToUser: jest.fn().mockResolvedValue(undefined),
       sendToAdmins: jest.fn().mockResolvedValue(undefined),
     };
+    const usersService = {
+      findOne: jest.fn().mockResolvedValue(null),
+    };
+    const mailService = {
+      sendComplaintConfirmation: jest.fn().mockResolvedValue(undefined),
+    };
 
     service = new SupportService(
       ticketsRepo as never,
@@ -32,6 +38,8 @@ describe('SupportService', () => {
       docsService as never,
       audit as never,
       notifications as never,
+      usersService as never,
+      mailService as never,
     );
   });
 

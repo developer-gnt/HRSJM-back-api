@@ -84,6 +84,11 @@ describe('MembershipsService', () => {
       getRepository: jest.fn().mockReturnValue(mockRepo),
     };
 
+    const mailService = {
+      sendMembershipWelcome: jest.fn().mockResolvedValue(undefined),
+      sendMembershipPaymentSuccess: jest.fn().mockResolvedValue(undefined),
+    };
+
     service = new MembershipsService(
       membershipsRepo as never,
       categoriesRepo as never,
@@ -93,6 +98,7 @@ describe('MembershipsService', () => {
       documentsService as never,
       usersService as never,
       notificationsService as never,
+      mailService as never,
       dataSource as never,
     );
   });

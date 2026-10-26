@@ -59,10 +59,7 @@ export class UpdateUserDto {
   phone?: string;
 }
 
-export class UpdateUserStatusDto {
-  @IsEnum(CommonStatus)
-  status: CommonStatus;
-}
+export { UpdateUserStatusDto } from './update-user-status.dto';
 
 export class UserRoleDto {
   @IsUUID()
