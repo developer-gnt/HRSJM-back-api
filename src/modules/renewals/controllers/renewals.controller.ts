@@ -45,6 +45,23 @@ export class RenewalsController {
     return this.renewalsService.listForMembership(membershipNumber);
   }
 
+  @Get('quote')
+  @ApiOperation({ summary: 'Get renewal quotation and arrears breakdown for the authenticated user' })
+  getMyRenewalQuote(@AuthenticatedUser() user: { sub: string }) {
+    return this.renewalsService.getRenewalQuoteForUser(user.sub);
+  }
+
+  @Get('quote/:membershipId')
+  @ApiOperation({ summary: 'Get renewal quotation and arrears breakdown for a membership' })
+  getRenewalQuote(
+    @Param('membershipId') membershipId: string,
+    @AuthenticatedUser() user: { sub: string },
+    @Req() req: AuthenticatedRequest,
+  ) {
+    const isAdmin = req.user?.roles?.includes('ADMIN') ?? false;
+    return this.renewalsService.getRenewalQuote(membershipId, user.sub, isAdmin);
+  }
+
   @Get(':id')
   @ApiOperation({ summary: 'Get renewal request details by ID' })
   getById(

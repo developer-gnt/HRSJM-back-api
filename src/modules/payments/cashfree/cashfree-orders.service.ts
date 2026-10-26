@@ -9,6 +9,7 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, DataSource } from 'typeorm';
 import { PaymentStatus } from '../../../common/enums/payment-status.enum';
+import { MembershipStatus } from '../../../common/enums/membership-status.enum';
 import { DonationEntity } from '../../donations/entities/donation.entity';
 import { DonationPaymentEntity } from '../../donation-payments/entities/donation-payment.entity';
 import { DonationPaymentsService } from '../../donation-payments/services/donation-payments.service';
@@ -18,6 +19,8 @@ import { PaymentTransactionEntity } from '../../membership-payments/entities/pay
 import { MembershipPaymentsService } from '../../membership-payments/services/membership-payments.service';
 import { CashfreeService } from './cashfree.service';
 import { CreateCashfreeOrderDto } from './dto/create-cashfree-order.dto';
+import { RenewalRequestEntity } from '../../renewals/entities/renewal-request.entity';
+import { RenewalCalculationService } from '../../renewals/services/renewal-calculation.service';
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 function toValidUuid(val?: string | null): string | undefined {
@@ -45,6 +48,11 @@ export class CashfreeOrdersService {
     @Optional()
     @InjectRepository(MembershipEntity)
     private readonly membershipsRepo?: Repository<MembershipEntity>,
+    @Optional()
+    @InjectRepository(RenewalRequestEntity)
+    private readonly renewalsRepo?: Repository<RenewalRequestEntity>,
+    @Optional()
+    private readonly renewalCalculationService?: RenewalCalculationService,
   ) {}
 
   private getDonationsRepo(): Repository<DonationEntity> | null {
@@ -64,6 +72,18 @@ export class CashfreeOrdersService {
     if (this.dataSource && typeof this.dataSource.getRepository === 'function') {
       try {
         return this.dataSource.getRepository(MembershipEntity);
+      } catch {
+        return null;
+      }
+    }
+    return null;
+  }
+
+  private getRenewalsRepo(): Repository<RenewalRequestEntity> | null {
+    if (this.renewalsRepo) return this.renewalsRepo;
+    if (this.dataSource && typeof this.dataSource.getRepository === 'function') {
+      try {
+        return this.dataSource.getRepository(RenewalRequestEntity);
       } catch {
         return null;
       }
@@ -184,7 +204,7 @@ export class CashfreeOrdersService {
     }
 
     const safeActingUuid = toValidUuid(actingUserId) || validActingUserId;
-    if (payment.user_id && safeActingUuid && payment.user_id !== safeActingUuid) {
+    if (payment.user_id && actingUserId && payment.user_id !== actingUserId) {
       throw new ForbiddenException('You do not own this donation payment');
     }
 
@@ -306,11 +326,59 @@ export class CashfreeOrdersService {
         throw new BadRequestException('Membership payment has already been completed');
       }
 
-      if (payment.user_id && safeActingUuid && payment.user_id !== safeActingUuid) {
+      if (payment.user_id && actingUserId && payment.user_id !== actingUserId) {
         throw new ForbiddenException('You do not own this membership payment');
       }
 
-      const orderAmount = Number(dto.amount !== undefined && dto.amount > 0 ? dto.amount : payment.amount);
+      // Check if renewal payment and recalculate authoritative quote on server (Test 9)
+      let renewalQuote: any = null;
+      const mem =
+        payment.membership ||
+        (this.getMembershipsRepo()
+          ? await this.getMembershipsRepo()!.findOne({ where: { id: payment.membership_id } })
+          : null);
+
+      const isRenewal =
+        dto.order_note?.toLowerCase().includes('renewal') ||
+        (mem && mem.status === MembershipStatus.EXPIRED) ||
+        (mem && mem.expiry_date && new Date(mem.expiry_date).getTime() < Date.now());
+
+      if (isRenewal && mem && this.renewalCalculationService) {
+        const renewalsRepo = this.getRenewalsRepo();
+        const pastRenewals = renewalsRepo
+          ? await renewalsRepo.find({
+              where: { membership_id: mem.id },
+              order: { created_at: 'ASC' },
+            })
+          : [];
+
+        renewalQuote = this.renewalCalculationService.calculateQuote({
+          membership: mem,
+          successfulRenewals: pastRenewals,
+        });
+
+        if (renewalQuote.requires_verification) {
+          throw new BadRequestException({
+            message: `Membership renewal requires administrative verification: ${renewalQuote.verification_reason}`,
+            code: 'MEMBERSHIP_VERIFICATION_REQUIRED',
+            details: { reason: renewalQuote.verification_reason },
+          });
+        }
+
+        // Validate amount against authoritative quote (Test 9)
+        if (dto.amount !== undefined && Math.abs(dto.amount - renewalQuote.total_payable) > 0.01) {
+          throw new BadRequestException({
+            message: `Payable amount mismatch: server quoted INR ${renewalQuote.total_payable}, but received INR ${dto.amount}`,
+            code: 'RENEWAL_AMOUNT_MISMATCH',
+            details: { expected: renewalQuote.total_payable, provided: dto.amount },
+          });
+        }
+      }
+
+      const orderAmount = renewalQuote
+        ? renewalQuote.total_payable
+        : Number(dto.amount !== undefined && dto.amount > 0 ? dto.amount : payment.amount);
+
       const orderId = `hrsjm_mem_${payment.id.replace(/-/g, '').slice(0, 16)}_${Date.now().toString(36)}`;
 
       const rawPhone = dto.customer_phone || payment.user?.mobile_number || '';
@@ -337,6 +405,15 @@ export class CashfreeOrdersService {
       payment.gateway_order_id = cfOrder.order_id;
       payment.payment_method = 'CASHFREE';
       payment.amount = orderAmount;
+      if (renewalQuote) {
+        payment.notes = JSON.stringify({
+          type: 'MEMBERSHIP_RENEWAL',
+          periods_count: renewalQuote.periods.length,
+          unpaid_periods_count: renewalQuote.unpaid_periods_count,
+          total_payable: renewalQuote.total_payable,
+          renewal_subtotal: renewalQuote.renewal_subtotal,
+        });
+      }
       await this.membershipPaymentsRepo.save(payment);
 
       const tx = this.transactionsRepo.create({

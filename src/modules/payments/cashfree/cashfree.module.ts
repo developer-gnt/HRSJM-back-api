@@ -13,6 +13,8 @@ import { CashfreeService } from './cashfree.service';
 
 import { DonationEntity } from '../../donations/entities/donation.entity';
 import { MembershipEntity } from '../../memberships/entities/membership.entity';
+import { RenewalRequestEntity } from '../../renewals/entities/renewal-request.entity';
+import { RenewalsModule } from '../../renewals/renewals.module';
 
 @Module({
   imports: [
@@ -23,9 +25,11 @@ import { MembershipEntity } from '../../memberships/entities/membership.entity';
       PaymentTransactionEntity,
       DonationEntity,
       MembershipEntity,
+      RenewalRequestEntity,
     ]),
     DonationPaymentsModule,
     MembershipPaymentsModule,
+    RenewalsModule,
   ],
   controllers: [CashfreeController],
   providers: [CashfreeService, CashfreeOrdersService],

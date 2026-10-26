@@ -23,6 +23,10 @@ import {
 
 import { NotificationsService } from '../../notifications/services/notifications.service';
 import { ReceiptEntity } from '../../membership-payments/entities/receipt.entity';
+import {
+  RenewalCalculationService,
+  RenewalQuoteResult,
+} from './renewal-calculation.service';
 
 @Injectable()
 export class RenewalsService {
@@ -35,6 +39,7 @@ export class RenewalsService {
     private readonly receiptsRepo: Repository<ReceiptEntity>,
     private readonly audit: AuditService,
     private readonly notifications: NotificationsService,
+    private readonly calculationService: RenewalCalculationService,
   ) {}
 
   async apply(dto: CreateRenewalDto, requestedBy: string): Promise<RenewalRequestEntity> {
@@ -65,9 +70,27 @@ export class RenewalsService {
       });
     }
 
-    const periodYears = dto.period_years ?? 1;
-    const baseFee = membership.category?.fee ? Number(membership.category.fee) : 500;
-    const amount = dto.amount ?? baseFee * periodYears;
+    const pastRenewals = await this.renewalsRepo.find({
+      where: { membership_id: membership.id },
+      order: { created_at: 'ASC' },
+    });
+
+    const quote = this.calculationService.calculateQuote({
+      membership,
+      successfulRenewals: pastRenewals,
+      overridePeriodsCount: dto.period_years,
+    });
+
+    if (quote.requires_verification) {
+      throw new BadRequestException({
+        message: `Membership renewal requires administrative verification: ${quote.verification_reason}`,
+        code: 'MEMBERSHIP_VERIFICATION_REQUIRED',
+        details: { reason: quote.verification_reason },
+      });
+    }
+
+    const periodYears = quote.periods.length > 0 ? quote.periods.length : (dto.period_years ?? 1);
+    const amount = quote.total_payable;
 
     const renewal = this.renewalsRepo.create({
       membership_id: dto.membership_id,
@@ -189,6 +212,15 @@ export class RenewalsService {
     actingUserId: string,
     isAdmin = false,
   ): Promise<RenewalRequestEntity> {
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+    if (!isUuid) {
+      throw new NotFoundException({
+        message: 'Renewal request not found',
+        code: 'RENEWAL_NOT_FOUND',
+        details: { id },
+      });
+    }
+
     const renewal = await this.renewalsRepo.findOne({
       where: { id },
       relations: ['membership', 'membership.user', 'requested_by_user'],
@@ -397,4 +429,73 @@ export class RenewalsService {
       order: { created_at: 'DESC' },
     });
   }
+
+  async getRenewalQuoteForUser(userId: string): Promise<RenewalQuoteResult> {
+    const membership = await this.membershipsRepo.findOne({
+      where: { user_id: userId },
+      relations: ['category', 'user'],
+      order: { created_at: 'DESC' },
+    });
+
+    if (!membership) {
+      throw new NotFoundException({
+        message: 'No membership found for current user',
+        code: 'MEMBERSHIP_NOT_FOUND',
+      });
+    }
+
+    const renewals = await this.renewalsRepo.find({
+      where: { membership_id: membership.id },
+      order: { created_at: 'ASC' },
+    });
+
+    return this.calculationService.calculateQuote({
+      membership,
+      successfulRenewals: renewals,
+    });
+  }
+
+  async getRenewalQuote(
+    membershipId: string,
+    actingUserId?: string,
+    isAdmin = false,
+  ): Promise<RenewalQuoteResult> {
+    let membership = await this.membershipsRepo.findOne({
+      where: { id: membershipId },
+      relations: ['category', 'user'],
+    });
+
+    if (!membership) {
+      membership = await this.membershipsRepo.findOne({
+        where: { membership_number: membershipId },
+        relations: ['category', 'user'],
+      });
+    }
+
+    if (!membership) {
+      throw new NotFoundException({
+        message: 'Membership not found',
+        code: 'MEMBERSHIP_NOT_FOUND',
+        details: { membership_id: membershipId },
+      });
+    }
+
+    if (!isAdmin && actingUserId && membership.user_id !== actingUserId) {
+      throw new ForbiddenException({
+        message: 'You are not authorized to view quote for this membership',
+        code: 'ACCESS_DENIED',
+      });
+    }
+
+    const renewals = await this.renewalsRepo.find({
+      where: { membership_id: membership.id },
+      order: { created_at: 'ASC' },
+    });
+
+    return this.calculationService.calculateQuote({
+      membership,
+      successfulRenewals: renewals,
+    });
+  }
 }
+

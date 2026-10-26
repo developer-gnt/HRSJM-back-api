@@ -31,6 +31,12 @@ import { AccountingPostingService } from '../../accounting/services/accounting-p
 import { ACCOUNT_CODES } from '../../accounting/accounting.constants';
 import { ReferenceType } from '../../accounting/enums/accounting.enums';
 import { NotificationsService } from '../../notifications/services/notifications.service';
+import {
+  RenewalPaymentStatus,
+  RenewalRequestEntity,
+  RenewalStatus,
+} from '../../renewals/entities/renewal-request.entity';
+import { addYearsSafe } from '../../renewals/services/renewal-calculation.service';
 
 function formatVoucherNumber(receiptDate: Date, seq: number): string {
   const y = receiptDate.getUTCFullYear();
@@ -340,7 +346,7 @@ export class MembershipPaymentsService implements OnModuleInit {
       });
       const savedReceipt = await manager.save(receipt);
 
-      // Activate membership
+      // Activate or renew membership
       const membership = await manager.findOne(MembershipEntity, {
         where: { id: payment.membership_id },
         relations: ['category', 'user'],
@@ -354,12 +360,6 @@ export class MembershipPaymentsService implements OnModuleInit {
         if (!membership.approval_date) {
           membership.approval_date = now;
         }
-        const validityDays = membership.category?.validity_days || 365;
-        if (!membership.expiry_date) {
-          membership.expiry_date = new Date(
-            now.getTime() + validityDays * 24 * 60 * 60 * 1000,
-          );
-        }
         if (!membership.membership_number) {
           const count =
             typeof manager.getRepository === 'function'
@@ -367,6 +367,57 @@ export class MembershipPaymentsService implements OnModuleInit {
               : 0;
           membership.membership_number = `HRSJM-${String(count + 1).padStart(5, '0')}`;
         }
+
+        // Determine if renewal payment or overdue arrears payment
+        let renewalMeta: any = null;
+        if (payment.notes) {
+          try {
+            renewalMeta = JSON.parse(payment.notes);
+          } catch {}
+        }
+
+        const isRenewalPayment =
+          renewalMeta?.type === 'MEMBERSHIP_RENEWAL' ||
+          (membership.expiry_date && new Date(membership.expiry_date).getTime() < now.getTime());
+
+        if (isRenewalPayment) {
+          const coveredPeriods = Number(renewalMeta?.periods_count) || 1;
+          const currentExp = membership.expiry_date ? new Date(membership.expiry_date) : now;
+          const newExp = addYearsSafe(currentExp, coveredPeriods);
+
+          membership.expiry_date = newExp;
+
+          // Record covered renewal periods inside the same transaction
+          const renewalRepo = manager.getRepository(RenewalRequestEntity);
+          if (renewalRepo) {
+            const renewalRecord = renewalRepo.create({
+              membership_id: membership.id,
+              requested_by: payment.user_id,
+              period_years: coveredPeriods,
+              amount: payment.amount,
+              payment_method: payment.payment_method || 'CASHFREE',
+              transaction_id: dto.gateway_payment_id || null,
+              payment_status: RenewalPaymentStatus.SUCCESS,
+              status: RenewalStatus.ACTIVE,
+              receipt_number: receiptNumber,
+              previous_expiry: currentExp,
+              new_expiry: newExp,
+              reviewed_by: actingUserId,
+              reviewed_at: now,
+              created_by: actingUserId,
+              updated_by: actingUserId,
+            });
+            await renewalRepo.save(renewalRecord);
+          }
+        } else {
+          const validityDays = membership.category?.validity_days || 365;
+          if (!membership.expiry_date) {
+            membership.expiry_date = new Date(
+              now.getTime() + validityDays * 24 * 60 * 60 * 1000,
+            );
+          }
+        }
+
         membership.updated_by = actingUserId;
         await manager.save(membership);
       }
