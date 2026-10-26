@@ -638,23 +638,13 @@ export class AuthService {
       });
     }
 
+    // Pending / under-review members are allowed to log in and access the User portal dashboard
+    // to track application status while admin verification is in progress.
     if (
       latestMembership.status === MembershipStatus.PENDING ||
       latestMembership.status === MembershipStatus.UNDER_REVIEW
     ) {
-      await this.auditService.record({
-        event: 'AUTH_LOGIN_BLOCKED_MEMBERSHIP_PENDING',
-        actorId: userId,
-        entityType: 'user',
-        entityId: userId,
-        ip,
-        userAgent,
-      });
-      throw new ForbiddenException({
-        message: 'Your membership application is currently under review. Access will be activated once approved by administration.',
-        code: 'MEMBERSHIP_UNDER_REVIEW',
-        details: { status: latestMembership.status },
-      });
+      return;
     }
 
     if (

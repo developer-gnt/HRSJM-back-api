@@ -6,6 +6,9 @@ import { UserRoleEntity } from '../entities/user-role.entity';
 import { RoleEntity } from '../../roles/entities/role.entity';
 import { RolePermissionEntity } from '../../roles/entities/role-permission.entity';
 
+import { MembershipEntity } from '../../memberships/entities/membership.entity';
+import { AssistanceRequestEntity } from '../../assistance/entities/assistance-request.entity';
+
 export interface UserRoleInfo {
   id: string;
   name: string;
@@ -22,6 +25,9 @@ export interface UserProfile {
   roles: UserRoleInfo[];
   created_at: Date;
   updated_at: Date;
+  membership_status?: string | null;
+  assistance_status?: string | null;
+  account_type?: 'general' | 'member' | 'seeker' | 'admin';
 }
 
 @Injectable()
@@ -54,10 +60,64 @@ export class UsersService {
       relations: ['user_roles', 'user_roles.role'],
     });
     if (!user) return null;
-    return this.toProfile(user);
+
+    let membershipStatus: string | null = null;
+    let assistanceStatus: string | null = null;
+
+    try {
+      const membership = await this.dataSource
+        .getRepository(MembershipEntity)
+        .findOne({
+          where: { user_id: id },
+          order: { created_at: 'DESC' },
+        });
+      if (membership) {
+        membershipStatus = membership.status;
+      }
+    } catch {
+      // Ignore if memberships table or repository unavailable
+    }
+
+    try {
+      const assistance = await this.dataSource
+        .getRepository(AssistanceRequestEntity)
+        .findOne({
+          where: [{ user_id: id }, { mobile: user.mobile_number }],
+          order: { created_at: 'DESC' },
+        });
+      if (assistance) {
+        assistanceStatus = assistance.status;
+      }
+    } catch {
+      // Ignore if assistance_requests table or repository unavailable
+    }
+
+    return this.toProfile(user, membershipStatus, assistanceStatus);
   }
 
-  toProfile(user: UserEntity & { user_roles?: UserRoleEntity[] }): UserProfile {
+  toProfile(
+    user: UserEntity & { user_roles?: UserRoleEntity[] },
+    membershipStatus?: string | null,
+    assistanceStatus?: string | null,
+  ): UserProfile {
+    const roles = (user.user_roles ?? [])
+      .map((userRole) => userRole.role)
+      .filter((role): role is NonNullable<typeof role> => Boolean(role))
+      .map((role) => ({
+        id: role.id,
+        name: role.name,
+      }));
+
+    const roleNames = roles.map((r) => r.name.toUpperCase());
+    let accountType: 'general' | 'member' | 'seeker' | 'admin' = 'general';
+    if (roleNames.some((r) => ['ADMIN', 'SUPER_ADMIN'].includes(r))) {
+      accountType = 'admin';
+    } else if (roleNames.includes('MEMBER') || membershipStatus) {
+      accountType = 'member';
+    } else if (roleNames.some((r) => ['SEEKER', 'DONATION_SEEKER'].includes(r)) || assistanceStatus) {
+      accountType = 'seeker';
+    }
+
     return {
       id: user.id,
       full_name: user.full_name,
@@ -66,15 +126,12 @@ export class UsersService {
       dob: user.dob ?? null,
       avatar: user.avatar ?? null,
       status: user.status,
-      roles: (user.user_roles ?? [])
-        .map((userRole) => userRole.role)
-        .filter((role): role is NonNullable<typeof role> => Boolean(role))
-        .map((role) => ({
-          id: role.id,
-          name: role.name,
-        })),
+      roles,
       created_at: user.created_at,
       updated_at: user.updated_at,
+      membership_status: membershipStatus ?? null,
+      assistance_status: assistanceStatus ?? null,
+      account_type: accountType,
     };
   }
 
