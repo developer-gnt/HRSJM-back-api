@@ -17,4 +17,15 @@ export class CheckDuplicatesDto {
   @IsOptional()
   @IsString()
   email?: string;
+
+  @ApiPropertyOptional({
+    description: 'User ID to exclude from duplicate checks (e.g. current user editing profile)',
+  })
+  @IsOptional()
+  @IsString()
+  exclude_user_id?: string;
+
+  @IsOptional()
+  @IsString()
+  excludeUserId?: string;
 }

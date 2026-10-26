@@ -39,12 +39,20 @@ export class UsersService {
   ) {}
 
   findByLoginIdentifier(identifier: string): Promise<UserEntity | null> {
-    return this.users.findOne({
-      where: [
-        { mobile_number: identifier },
-        { email: identifier.toLowerCase() },
-      ],
-    });
+    const clean = identifier.trim();
+    const cleanDigits = clean.replace(/\D/g, '').slice(-10);
+    const qb = this.users.createQueryBuilder('u')
+      .where('LOWER(u.email) = LOWER(:ident)', { ident: clean });
+    if (cleanDigits.length === 10) {
+      qb.orWhere('u.mobile_number = :clean OR u.mobile_number = :digits OR u.mobile_number LIKE :ending', {
+        clean,
+        digits: cleanDigits,
+        ending: `%${cleanDigits}`,
+      });
+    } else {
+      qb.orWhere('u.mobile_number = :clean', { clean });
+    }
+    return qb.getOne();
   }
 
   findById(id: string): Promise<UserEntity | null> {
@@ -343,11 +351,11 @@ export class UsersService {
       const currentEmail = user.email ? user.email.trim().toLowerCase() : null;
       if (cleanEmail !== currentEmail) {
         if (cleanEmail) {
-          const emailOwner = await this.users.findOne({
-            where: { email: cleanEmail },
-            select: ['id'],
-          });
-          if (emailOwner && emailOwner.id !== user.id) {
+          const emailOwner = await this.users.createQueryBuilder('u')
+            .where('LOWER(u.email) = LOWER(:email)', { email: cleanEmail })
+            .andWhere('u.id != :userId', { userId: user.id })
+            .getOne();
+          if (emailOwner) {
             throw new ConflictException({
               message: 'Email already registered',
               code: 'EMAIL_TAKEN',
@@ -367,13 +375,17 @@ export class UsersService {
           details: null,
         });
       }
-      if (cleanMobile !== user.mobile_number) {
+      const currentMobile = user.mobile_number ? user.mobile_number.replace(/\D/g, '').slice(-10) : '';
+      if (cleanMobile !== currentMobile) {
         if (cleanMobile) {
-          const mobileOwner = await this.users.findOne({
-            where: { mobile_number: cleanMobile },
-            select: ['id'],
-          });
-          if (mobileOwner && mobileOwner.id !== user.id) {
+          const mobileOwner = await this.users.createQueryBuilder('u')
+            .where('(u.mobile_number = :mobile OR u.mobile_number LIKE :mobileEnding)', {
+              mobile: cleanMobile,
+              mobileEnding: `%${cleanMobile}`,
+            })
+            .andWhere('u.id != :userId', { userId: user.id })
+            .getOne();
+          if (mobileOwner) {
             throw new ConflictException({
               message: 'Mobile number already registered',
               code: 'MOBILE_TAKEN',

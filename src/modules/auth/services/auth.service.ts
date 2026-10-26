@@ -298,9 +298,11 @@ export class AuthService {
       : undefined;
     const cleanEmail = dto.email ? dto.email.trim().toLowerCase() : undefined;
 
+    const excludeId = (dto.exclude_user_id || dto.excludeUserId || '').trim();
+
     if (cleanMobile && cleanMobile.length === 10) {
       const userWithMobile = await this.usersService.findByLoginIdentifier(cleanMobile);
-      if (userWithMobile) {
+      if (userWithMobile && (!excludeId || userWithMobile.id !== excludeId)) {
         mobile_taken = true;
         mobile_message = 'Mobile number is already registered. Please sign in or use another number.';
       }
@@ -308,7 +310,7 @@ export class AuthService {
 
     if (cleanEmail && cleanEmail.includes('@')) {
       const userWithEmail = await this.usersService.findByLoginIdentifier(cleanEmail);
-      if (userWithEmail) {
+      if (userWithEmail && (!excludeId || userWithEmail.id !== excludeId)) {
         email_taken = true;
         email_message = 'Email address is already registered. Please sign in or use another email.';
       }

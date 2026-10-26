@@ -160,7 +160,37 @@ export class DonationPaymentsService implements OnModuleInit {
       .take(limit);
 
     if (!isAdmin) {
-      qb.andWhere('payment.user_id = :userId', { userId: actingUserId });
+      let userMobile = '';
+      let userEmail = '';
+      if (this.dataSource) {
+        try {
+          const user = await this.dataSource.getRepository(UserEntity).findOne({ where: { id: actingUserId } });
+          if (user?.mobile_number) {
+            userMobile = user.mobile_number.replace(/\D/g, '').slice(-10);
+          }
+          if (user?.email) {
+            userEmail = user.email.toLowerCase().trim();
+          }
+        } catch {}
+      }
+
+      const conditions: string[] = [
+        'payment.user_id = :userId',
+        'payment.created_by = :userId',
+        'donation.created_by = :userId',
+      ];
+      const params: Record<string, any> = { userId: actingUserId };
+
+      if (userMobile && userMobile.length === 10) {
+        conditions.push('donation.donor_mobile LIKE :mobileEnding');
+        params.mobileEnding = `%${userMobile}`;
+      }
+      if (userEmail) {
+        conditions.push('LOWER(donation.donor_email) = :userEmail');
+        params.userEmail = userEmail;
+      }
+
+      qb.andWhere(`(${conditions.join(' OR ')})`, params);
     }
     if (dto.payment_status) {
       qb.andWhere('payment.payment_status = :status', {
