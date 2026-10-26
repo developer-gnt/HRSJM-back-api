@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -33,6 +34,35 @@ const ALLOWED_TRANSITIONS: Record<TicketStatus, TicketStatus[]> = {
   [TicketStatus.CLOSED]: [],
 };
 
+export function detectTicketSource(
+  description?: string,
+  subject?: string,
+): 'website' | 'web' | 'app' {
+  const desc = description || '';
+  if (
+    desc.includes('Source: Website') ||
+    desc.includes('[Source: Website]') ||
+    desc.includes('Complainant Information:\n- Full Name:')
+  ) {
+    return 'website';
+  }
+  if (
+    desc.includes('Source: Web App') ||
+    desc.includes('Source: Web') ||
+    desc.includes('[Source: Web]')
+  ) {
+    return 'web';
+  }
+  if (
+    desc.includes('Source: App') ||
+    desc.includes('Source: Mobile App') ||
+    desc.includes('[Source: App]')
+  ) {
+    return 'app';
+  }
+  return 'app';
+}
+
 import * as bcrypt from 'bcryptjs';
 import { NotificationsService } from '../../notifications/services/notifications.service';
 import { UsersService } from '../../users/services/users.service';
@@ -41,6 +71,7 @@ import { CreatePublicComplaintDto } from '../dto/create-public-complaint.dto';
 
 @Injectable()
 export class SupportService {
+  private readonly logger = new Logger(SupportService.name);
   constructor(
     @InjectRepository(SupportTicketEntity)
     private readonly tickets: Repository<SupportTicketEntity>,
@@ -57,10 +88,21 @@ export class SupportService {
     dto: CreateTicketDto,
     actingUserId: string,
   ): Promise<SupportTicketEntity> {
+    let description = dto.description.trim();
+    if (dto.source && !description.includes('Source:')) {
+      const sourceLabel =
+        dto.source === 'web'
+          ? 'Web App'
+          : dto.source === 'website'
+            ? 'Website'
+            : 'App';
+      description += `\n\n- Source: ${sourceLabel}`;
+    }
+
     const ticket = this.tickets.create({
       user_id: actingUserId,
       subject: dto.subject.trim(),
-      description: dto.description.trim(),
+      description,
       status: TicketStatus.SUBMITTED,
       created_by: actingUserId,
       updated_by: actingUserId,
@@ -88,6 +130,38 @@ export class SupportService {
       `Support ticket submitted: "${saved.subject}".`,
       actingUserId,
     );
+
+    // Dispatch confirmation email to ticket creator if email is available
+    try {
+      const ticketRef = `HRSJM-CMP-${saved.id.slice(0, 8).toUpperCase()}`;
+      const catMatch = saved.subject.match(/^\[(?:Complaint:\s*)?(.*?)\]/i);
+      const complaintType = catMatch ? catMatch[1].trim() : 'Grievance / Support';
+
+      const userRecord = await this.usersService.findById(actingUserId);
+      const desc = saved.description || '';
+      const descEmailMatch = desc.match(/(?:Email|email)\s*:\s*([^\s\n\r]+@[^\s\n\r]+)/);
+      const recipientEmail = userRecord?.email || (descEmailMatch ? descEmailMatch[1].trim() : null);
+
+      if (recipientEmail && recipientEmail.includes('@') && !recipientEmail.toLowerCase().includes('n/a')) {
+        this.mailService
+          .sendComplaintConfirmationEmail({
+            complainantName: userRecord?.full_name || 'Citizen',
+            complainantEmail: recipientEmail,
+            ticketId: ticketRef,
+            complaintType,
+            state: 'India',
+            policeStation: 'Assigned Center',
+            details: saved.description,
+            submittedAt: saved.created_at || new Date(),
+            status: saved.status,
+          })
+          .catch((mailErr) => {
+            this.logger.error(`Failed to send complaint confirmation email for ticket ${ticketRef}: ${mailErr.message}`);
+          });
+      }
+    } catch (mailErr) {
+      this.logger.warn(`Error resolving user email for ticket creation: ${(mailErr as Error).message}`);
+    }
 
     return saved;
   }
@@ -137,14 +211,28 @@ export class SupportService {
 - State: ${dto.state.trim()}
 - Nearby Police Station: ${dto.policeStation.trim()}
 - Complaint Category: ${dto.complaintType.trim()}
+- Source: Website
 
 Details of Concern:
 ${dto.details.trim()}`;
 
+    let fullDescription = description;
+    if (dto.aadhaarFileName || dto.handwrittenFileName || dto.reportedToOtherDept) {
+      fullDescription += `\n\nVerified Document Attachments:`;
+      if (dto.aadhaarFileName) fullDescription += `\n- Aadhaar Card: ${dto.aadhaarFileName}`;
+      if (dto.handwrittenFileName) fullDescription += `\n- Handwritten Complaint: ${dto.handwrittenFileName}`;
+      if (dto.reportedToOtherDept) {
+        fullDescription += `\n- Reported to Another Dept: Yes (${dto.otherDeptName || 'Specified'})`;
+        if (dto.otherDeptFileName) fullDescription += ` (Copy: ${dto.otherDeptFileName})`;
+      } else {
+        fullDescription += `\n- Reported to Another Dept: No`;
+      }
+    }
+
     const ticket = this.tickets.create({
       user_id: targetUserId,
       subject,
-      description,
+      description: fullDescription,
       status: TicketStatus.SUBMITTED,
       created_by: targetUserId,
       updated_by: targetUserId,
@@ -275,7 +363,7 @@ ${dto.details.trim()}`;
 
     const [rawItems, total] = await qb.getManyAndCount();
 
-    const items = rawItems.map((t) => {
+    let items = rawItems.map((t) => {
       if (t.user) {
         delete (t.user as { password_hash?: string }).password_hash;
       }
@@ -285,13 +373,20 @@ ${dto.details.trim()}`;
       const ticketRef = `HRSJM-CMP-${t.id.slice(0, 8).toUpperCase()}`;
       const catMatch = t.subject.match(/^\[(?:Complaint:\s*)?(.*?)\]/i);
       const category = catMatch ? catMatch[1].trim() : 'Assistance';
+      const source = detectTicketSource(t.description, t.subject);
       return Object.assign(t, {
         ticket_number: ticketRef,
         ticketId: ticketRef,
         category,
         priority: 'High',
+        source,
       });
     });
+
+    if (dto.source && dto.source !== 'ALL') {
+      const targetSource = dto.source.toLowerCase().trim();
+      items = items.filter((it: any) => it.source === targetSource);
+    }
 
     return {
       items,
@@ -404,11 +499,13 @@ ${dto.details.trim()}`;
     const ticketRef = `HRSJM-CMP-${ticket.id.slice(0, 8).toUpperCase()}`;
     const catMatch = ticket.subject.match(/^\[(?:Complaint:\s*)?(.*?)\]/i);
     const category = catMatch ? catMatch[1].trim() : 'Assistance';
+    const source = detectTicketSource(ticket.description, ticket.subject);
     return Object.assign(ticket, {
       ticket_number: ticketRef,
       ticketId: ticketRef,
       category,
       priority: 'High',
+      source,
     });
   }
 
@@ -417,7 +514,10 @@ ${dto.details.trim()}`;
     dto: UpdateTicketStatusDto,
     actingUserId: string,
   ): Promise<SupportTicketEntity> {
-    const ticket = await this.tickets.findOne({ where: { id } });
+    const ticket = await this.tickets.findOne({
+      where: { id },
+      relations: ['user'],
+    });
 
     if (!ticket) {
       throw new NotFoundException({
@@ -471,6 +571,50 @@ ${dto.details.trim()}`;
       `Your support ticket "${saved.subject}" is now ${saved.status}.`,
       actingUserId,
     );
+
+    // Shoot transactional email to complainant on action (review started, resolved, closed)
+    try {
+      const desc = saved.description || '';
+      const descEmailMatch = desc.match(/(?:Email|email)\s*:\s*([^\s\n\r]+@[^\s\n\r]+)/);
+      const descNameMatch = desc.match(/(?:Full Name|Complainant)\s*:\s*([^\n\r]+)/);
+
+      const recipientEmail =
+        ticket.user?.email ||
+        (descEmailMatch ? descEmailMatch[1].trim() : null);
+      const recipientName =
+        ticket.user?.full_name ||
+        (descNameMatch ? descNameMatch[1].trim() : null) ||
+        'Citizen';
+
+      if (
+        recipientEmail &&
+        recipientEmail.includes('@') &&
+        !recipientEmail.toLowerCase().includes('n/a')
+      ) {
+        const ticketRef = `HRSJM-CMP-${saved.id.slice(0, 8).toUpperCase()}`;
+        const catMatch = saved.subject.match(/^\[(?:Complaint:\s*)?(.*?)\]/i);
+        const category = catMatch ? catMatch[1].trim() : 'Grievance';
+
+        this.mailService
+          .sendTicketStatusUpdateEmail({
+            complainantName: recipientName,
+            complainantEmail: recipientEmail,
+            ticketId: ticketRef,
+            subject: saved.subject,
+            category,
+            status: saved.status as any,
+            note: dto.note?.trim(),
+            updatedAt: saved.updated_at || new Date(),
+          })
+          .catch((mailErr) => {
+            this.logger.error(
+              `[SupportService] Failed to send status update email for ${ticketRef}: ${mailErr.message}`,
+            );
+          });
+      }
+    } catch (mailTriggerErr) {
+      this.logger.warn(`Error resolving email for ticket update: ${(mailTriggerErr as Error).message}`);
+    }
 
     return saved;
   }

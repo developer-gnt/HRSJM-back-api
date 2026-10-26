@@ -735,6 +735,33 @@ export class MembershipsService {
       );
     }
 
+    // Dispatch official email notification on status change (Approved, Rejected, Under Review)
+    try {
+      const appData = (saved.application_data || {}) as Record<string, any>;
+      const recipientEmail = saved.user?.email || appData.email;
+      const recipientName = saved.user?.full_name || appData.full_name || 'Member';
+
+      if (recipientEmail && recipientEmail.includes('@')) {
+        this.mailService
+          .sendMembershipStatusUpdateEmail({
+            memberName: recipientName,
+            memberEmail: recipientEmail,
+            membershipNumber: saved.membership_number || `APP-${saved.id.slice(0, 8).toUpperCase()}`,
+            categoryName: saved.category?.name || appData.package_name,
+            status: saved.status as any,
+            validFrom: saved.start_date || undefined,
+            validUntil: saved.expiry_date || undefined,
+            rejectionReason: saved.rejection_reason || undefined,
+            notes: saved.admin_notes || undefined,
+          })
+          .catch((mailErr) => {
+            console.error(`[MembershipsService] Failed to send status update email: ${mailErr.message}`);
+          });
+      }
+    } catch (mailErr) {
+      console.warn('Error initiating membership status update email:', mailErr);
+    }
+
     if (saved.user) {
       delete (saved.user as { password_hash?: string }).password_hash;
     }
@@ -793,6 +820,19 @@ export class MembershipsService {
         'Your account password was updated by an administrator. Please log in with your new password.',
         actingUserId,
       );
+
+      if (user.email && user.email.includes('@')) {
+        this.mailService
+          .sendAdminPasswordResetEmail({
+            recipientName: user.full_name || 'Member',
+            recipientEmail: user.email,
+            temporaryPassword: dto.new_password,
+            resetDate: new Date(),
+          })
+          .catch((mailErr) => {
+            console.error(`[MembershipsService] Failed to send temporary password email: ${mailErr.message}`);
+          });
+      }
 
       return {
         success: true,

@@ -41,4 +41,43 @@ export class CreatePublicComplaintDto {
   @IsString()
   @MinLength(10)
   details: string;
+
+  @ApiPropertyOptional({ description: 'Aadhaar card attachment file name', example: 'aadhaar_card.pdf' })
+  @IsOptional()
+  @IsString()
+  aadhaarFileName?: string;
+
+  @ApiPropertyOptional({ description: 'Aadhaar card base64 or URL' })
+  @IsOptional()
+  @IsString()
+  aadhaarFileUri?: string;
+
+  @ApiPropertyOptional({ description: 'Handwritten complaint letter attachment file name', example: 'handwritten_complaint.jpg' })
+  @IsOptional()
+  @IsString()
+  handwrittenFileName?: string;
+
+  @ApiPropertyOptional({ description: 'Handwritten complaint letter base64 or URL' })
+  @IsOptional()
+  @IsString()
+  handwrittenFileUri?: string;
+
+  @ApiPropertyOptional({ description: 'Whether the issue was reported to another department', example: false })
+  @IsOptional()
+  reportedToOtherDept?: boolean;
+
+  @ApiPropertyOptional({ description: 'Name of other department previously reported to', example: 'State Police Department' })
+  @IsOptional()
+  @IsString()
+  otherDeptName?: string;
+
+  @ApiPropertyOptional({ description: 'Previous department complaint/acknowledgment file name', example: 'fir_copy.pdf' })
+  @IsOptional()
+  @IsString()
+  otherDeptFileName?: string;
+
+  @ApiPropertyOptional({ description: 'Previous department complaint copy base64 or URL' })
+  @IsOptional()
+  @IsString()
+  otherDeptFileUri?: string;
 }

@@ -9,6 +9,7 @@ import { MembershipPaymentsService } from './services/membership-payments.servic
 import { AuditModule } from '../audit/audit.module';
 import { AccountingModule } from '../accounting/accounting.module';
 import { NotificationsModule } from '../notifications/notifications.module';
+import { MailModule } from '../mail/mail.module';
 
 import { ReceiptEntryEntity } from '../receipt-entries/entities/receipt-entry.entity';
 import { AccountEntity } from '../accounting/entities/account.entity';
@@ -26,6 +27,7 @@ import { AccountEntity } from '../accounting/entities/account.entity';
     AccountingModule,
     AuditModule,
     NotificationsModule,
+    MailModule,
   ],
   controllers: [MembershipPaymentsController],
   providers: [MembershipPaymentsService],

@@ -31,6 +31,8 @@ import {
   AssistanceRequestStatus,
 } from '../../assistance/entities/assistance-request.entity';
 
+import { MailService } from '../../mail/mail.service';
+
 const BCRYPT_ROUNDS = 10;
 const RESET_TOKEN_TTL_MS = 30 * 60 * 1000;
 
@@ -55,6 +57,7 @@ export class AuthService {
     private readonly refreshTokens: Repository<RefreshTokenEntity>,
     @InjectRepository(PasswordResetTokenEntity)
     private readonly resetTokens: Repository<PasswordResetTokenEntity>,
+    private readonly mailService: MailService,
   ) {}
 
   async register(
@@ -414,6 +417,24 @@ export class AuthService {
       ip,
       userAgent,
     });
+
+    // Dispatch security email notification
+    try {
+      const user = await this.usersService.findById(stored.user_id);
+      if (user?.email && user.email.includes('@')) {
+        this.mailService
+          .sendPasswordChangedNoticeEmail({
+            recipientName: user.full_name,
+            recipientEmail: user.email,
+            changedAt: new Date(),
+          })
+          .catch((mailErr) => {
+            console.error(`[AuthService] Failed to send password changed alert: ${mailErr.message}`);
+          });
+      }
+    } catch (mailErr) {
+      console.warn('Error initiating password changed security email:', mailErr);
+    }
   }
 
   async getOwnProfile(userId: string): Promise<UserProfile> {
