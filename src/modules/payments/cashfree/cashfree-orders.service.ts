@@ -16,6 +16,7 @@ import { DonationPaymentsService } from '../../donation-payments/services/donati
 import { MembershipEntity } from '../../memberships/entities/membership.entity';
 import { MembershipPaymentEntity } from '../../membership-payments/entities/membership-payment.entity';
 import { PaymentTransactionEntity } from '../../membership-payments/entities/payment-transaction.entity';
+import { ReceiptEntity } from '../../membership-payments/entities/receipt.entity';
 import { MembershipPaymentsService } from '../../membership-payments/services/membership-payments.service';
 import { CashfreeService } from './cashfree.service';
 import { CreateCashfreeOrderDto } from './dto/create-cashfree-order.dto';
@@ -555,13 +556,30 @@ export class CashfreeOrdersService {
       throw new ForbiddenException('You do not have permission to verify this order');
     }
 
-    // Idempotency: if already SUCCESS, return safely
+    // Idempotency: if already SUCCESS, return safely with receipt attached
     if (payment && payment.payment_status === PaymentStatus.SUCCESS) {
+      let receipt: any = null;
+      try {
+        const receiptsRepo = this.dataSource.getRepository(ReceiptEntity);
+        if (isDonation) {
+          receipt = await receiptsRepo.findOne({
+            where: { donation_payment_id: payment.id },
+          });
+        } else {
+          receipt = (payment as any).receipt || (await receiptsRepo.findOne({
+            where: { membership_payment_id: payment.id },
+          }));
+        }
+      } catch (receiptLookupErr) {
+        this.logger.warn(`Could not lookup receipt for already verified payment ${payment.id}: ${receiptLookupErr}`);
+      }
+
       return {
         status: 'SUCCESS',
         message: 'Payment has already been verified',
         order_id: orderId,
         payment,
+        receipt,
       };
     }
 
@@ -579,34 +597,48 @@ export class CashfreeOrdersService {
       };
     }
 
-    // 2. Query Cashfree for actual payment attempts and order status
+    // 2. Query Cashfree for actual payment attempts and order status with brief retry tolerance
     let attempts: any[] = [];
-    try {
-      attempts = (await this.cashfreeService.getPaymentAttempts(orderId)) || [];
-    } catch (err) {
-      this.logger.warn(`Could not fetch attempts for order ${orderId}: ${(err as Error).message}`);
-    }
-
     let cfOrder: any = null;
-    try {
-      cfOrder = await this.cashfreeService.getOrder(orderId);
-    } catch (err) {
-      this.logger.warn(`Could not fetch order details for ${orderId}: ${(err as Error).message}`);
-    }
+    let successfulAttempt: any = null;
 
-    let successfulAttempt = attempts.find((att: any) => att.payment_status === 'SUCCESS');
+    const maxQueryAttempts = 3;
+    for (let tryCount = 1; tryCount <= maxQueryAttempts; tryCount++) {
+      try {
+        attempts = (await this.cashfreeService.getPaymentAttempts(orderId)) || [];
+      } catch (err) {
+        this.logger.warn(`Could not fetch attempts for order ${orderId} (attempt ${tryCount}): ${(err as Error).message}`);
+      }
 
-    // If order was marked PAID by Cashfree directly, treat as successful
-    if (!successfulAttempt && cfOrder?.order_status === 'PAID') {
-      successfulAttempt = {
-        cf_payment_id: Date.now(),
-        order_id: orderId,
-        payment_status: 'SUCCESS',
-        payment_amount: cfOrder.order_amount || (payment ? Number(payment.amount) : 0),
-        payment_currency: 'INR',
-        payment_message: 'Confirmed via Cashfree order status',
-        payment_time: new Date().toISOString(),
-      } as any;
+      try {
+        cfOrder = await this.cashfreeService.getOrder(orderId);
+      } catch (err) {
+        this.logger.warn(`Could not fetch order details for ${orderId} (attempt ${tryCount}): ${(err as Error).message}`);
+      }
+
+      successfulAttempt = attempts.find((att: any) => att.payment_status === 'SUCCESS');
+
+      // If order was marked PAID by Cashfree directly, treat as successful
+      if (!successfulAttempt && cfOrder?.order_status === 'PAID') {
+        successfulAttempt = {
+          cf_payment_id: Date.now(),
+          order_id: orderId,
+          payment_status: 'SUCCESS',
+          payment_amount: cfOrder.order_amount || (payment ? Number(payment.amount) : 0),
+          payment_currency: 'INR',
+          payment_message: 'Confirmed via Cashfree order status',
+          payment_time: new Date().toISOString(),
+        } as any;
+      }
+
+      if (successfulAttempt) {
+        break;
+      }
+
+      // If user arrives immediately after checkout, allow brief delay for Cashfree cluster to index attempt
+      if (tryCount < maxQueryAttempts) {
+        await new Promise((resolve) => setTimeout(resolve, 800));
+      }
     }
 
     if (!successfulAttempt) {
@@ -680,32 +712,63 @@ export class CashfreeOrdersService {
       };
     }
 
-    // 4. Delegate atomically to the verified service contract
+    // 4. Delegate atomically to the verified service contract with webhook concurrency resilience
     const fallbackActorId = '6b481b29-d4ec-4bad-8bde-4e21d8bb2d26';
     const actorId = validActingUserId || this.toValidUuidOrNull(payment!.user_id) || fallbackActorId;
 
     if (isDonation) {
-      const verifyResult = await this.donationPaymentsService.verify(
-        payment!.id,
-        {
-          gateway_payment_id: cfPaymentId,
-          gateway_order_id: orderId,
-          gateway_signature: String(successfulAttempt.payment_time || 'CASHFREE_VERIFIED'),
-          gateway_payload: successfulAttempt as Record<string, unknown>,
-        },
-        actorId,
-        true,
-      );
+      let verifyResult: any;
+      try {
+        verifyResult = await this.donationPaymentsService.verify(
+          payment!.id,
+          {
+            gateway_payment_id: cfPaymentId,
+            gateway_order_id: orderId,
+            gateway_signature: String(successfulAttempt.payment_time || 'CASHFREE_VERIFIED'),
+            gateway_payload: successfulAttempt as Record<string, unknown>,
+          },
+          actorId,
+          true,
+        );
+      } catch (verifyErr: any) {
+        this.logger.warn(
+          `Donation payment verify caught exception (${verifyErr?.message}). Checking if concurrently processed by webhook...`,
+        );
+        const recheckPayment = await this.donationPaymentsRepo.findOne({
+          where: { id: payment!.id },
+          relations: ['donation'],
+        });
+        if (recheckPayment && recheckPayment.payment_status === PaymentStatus.SUCCESS) {
+          let receipt: any = null;
+          try {
+            receipt = await this.dataSource.getRepository(ReceiptEntity).findOne({
+              where: { donation_payment_id: recheckPayment.id },
+            });
+          } catch {}
+          return {
+            status: 'SUCCESS',
+            order_id: orderId,
+            message: 'Payment has already been verified',
+            payment: recheckPayment,
+            receipt,
+          };
+        }
+        throw verifyErr;
+      }
 
       // Update transaction status
-      await this.transactionsRepo.update(
-        { gateway_order_id: orderId },
-        {
-          gateway_payment_id: cfPaymentId,
-          status: 'SUCCESS',
-          raw_payload: successfulAttempt as any,
-        },
-      );
+      try {
+        await this.transactionsRepo.update(
+          { gateway_order_id: orderId },
+          {
+            gateway_payment_id: cfPaymentId,
+            status: 'SUCCESS',
+            raw_payload: successfulAttempt as any,
+          },
+        );
+      } catch (txErr: any) {
+        this.logger.warn(`Could not update transaction status for order ${orderId}: ${txErr?.message}`);
+      }
 
       return {
         status: 'SUCCESS',
@@ -714,27 +777,52 @@ export class CashfreeOrdersService {
         receipt: verifyResult.receipt,
       };
     } else {
-      const verifyResult = await this.membershipPaymentsService.verify(
-        payment!.id,
-        {
-          gateway_payment_id: cfPaymentId,
-          gateway_order_id: orderId,
-          gateway_signature: String(successfulAttempt.payment_time || 'CASHFREE_VERIFIED'),
-          gateway_payload: successfulAttempt as Record<string, unknown>,
-        },
-        actorId,
-        true,
-      );
+      let verifyResult: any;
+      try {
+        verifyResult = await this.membershipPaymentsService.verify(
+          payment!.id,
+          {
+            gateway_payment_id: cfPaymentId,
+            gateway_order_id: orderId,
+            gateway_signature: String(successfulAttempt.payment_time || 'CASHFREE_VERIFIED'),
+            gateway_payload: successfulAttempt as Record<string, unknown>,
+          },
+          actorId,
+          true,
+        );
+      } catch (verifyErr: any) {
+        this.logger.warn(
+          `Membership payment verify caught exception (${verifyErr?.message}). Checking if concurrently processed by webhook...`,
+        );
+        const recheckPayment = await this.membershipPaymentsRepo.findOne({
+          where: { id: payment!.id },
+          relations: ['receipt', 'membership'],
+        });
+        if (recheckPayment && recheckPayment.payment_status === PaymentStatus.SUCCESS) {
+          return {
+            status: 'SUCCESS',
+            order_id: orderId,
+            message: 'Payment has already been verified',
+            payment: recheckPayment,
+            receipt: recheckPayment.receipt,
+          };
+        }
+        throw verifyErr;
+      }
 
       // Update transaction status
-      await this.transactionsRepo.update(
-        { gateway_order_id: orderId },
-        {
-          gateway_payment_id: cfPaymentId,
-          status: 'SUCCESS',
-          raw_payload: successfulAttempt as any,
-        },
-      );
+      try {
+        await this.transactionsRepo.update(
+          { gateway_order_id: orderId },
+          {
+            gateway_payment_id: cfPaymentId,
+            status: 'SUCCESS',
+            raw_payload: successfulAttempt as any,
+          },
+        );
+      } catch (txErr: any) {
+        this.logger.warn(`Could not update transaction status for order ${orderId}: ${txErr?.message}`);
+      }
 
       return {
         status: 'SUCCESS',
