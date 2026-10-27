@@ -1,10 +1,12 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { IsNull, Repository } from 'typeorm';
 import { EventEntity, EventStatus } from '../entities/event.entity';
 import { CreateEventDto } from '../dto/create-event.dto';
 import { UpdateEventDto } from '../dto/update-event.dto';
 import { ListEventsDto } from '../dto/list-events.dto';
+import { NotificationsService } from '../../notifications/services/notifications.service';
+import { NotificationAudience } from '../../notifications/entities/notification.entity';
 
 export interface EventStatsSummary {
   total: number;
@@ -26,6 +28,8 @@ export class EventsService {
   constructor(
     @InjectRepository(EventEntity)
     private readonly eventRepo: Repository<EventEntity>,
+    @Optional()
+    private readonly notifications?: NotificationsService,
   ) {}
 
   async findAll(dto: ListEventsDto): Promise<EventsListResponse> {
@@ -137,7 +141,26 @@ export class EventsService {
       status: dto.status ?? EventStatus.UPCOMING,
     });
 
-    return this.eventRepo.save(event);
+    const saved = await this.eventRepo.save(event);
+
+    if (this.notifications && saved.status === EventStatus.UPCOMING) {
+      const dateStr = new Date(saved.start_at).toLocaleDateString('en-IN', {
+        day: 'numeric',
+        month: 'short',
+        year: 'numeric',
+      });
+      const locationStr = saved.location ? ` at ${saved.location}` : '';
+      this.notifications
+        .broadcastToAudience(
+          NotificationAudience.ALL_USERS,
+          `New Event: ${saved.title} 📅`,
+          `Join us for "${saved.title}" on ${dateStr}${locationStr}. View full details in the Events tab.`,
+          userId,
+        )
+        .catch(() => {});
+    }
+
+    return saved;
   }
 
   async update(

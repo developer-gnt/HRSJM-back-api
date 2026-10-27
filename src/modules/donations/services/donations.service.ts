@@ -23,6 +23,8 @@ import { AuditService } from '../../audit/services/audit.service';
 import { ReceiptEntryEntity } from '../../receipt-entries/entities/receipt-entry.entity';
 import { ReceiptStatus } from '../../receipt-entries/enums/receipt-entry.enums';
 import { UserEntity } from '../../users/entities/user.entity';
+import { NotificationsService } from '../../notifications/services/notifications.service';
+import { Optional } from '@nestjs/common';
 
 @Injectable()
 export class DonationsService {
@@ -36,6 +38,8 @@ export class DonationsService {
     private readonly posting: AccountingPostingService,
     private readonly dataSource: DataSource,
     private readonly audit: AuditService,
+    @Optional()
+    private readonly notifications?: NotificationsService,
   ) {}
 
   async create(
@@ -87,6 +91,16 @@ export class DonationsService {
         cause: saved.cause,
       },
     });
+
+    if (this.notifications) {
+      this.notifications
+        .sendToAdmins(
+          'New Donation Initiated 💰',
+          `Donation of ₹${saved.amount} initiated for "${saved.cause}" by ${saved.donor_name}.`,
+          actingUserId || undefined,
+        )
+        .catch(() => {});
+    }
 
     return saved;
   }

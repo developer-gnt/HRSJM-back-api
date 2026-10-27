@@ -45,6 +45,8 @@ export interface AuthTokens {
   refresh_token: string;
 }
 
+import { NotificationsService } from '../../notifications/services/notifications.service';
+
 @Injectable()
 export class AuthService {
   constructor(
@@ -58,6 +60,8 @@ export class AuthService {
     @InjectRepository(PasswordResetTokenEntity)
     private readonly resetTokens: Repository<PasswordResetTokenEntity>,
     private readonly mailService: MailService,
+    @Optional()
+    private readonly notificationsService?: NotificationsService,
   ) {}
 
   async register(
@@ -123,6 +127,39 @@ export class AuthService {
     });
 
     const tokens = await this.issueTokens(user, ip, userAgent);
+
+    if (this.notificationsService) {
+      // 1. In-app welcome notification to the newly registered user
+      this.notificationsService
+        .sendToUser(
+          user.id,
+          'Welcome to HRSJM 🏛️',
+          `Welcome, ${dto.full_name}! Your account has been registered successfully. Explore our initiatives, rights awareness, or file a complaint.`,
+          user.id,
+        )
+        .catch(() => {});
+
+      // 2. Alert administrators of new account
+      this.notificationsService
+        .sendToAdmins(
+          'New User Registration 👤',
+          `${dto.full_name} (${dto.mobile_number}) registered with role ${initialRoleName}.`,
+          user.id,
+        )
+        .catch(() => {});
+
+      // 3. If donation seeker, alert admins of pending verification
+      if (isDonationSeekerRequest) {
+        this.notificationsService
+          .sendToAdmins(
+            'New Donation Seeker Registration 🆘',
+            `Donation Seeker application received for ${dto.full_name} (${dto.mobile_number}). Awaiting verification and review.`,
+            user.id,
+          )
+          .catch(() => {});
+      }
+    }
+
     return { user: await this.profileOrThrow(user.id), ...tokens };
   }
 

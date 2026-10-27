@@ -66,7 +66,11 @@ describe('PasswordResetDeliveryService', () => {
         }),
       } as unknown as ConfigService;
 
-      const service = new PasswordResetDeliveryService(mockConfig);
+      const mockMailService = {
+        sendMail: jest.fn().mockResolvedValue({ success: true, messageId: 'test-123' }),
+      } as any;
+
+      const service = new PasswordResetDeliveryService(mockConfig, mockMailService);
       const res = await service.deliverPasswordReset({
         to: 'user@example.com',
         recipientName: 'Test',

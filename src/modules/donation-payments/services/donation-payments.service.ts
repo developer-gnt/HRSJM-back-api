@@ -8,6 +8,7 @@ import {
   Optional,
 } from '@nestjs/common';
 import { MailService } from '../../mail/mail.service';
+import { NotificationsService } from '../../notifications/services/notifications.service';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Brackets, DataSource, EntityManager, Repository } from 'typeorm';
 import { DonationEntity } from '../../donations/entities/donation.entity';
@@ -54,6 +55,8 @@ export class DonationPaymentsService implements OnModuleInit {
     private readonly audit: AuditService,
     @Optional()
     private readonly mailService?: MailService,
+    @Optional()
+    private readonly notificationsService?: NotificationsService,
   ) {}
 
   async onModuleInit() {
@@ -421,6 +424,31 @@ export class DonationPaymentsService implements OnModuleInit {
         donationId: result.payment.donation_id,
       },
     });
+
+    // Real-time in-app notification to donor (if registered) and administrators
+    if (this.notificationsService) {
+      if (payment.user_id) {
+        this.notificationsService
+          .sendToUser(
+            payment.user_id,
+            'Donation Received with Gratitude 🙏',
+            `Thank you for your generous donation of ₹${result.payment.amount}. Receipt #${result.receipt.receipt_number} has been generated.`,
+            actingUserId || undefined,
+          )
+          .catch((err) => {
+            this.logger.error(`Error sending donation notification to user: ${err.message}`);
+          });
+      }
+      this.notificationsService
+        .sendToAdmins(
+          'New Donation Received 💰',
+          `Donation of ₹${result.payment.amount} received (Receipt #${result.receipt.receipt_number}).`,
+          actingUserId || undefined,
+        )
+        .catch((err) => {
+          this.logger.error(`Error sending donation notification to admins: ${err.message}`);
+        });
+    }
 
     // Asynchronously dispatch official gratitude email to donor if email was provided
     if (this.mailService) {

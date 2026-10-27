@@ -33,6 +33,8 @@ describe('AuthService', () => {
       dataSource as never,
       refreshTokens as never,
       resetTokens as never,
+      {} as never,
+      { sendToUser: jest.fn().mockResolvedValue(undefined), sendToAdmins: jest.fn().mockResolvedValue(undefined) } as never,
     );
 
   beforeEach(() => {

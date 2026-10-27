@@ -62,6 +62,12 @@ export class NotificationsController {
     return this.notificationsService.markAllRead(user.sub);
   }
 
+  @Get('me/unread-count')
+  @ApiOperation({ summary: 'Get unread notification count for current user' })
+  getUnreadCount(@AuthenticatedUser() user: { sub: string }) {
+    return this.notificationsService.getUnreadCount(user.sub);
+  }
+
   @Get(':id')
   @RequirePermissions('notification.read')
   @ApiOperation({ summary: 'Get notification details (admin)' })
