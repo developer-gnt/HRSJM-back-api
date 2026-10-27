@@ -57,6 +57,14 @@ export class UpdateUserDto {
   @IsString()
   @MaxLength(20)
   phone?: string;
+
+  @IsOptional()
+  @IsString()
+  dob?: string;
+
+  @IsOptional()
+  @IsString()
+  avatar?: string;
 }
 
 export { UpdateUserStatusDto } from './update-user-status.dto';

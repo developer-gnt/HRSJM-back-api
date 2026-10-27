@@ -97,6 +97,8 @@ export class UsersAdminService {
       full_name: patch.full_name,
       email: patch.email,
       mobile_number: patch.mobile_number || patch.phone,
+      dob: patch.dob,
+      avatar: patch.avatar,
     });
     void actingUserId;
     return updated;
