@@ -69,6 +69,13 @@ export class UpdateUserDto {
 
 export { UpdateUserStatusDto } from './update-user-status.dto';
 
+export class AdminResetPasswordDto {
+  @IsString()
+  @MinLength(6)
+  @MaxLength(128)
+  new_password: string;
+}
+
 export class UserRoleDto {
   @IsUUID()
   role_id: string;

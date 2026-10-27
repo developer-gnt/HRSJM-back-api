@@ -14,7 +14,13 @@ import {
   AssistanceRequestEntity,
   AssistanceRequestStatus,
 } from '../../assistance/entities/assistance-request.entity';
-import { ListUsersDto, UpdateUserDto, UpdateUserStatusDto } from '../dto/user-admin.dto';
+import * as bcrypt from 'bcryptjs';
+import {
+  AdminResetPasswordDto,
+  ListUsersDto,
+  UpdateUserDto,
+  UpdateUserStatusDto,
+} from '../dto/user-admin.dto';
 import { UsersService, UserProfile } from './users.service';
 
 @Injectable()
@@ -148,6 +154,37 @@ export class UsersAdminService {
     }
 
     return this.usersService.toProfile(saved);
+  }
+
+  async resetPassword(
+    id: string,
+    dto: AdminResetPasswordDto,
+    actingUserId: string,
+  ): Promise<{ success: boolean; message: string }> {
+    const user = await this.usersService.findById(id);
+    if (!user) {
+      throw new NotFoundException({
+        message: 'User not found',
+        code: 'USER_NOT_FOUND',
+        details: null,
+      });
+    }
+
+    const salt = await bcrypt.genSalt(10);
+    const hash = await bcrypt.hash(dto.new_password, salt);
+    await this.usersService.updatePassword(user, hash);
+
+    // Invalidate active refresh tokens so existing sessions must re-login with the new password
+    await this.dataSource.getRepository(RefreshTokenEntity).update(
+      { user_id: id, revoked_at: IsNull() },
+      { revoked_at: new Date() },
+    );
+
+    void actingUserId;
+    return {
+      success: true,
+      message: 'Password reset successfully',
+    };
   }
 
   async approveSeeker(id: string, actingUserId: string): Promise<UserProfile> {
