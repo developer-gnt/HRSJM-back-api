@@ -353,12 +353,27 @@ export class MembershipsService {
 
     const [rawItems, total] = await qb.getManyAndCount();
 
-    // Sanitize user entity password hash
+    const membershipIds = rawItems.map((m) => m.id);
+    const paymentMap = new Map<string, MembershipPaymentEntity>();
+
+    if (membershipIds.length > 0) {
+      const paymentList = await this.payments.find({
+        where: { membership_id: In(membershipIds) },
+        order: { created_at: 'DESC' },
+      });
+      for (const p of paymentList) {
+        if (!paymentMap.has(p.membership_id)) {
+          paymentMap.set(p.membership_id, p);
+        }
+      }
+    }
+
+    // Sanitize user entity password hash and enrich with payment and category fee details
     const items = rawItems.map((m) => {
       if (m.user) {
         delete (m.user as { password_hash?: string }).password_hash;
       }
-      return m;
+      return this.enrichMembershipPaymentDetails(m, paymentMap.get(m.id));
     });
 
     return {
@@ -370,6 +385,42 @@ export class MembershipsService {
         totalPages: Math.max(1, Math.ceil(total / limit)),
       },
     };
+  }
+
+  private enrichMembershipPaymentDetails(
+    membership: MembershipEntity,
+    payment?: MembershipPaymentEntity | null,
+  ): MembershipEntity {
+    const categoryFee =
+      membership.category?.fee !== undefined && membership.category?.fee !== null
+        ? Number(membership.category.fee)
+        : 0;
+    const appData = (membership.application_data || {}) as Record<string, unknown>;
+    const appAmount =
+      appData.payment_amount ?? appData.amount ?? appData.package_fee;
+    const resolvedAmount =
+      payment?.amount !== undefined && payment?.amount !== null
+        ? Number(payment.amount)
+        : categoryFee > 0
+          ? categoryFee
+          : appAmount
+            ? Number(String(appAmount).replace(/[^0-9.]/g, '')) || 0
+            : 0;
+
+    const resolvedPaymentStatus =
+      payment?.payment_status ||
+      (appData.payment_status as string) ||
+      (membership.status === MembershipStatus.ACTIVE ||
+      membership.status === MembershipStatus.APPROVED
+        ? 'SUCCESS'
+        : 'PENDING');
+
+    membership.payment = payment || null;
+    membership.payment_amount = resolvedAmount;
+    membership.amount = resolvedAmount;
+    membership.payment_status = resolvedPaymentStatus;
+
+    return membership;
   }
 
   async getStats(
@@ -482,7 +533,12 @@ export class MembershipsService {
       delete (membership.user as { password_hash?: string }).password_hash;
     }
 
-    return membership;
+    const payment = await this.payments.findOne({
+      where: { membership_id: id },
+      order: { created_at: 'DESC' },
+    });
+
+    return this.enrichMembershipPaymentDetails(membership, payment);
   }
 
   async getMyMembership(userId: string): Promise<MembershipEntity | null> {
@@ -494,6 +550,14 @@ export class MembershipsService {
 
     if (membership && membership.user) {
       delete (membership.user as { password_hash?: string }).password_hash;
+    }
+
+    if (membership) {
+      const payment = await this.payments.findOne({
+        where: { membership_id: membership.id },
+        order: { created_at: 'DESC' },
+      });
+      return this.enrichMembershipPaymentDetails(membership, payment);
     }
 
     return membership;

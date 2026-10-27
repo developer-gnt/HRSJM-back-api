@@ -59,4 +59,12 @@ export class MembershipEntity extends BaseEntity {
   @ManyToOne(() => MembershipCategoryEntity, { onDelete: 'RESTRICT' })
   @JoinColumn({ name: 'category_id' })
   category?: MembershipCategoryEntity;
+
+  payment?: any;
+
+  payment_amount?: number;
+
+  amount?: number;
+
+  payment_status?: string;
 }
