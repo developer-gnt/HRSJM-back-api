@@ -5,6 +5,7 @@ import {
   Logger,
   NotFoundException,
   OnModuleInit,
+  Optional,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Brackets, DataSource, EntityManager, Repository } from 'typeorm';
@@ -31,12 +32,16 @@ import { AccountingPostingService } from '../../accounting/services/accounting-p
 import { ACCOUNT_CODES } from '../../accounting/accounting.constants';
 import { ReferenceType } from '../../accounting/enums/accounting.enums';
 import { NotificationsService } from '../../notifications/services/notifications.service';
+<<<<<<< HEAD
 import {
   RenewalPaymentStatus,
   RenewalRequestEntity,
   RenewalStatus,
 } from '../../renewals/entities/renewal-request.entity';
 import { addYearsSafe } from '../../renewals/services/renewal-calculation.service';
+=======
+import { MailService } from '../../mail/mail.service';
+>>>>>>> a25a39d98c43894871cebe86b2b4980b31f3c98a
 
 function formatVoucherNumber(receiptDate: Date, seq: number): string {
   const y = receiptDate.getUTCFullYear();
@@ -62,6 +67,8 @@ export class MembershipPaymentsService implements OnModuleInit {
     private readonly audit: AuditService,
     private readonly posting: AccountingPostingService,
     private readonly notifications: NotificationsService,
+    @Optional()
+    private readonly mailService?: MailService,
   ) {}
 
   async onModuleInit() {
@@ -454,6 +461,47 @@ export class MembershipPaymentsService implements OnModuleInit {
       `Payment of ₹${result.payment.amount} was verified successfully. Receipt #${result.receipt.receipt_number} has been issued.`,
       actingUserId,
     );
+
+    // Send Payment Success & Application Receipt Email asynchronously
+    if (this.mailService) {
+      this.memberships
+        .findOne({
+          where: { id: result.payment.membership_id },
+          relations: ['user', 'category'],
+        })
+        .then((fullMembership) => {
+          const recipientEmail = fullMembership?.user?.email || (fullMembership as any)?.email;
+          if (recipientEmail && recipientEmail.includes('@')) {
+            this.mailService!
+              .sendMembershipPaymentSuccessEmail({
+                applicantName:
+                  fullMembership?.user?.full_name ||
+                  'Valued Member',
+                applicantEmail: recipientEmail,
+                applicantPhone:
+                  fullMembership?.user?.mobile_number ||
+                  undefined,
+                applicationRef:
+                  fullMembership?.membership_number ||
+                  result.receipt.receipt_number,
+                categoryName: fullMembership?.category?.name || 'General Membership',
+                amount: Number(result.payment.amount),
+                transactionId: dto.gateway_payment_id || result.payment.transaction_id || undefined,
+                paymentMethod: result.payment.payment_method || 'Online Payment',
+                paymentDate: result.receipt.receipt_date,
+                status: fullMembership?.status || 'APPROVED',
+              })
+              .catch((err) => {
+                this.logger.error(
+                  `Error sending membership payment email to ${recipientEmail}: ${err.message}`,
+                );
+              });
+          }
+        })
+        .catch((err) => {
+          this.logger.error(`Error loading membership for payment email: ${err.message}`);
+        });
+    }
 
     return result;
   }

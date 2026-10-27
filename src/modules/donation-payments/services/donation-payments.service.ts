@@ -160,7 +160,37 @@ export class DonationPaymentsService implements OnModuleInit {
       .take(limit);
 
     if (!isAdmin) {
-      qb.andWhere('payment.user_id = :userId', { userId: actingUserId });
+      let userMobile = '';
+      let userEmail = '';
+      if (this.dataSource) {
+        try {
+          const user = await this.dataSource.getRepository(UserEntity).findOne({ where: { id: actingUserId } });
+          if (user?.mobile_number) {
+            userMobile = user.mobile_number.replace(/\D/g, '').slice(-10);
+          }
+          if (user?.email) {
+            userEmail = user.email.toLowerCase().trim();
+          }
+        } catch {}
+      }
+
+      const conditions: string[] = [
+        'payment.user_id = :userId',
+        'payment.created_by = :userId',
+        'donation.created_by = :userId',
+      ];
+      const params: Record<string, any> = { userId: actingUserId };
+
+      if (userMobile && userMobile.length === 10) {
+        conditions.push('donation.donor_mobile LIKE :mobileEnding');
+        params.mobileEnding = `%${userMobile}`;
+      }
+      if (userEmail) {
+        conditions.push('LOWER(donation.donor_email) = :userEmail');
+        params.userEmail = userEmail;
+      }
+
+      qb.andWhere(`(${conditions.join(' OR ')})`, params);
     }
     if (dto.payment_status) {
       qb.andWhere('payment.payment_status = :status', {
@@ -580,10 +610,18 @@ export class DonationPaymentsService implements OnModuleInit {
       }
 
       // 4. Build Received From (Name + Member/User status)
+      const rawDonorName = savedPayment.donation?.donor_name?.trim();
+      const isWebsiteDonation =
+        (savedPayment.donation?.remark || '').toLowerCase().includes('website') ||
+        savedPayment.payment_method === 'CASHFREE';
+      const isGenericName =
+        !rawDonorName ||
+        ['donor', 'kind supporter', 'kind citizen', 'supporter', 'anonymous', 'anonymous donor', 'guest'].includes(rawDonorName.toLowerCase());
+
       const donorDisplayName =
-        savedPayment.donation?.donor_name ||
+        (!isGenericName ? rawDonorName : null) ||
         donorUser?.full_name ||
-        'Donor';
+        (isWebsiteDonation ? 'Anonymous Donation from Website' : 'Anonymous Donor');
 
       let memberBadge = '';
       if (donorMembership?.membership_number) {
@@ -636,7 +674,11 @@ export class DonationPaymentsService implements OnModuleInit {
       const sourceTag =
         savedPayment.donation?.remark ||
         (savedPayment.payment_method === 'CASHFREE' ? 'Donation from Website' : 'Direct Donation');
-      const description = `[Website Donation] Donation for Cause: ${causeTitle} | Donor: ${donorDisplayName}${contactParts ? ` (${contactParts})` : ''} | Status: ${memberDetails} | Source: ${sourceTag} | Payment ID: ${refNum}`;
+      const isFromApp = (savedPayment.donation?.remark || '').toLowerCase().includes('application');
+      const channelPrefix = isFromApp
+        ? '[Application Donation]'
+        : (sourceTag.toLowerCase().includes('website') ? '[Website Donation]' : '[Donation]');
+      const description = `${channelPrefix} Donation for Cause: ${causeTitle} | Donor: ${donorDisplayName}${contactParts ? ` (${contactParts})` : ''} | Status: ${memberDetails} | Source: ${sourceTag} | Payment ID: ${refNum}`;
 
       // 7. Generate Voucher Number (REC-YYYYMMDD-#####)
       let seq = 1;

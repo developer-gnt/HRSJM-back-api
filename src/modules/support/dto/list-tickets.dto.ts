@@ -50,4 +50,8 @@ export class ListTicketsDto {
   @IsOptional()
   @IsString()
   to_date?: string;
+
+  @IsOptional()
+  @IsString()
+  source?: string;
 }

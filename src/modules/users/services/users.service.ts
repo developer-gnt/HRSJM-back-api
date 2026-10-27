@@ -6,6 +6,9 @@ import { UserRoleEntity } from '../entities/user-role.entity';
 import { RoleEntity } from '../../roles/entities/role.entity';
 import { RolePermissionEntity } from '../../roles/entities/role-permission.entity';
 
+import { MembershipEntity } from '../../memberships/entities/membership.entity';
+import { AssistanceRequestEntity } from '../../assistance/entities/assistance-request.entity';
+
 export interface UserRoleInfo {
   id: string;
   name: string;
@@ -22,6 +25,9 @@ export interface UserProfile {
   roles: UserRoleInfo[];
   created_at: Date;
   updated_at: Date;
+  membership_status?: string | null;
+  assistance_status?: string | null;
+  account_type?: 'general' | 'member' | 'seeker' | 'admin';
 }
 
 @Injectable()
@@ -33,12 +39,20 @@ export class UsersService {
   ) {}
 
   findByLoginIdentifier(identifier: string): Promise<UserEntity | null> {
-    return this.users.findOne({
-      where: [
-        { mobile_number: identifier },
-        { email: identifier.toLowerCase() },
-      ],
-    });
+    const clean = identifier.trim();
+    const cleanDigits = clean.replace(/\D/g, '').slice(-10);
+    const qb = this.users.createQueryBuilder('u')
+      .where('LOWER(u.email) = LOWER(:ident)', { ident: clean });
+    if (cleanDigits.length === 10) {
+      qb.orWhere('u.mobile_number = :clean OR u.mobile_number = :digits OR u.mobile_number LIKE :ending', {
+        clean,
+        digits: cleanDigits,
+        ending: `%${cleanDigits}`,
+      });
+    } else {
+      qb.orWhere('u.mobile_number = :clean', { clean });
+    }
+    return qb.getOne();
   }
 
   findById(id: string): Promise<UserEntity | null> {
@@ -54,10 +68,64 @@ export class UsersService {
       relations: ['user_roles', 'user_roles.role'],
     });
     if (!user) return null;
-    return this.toProfile(user);
+
+    let membershipStatus: string | null = null;
+    let assistanceStatus: string | null = null;
+
+    try {
+      const membership = await this.dataSource
+        .getRepository(MembershipEntity)
+        .findOne({
+          where: { user_id: id },
+          order: { created_at: 'DESC' },
+        });
+      if (membership) {
+        membershipStatus = membership.status;
+      }
+    } catch {
+      // Ignore if memberships table or repository unavailable
+    }
+
+    try {
+      const assistance = await this.dataSource
+        .getRepository(AssistanceRequestEntity)
+        .findOne({
+          where: [{ user_id: id }, { mobile: user.mobile_number }],
+          order: { created_at: 'DESC' },
+        });
+      if (assistance) {
+        assistanceStatus = assistance.status;
+      }
+    } catch {
+      // Ignore if assistance_requests table or repository unavailable
+    }
+
+    return this.toProfile(user, membershipStatus, assistanceStatus);
   }
 
-  toProfile(user: UserEntity & { user_roles?: UserRoleEntity[] }): UserProfile {
+  toProfile(
+    user: UserEntity & { user_roles?: UserRoleEntity[] },
+    membershipStatus?: string | null,
+    assistanceStatus?: string | null,
+  ): UserProfile {
+    const roles = (user.user_roles ?? [])
+      .map((userRole) => userRole.role)
+      .filter((role): role is NonNullable<typeof role> => Boolean(role))
+      .map((role) => ({
+        id: role.id,
+        name: role.name,
+      }));
+
+    const roleNames = roles.map((r) => r.name.toUpperCase());
+    let accountType: 'general' | 'member' | 'seeker' | 'admin' = 'general';
+    if (roleNames.some((r) => ['ADMIN', 'SUPER_ADMIN'].includes(r))) {
+      accountType = 'admin';
+    } else if (roleNames.includes('MEMBER') || membershipStatus) {
+      accountType = 'member';
+    } else if (roleNames.some((r) => ['SEEKER', 'DONATION_SEEKER'].includes(r)) || assistanceStatus) {
+      accountType = 'seeker';
+    }
+
     return {
       id: user.id,
       full_name: user.full_name,
@@ -66,15 +134,12 @@ export class UsersService {
       dob: user.dob ?? null,
       avatar: user.avatar ?? null,
       status: user.status,
-      roles: (user.user_roles ?? [])
-        .map((userRole) => userRole.role)
-        .filter((role): role is NonNullable<typeof role> => Boolean(role))
-        .map((role) => ({
-          id: role.id,
-          name: role.name,
-        })),
+      roles,
       created_at: user.created_at,
       updated_at: user.updated_at,
+      membership_status: membershipStatus ?? null,
+      assistance_status: assistanceStatus ?? null,
+      account_type: accountType,
     };
   }
 
@@ -286,11 +351,11 @@ export class UsersService {
       const currentEmail = user.email ? user.email.trim().toLowerCase() : null;
       if (cleanEmail !== currentEmail) {
         if (cleanEmail) {
-          const emailOwner = await this.users.findOne({
-            where: { email: cleanEmail },
-            select: ['id'],
-          });
-          if (emailOwner && emailOwner.id !== user.id) {
+          const emailOwner = await this.users.createQueryBuilder('u')
+            .where('LOWER(u.email) = LOWER(:email)', { email: cleanEmail })
+            .andWhere('u.id != :userId', { userId: user.id })
+            .getOne();
+          if (emailOwner) {
             throw new ConflictException({
               message: 'Email already registered',
               code: 'EMAIL_TAKEN',
@@ -310,13 +375,17 @@ export class UsersService {
           details: null,
         });
       }
-      if (cleanMobile !== user.mobile_number) {
+      const currentMobile = user.mobile_number ? user.mobile_number.replace(/\D/g, '').slice(-10) : '';
+      if (cleanMobile !== currentMobile) {
         if (cleanMobile) {
-          const mobileOwner = await this.users.findOne({
-            where: { mobile_number: cleanMobile },
-            select: ['id'],
-          });
-          if (mobileOwner && mobileOwner.id !== user.id) {
+          const mobileOwner = await this.users.createQueryBuilder('u')
+            .where('(u.mobile_number = :mobile OR u.mobile_number LIKE :mobileEnding)', {
+              mobile: cleanMobile,
+              mobileEnding: `%${cleanMobile}`,
+            })
+            .andWhere('u.id != :userId', { userId: user.id })
+            .getOne();
+          if (mobileOwner) {
             throw new ConflictException({
               message: 'Mobile number already registered',
               code: 'MOBILE_TAKEN',

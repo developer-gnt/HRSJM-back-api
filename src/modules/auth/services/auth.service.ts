@@ -31,6 +31,8 @@ import {
   AssistanceRequestStatus,
 } from '../../assistance/entities/assistance-request.entity';
 
+import { MailService } from '../../mail/mail.service';
+
 const BCRYPT_ROUNDS = 10;
 const RESET_TOKEN_TTL_MS = 30 * 60 * 1000;
 
@@ -55,6 +57,7 @@ export class AuthService {
     private readonly refreshTokens: Repository<RefreshTokenEntity>,
     @InjectRepository(PasswordResetTokenEntity)
     private readonly resetTokens: Repository<PasswordResetTokenEntity>,
+    private readonly mailService: MailService,
   ) {}
 
   async register(
@@ -298,9 +301,11 @@ export class AuthService {
       : undefined;
     const cleanEmail = dto.email ? dto.email.trim().toLowerCase() : undefined;
 
+    const excludeId = (dto.exclude_user_id || dto.excludeUserId || '').trim();
+
     if (cleanMobile && cleanMobile.length === 10) {
       const userWithMobile = await this.usersService.findByLoginIdentifier(cleanMobile);
-      if (userWithMobile) {
+      if (userWithMobile && (!excludeId || userWithMobile.id !== excludeId)) {
         mobile_taken = true;
         mobile_message = 'Mobile number is already registered. Please sign in or use another number.';
       }
@@ -308,7 +313,7 @@ export class AuthService {
 
     if (cleanEmail && cleanEmail.includes('@')) {
       const userWithEmail = await this.usersService.findByLoginIdentifier(cleanEmail);
-      if (userWithEmail) {
+      if (userWithEmail && (!excludeId || userWithEmail.id !== excludeId)) {
         email_taken = true;
         email_message = 'Email address is already registered. Please sign in or use another email.';
       }
@@ -414,6 +419,24 @@ export class AuthService {
       ip,
       userAgent,
     });
+
+    // Dispatch security email notification
+    try {
+      const user = await this.usersService.findById(stored.user_id);
+      if (user?.email && user.email.includes('@')) {
+        this.mailService
+          .sendPasswordChangedNoticeEmail({
+            recipientName: user.full_name,
+            recipientEmail: user.email,
+            changedAt: new Date(),
+          })
+          .catch((mailErr) => {
+            console.error(`[AuthService] Failed to send password changed alert: ${mailErr.message}`);
+          });
+      }
+    } catch (mailErr) {
+      console.warn('Error initiating password changed security email:', mailErr);
+    }
   }
 
   async getOwnProfile(userId: string): Promise<UserProfile> {
@@ -638,23 +661,13 @@ export class AuthService {
       });
     }
 
+    // Pending / under-review members are allowed to log in and access the User portal dashboard
+    // to track application status while admin verification is in progress.
     if (
       latestMembership.status === MembershipStatus.PENDING ||
       latestMembership.status === MembershipStatus.UNDER_REVIEW
     ) {
-      await this.auditService.record({
-        event: 'AUTH_LOGIN_BLOCKED_MEMBERSHIP_PENDING',
-        actorId: userId,
-        entityType: 'user',
-        entityId: userId,
-        ip,
-        userAgent,
-      });
-      throw new ForbiddenException({
-        message: 'Your membership application is currently under review. Access will be activated once approved by administration.',
-        code: 'MEMBERSHIP_UNDER_REVIEW',
-        details: { status: latestMembership.status },
-      });
+      return;
     }
 
     if (

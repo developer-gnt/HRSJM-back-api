@@ -24,6 +24,7 @@ import { AuditService } from '../../audit/services/audit.service';
 import { UsersService } from '../../users/services/users.service';
 import { NotificationsService } from '../../notifications/services/notifications.service';
 import { DonationEntity } from '../../donations/entities/donation.entity';
+import { MailService } from '../../mail/mail.service';
 
 const ALLOWED_TRANSITIONS: Record<
   AssistanceRequestStatus,
@@ -56,6 +57,7 @@ export class AssistanceService {
     private readonly audit: AuditService,
     private readonly notifications: NotificationsService,
     private readonly usersService: UsersService,
+    private readonly mailService: MailService,
   ) {}
 
   async create(
@@ -140,6 +142,24 @@ export class AssistanceService {
       `Assistance request for ₹${saved.requested_amount} submitted for ${saved.full_name}.`,
       effectiveActor,
     );
+
+    // Dispatch official confirmation email to applicant
+    if (saved.email && saved.email.includes('@')) {
+      const refId = `HRSJM-AST-${saved.id.slice(0, 8).toUpperCase()}`;
+      this.mailService
+        .sendAssistanceRequestConfirmationEmail({
+          applicantName: saved.full_name,
+          applicantEmail: saved.email,
+          requestId: refId,
+          reason: saved.reason,
+          requestedAmount: Number(saved.requested_amount),
+          submittedAt: saved.created_at || new Date(),
+          status: saved.status,
+        })
+        .catch((mailErr) => {
+          console.error(`[AssistanceService] Failed to send confirmation email for ${refId}: ${mailErr.message}`);
+        });
+    }
 
     return saved;
   }
@@ -504,6 +524,40 @@ export class AssistanceService {
       `Your assistance request status has been updated to ${saved.status}.${saved.admin_remark ? ' Remarks: ' + saved.admin_remark : ''}`,
       actingUserId,
     );
+
+    // Dispatch official email notification to applicant
+    try {
+      let recipientEmail = saved.email;
+      let recipientName = saved.full_name;
+      if (!recipientEmail && saved.user_id) {
+        const u = await this.usersService.findById(saved.user_id);
+        if (u) {
+          recipientEmail = u.email;
+          recipientName = u.full_name;
+        }
+      }
+
+      if (recipientEmail && recipientEmail.includes('@')) {
+        const refId = `HRSJM-AST-${saved.id.slice(0, 8).toUpperCase()}`;
+        this.mailService
+          .sendAssistanceStatusUpdateEmail({
+            applicantName: recipientName || 'Citizen',
+            applicantEmail: recipientEmail,
+            requestId: refId,
+            reason: saved.reason,
+            status: saved.status as any,
+            approvedAmount: saved.status === AssistanceRequestStatus.APPROVED ? Number(saved.requested_amount) : undefined,
+            rejectionReason: saved.status === AssistanceRequestStatus.REJECTED ? saved.admin_remark || undefined : undefined,
+            notes: saved.admin_remark || undefined,
+            updatedAt: saved.reviewed_at || new Date(),
+          })
+          .catch((mailErr) => {
+            console.error(`[AssistanceService] Failed to send status email for ${refId}: ${mailErr.message}`);
+          });
+      }
+    } catch (mailErr) {
+      console.warn('Error initiating assistance status email:', mailErr);
+    }
 
     return saved;
   }

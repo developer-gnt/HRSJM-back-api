@@ -2,11 +2,18 @@ import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as nodemailer from 'nodemailer';
 import {
+  AdminPasswordResetMailPayload,
+  AssistanceRequestConfirmationMailPayload,
+  AssistanceStatusUpdateMailPayload,
   ComplaintConfirmationMailPayload,
+  ContactInquiryMailPayload,
   DonationThankYouMailPayload,
   MembershipPaymentSuccessMailPayload,
+  MembershipStatusUpdateMailPayload,
   MembershipWelcomeMailPayload,
+  PasswordChangedNoticeMailPayload,
   SendMailOptions,
+  TicketStatusUpdateMailPayload,
 } from './mail.interface';
 
 @Injectable()
@@ -79,6 +86,26 @@ export class MailService implements OnModuleInit {
   ): Promise<{ success: boolean; messageId?: string; error?: string }> {
     const { to, subject, html, text, replyTo, cc, bcc } = options;
     const formattedFrom = `"${this.fromName}" <${this.fromAddress}>`;
+
+    const toList = Array.isArray(to) ? to : [to || ''];
+    const isTestDomain = toList.some(addr => {
+      const clean = String(addr || '').trim().toLowerCase();
+      return (
+        /@(example\.(com|org|net)|test\.(com|org|net)|sample\.com|dummy\.com|localhost)$/i.test(clean) ||
+        clean.includes('example.com') ||
+        clean.includes('test.complainant')
+      );
+    });
+
+    if (isTestDomain) {
+      this.logger.log(
+        `[TEST RECIPIENT SUPPRESSED] To: ${to} | Subject: "${subject}" | (Skipped SMTP dispatch to prevent "Address not found" bounce notices)`,
+      );
+      return {
+        success: true,
+        messageId: `suppressed-test-email-${Date.now()}`,
+      };
+    }
 
     if (!this.transporter || !this.isConfigured) {
       this.logger.log(
@@ -976,6 +1003,870 @@ https://hrsjm.org
       text: plainText,
     });
 
+    return result.success;
+  }
+
+  /**
+   * Shoot official Ticket Status Update Email (Review Started, Resolved, Closed).
+   */
+  async sendTicketStatusUpdateEmail(
+    payload: TicketStatusUpdateMailPayload,
+  ): Promise<boolean> {
+    const {
+      complainantName,
+      complainantEmail,
+      ticketId,
+      subject: ticketSubject,
+      category,
+      status,
+      note,
+      updatedAt,
+    } = payload;
+
+    if (!complainantEmail || !complainantEmail.includes('@')) {
+      this.logger.warn(
+        `Skipping status update email for ticket ${ticketId}: missing recipient email (${complainantEmail})`,
+      );
+      return false;
+    }
+
+    const cleanName = complainantName?.trim() || 'Citizen';
+    const displayDate = updatedAt
+      ? new Date(updatedAt).toLocaleString('en-IN', {
+          day: '2-digit',
+          month: 'long',
+          year: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit',
+          hour12: true,
+        })
+      : new Date().toLocaleString('en-IN', {
+          day: '2-digit',
+          month: 'long',
+          year: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit',
+          hour12: true,
+        });
+
+    let statusTitle = '';
+    let statusSubtitle = '';
+    let statusBadgeColor = '#1e3a8a';
+    let statusBadgeBg = '#dbeafe';
+    let actionExplanation = '';
+    let emailSubject = '';
+
+    if (status === 'UNDER_REVIEW') {
+      statusTitle = 'Review Commenced on Your Complaint';
+      statusSubtitle = 'समीक्षा शुरू की गई — Under Active Review';
+      statusBadgeColor = '#92400e';
+      statusBadgeBg = '#fef3c7';
+      actionExplanation =
+        'Our grievance review committee has commenced active review of your ticket. We are evaluating the particulars and coordinating with the relevant authorities or legal advocates to address your grievance.';
+      emailSubject = `[HRSJM] Review Started for Ticket: ${ticketId}`;
+    } else if (status === 'RESOLVED') {
+      statusTitle = 'Your Complaint Has Been Resolved';
+      statusSubtitle = 'शिकायत का निवारण किया गया — Resolved';
+      statusBadgeColor = '#065f46';
+      statusBadgeBg = '#d1fae5';
+      actionExplanation =
+        'Your complaint has been successfully reviewed, processed, and marked as Resolved by the Human Rights & Social Justice Mission administration.';
+      emailSubject = `[HRSJM] Ticket Resolved: ${ticketId}`;
+    } else if (status === 'CLOSED') {
+      statusTitle = 'Complaint Ticket Closed';
+      statusSubtitle = 'टिकट बंद किया गया — Closed';
+      statusBadgeColor = '#991b1b';
+      statusBadgeBg = '#fee2e2';
+      actionExplanation =
+        'Your support ticket has been closed by the administration. Thank you for connecting with the Human Rights & Social Justice Mission.';
+      emailSubject = `[HRSJM] Ticket Closed: ${ticketId}`;
+    } else {
+      statusTitle = `Ticket Status Updated to ${status}`;
+      statusSubtitle = 'स्थिति अपडेट की गई';
+      actionExplanation = `Your support ticket has been updated to ${status}.`;
+      emailSubject = `[HRSJM] Ticket Status Update: ${ticketId}`;
+    }
+
+    const noteSectionHtml = note
+      ? `
+      <div style="margin: 24px 0; background-color: #f8fafc; border-left: 4px solid #1e3a8a; border-radius: 6px; padding: 16px 20px;">
+        <p style="margin: 0 0 6px 0; font-size: 13px; font-weight: 700; color: #1e3a8a; text-transform: uppercase; letter-spacing: 0.5px;">
+          Official Administration Note / आधिकारिक टिप्पणी:
+        </p>
+        <p style="margin: 0; font-size: 14px; line-height: 1.6; color: #334155;">
+          ${note.replace(/\n/g, '<br/>')}
+        </p>
+      </div>`
+      : '';
+
+    const html = `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${statusTitle} - HRSJM</title>
+</head>
+<body style="margin: 0; padding: 0; background-color: #f1f5f9; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #1e293b; -webkit-font-smoothing: antialiased;">
+  <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%" style="background-color: #f1f5f9; padding: 30px 15px;">
+    <tr>
+      <td align="center">
+        <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%" style="max-width: 600px; background-color: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);">
+          <tr>
+            <td style="background: linear-gradient(135deg, #1e3a8a 0%, #0f172a 100%); padding: 32px 30px; text-align: center;">
+              <h1 style="margin: 0 0 6px 0; color: #ffffff; font-size: 22px; font-weight: 700; letter-spacing: 0.5px;">
+                HUMAN RIGHTS & SOCIAL JUSTICE MISSION
+              </h1>
+              <p style="margin: 0; color: #fbbf24; font-size: 14px; font-weight: 600; letter-spacing: 1px;">
+                मानव अधिकार • सामाजिक न्याय
+              </p>
+            </td>
+          </tr>
+
+          <tr>
+            <td style="padding: 36px 30px;">
+              <div style="text-align: center; margin-bottom: 24px;">
+                <span style="display: inline-block; padding: 6px 16px; border-radius: 9999px; background-color: ${statusBadgeBg}; color: ${statusBadgeColor}; font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;">
+                  ${status}
+                </span>
+                <h2 style="margin: 16px 0 6px 0; color: #0f172a; font-size: 20px; font-weight: 700;">
+                  ${statusTitle}
+                </h2>
+                <p style="margin: 0; color: #64748b; font-size: 13px; font-weight: 500;">
+                  ${statusSubtitle}
+                </p>
+              </div>
+
+              <p style="margin: 0 0 16px 0; font-size: 15px; line-height: 1.6; color: #334155;">
+                Dear <strong>${cleanName}</strong>,
+              </p>
+              <p style="margin: 0 0 20px 0; font-size: 14px; line-height: 1.6; color: #475569;">
+                ${actionExplanation}
+              </p>
+
+              ${noteSectionHtml}
+
+              <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%" style="background-color: #f8fafc; border-radius: 8px; border: 1px solid #e2e8f0; margin: 24px 0;">
+                <tr>
+                  <td style="padding: 12px 18px; font-size: 13px; color: #64748b; border-bottom: 1px solid #f1f5f9; width: 40%;">
+                    Ticket ID / Reference
+                  </td>
+                  <td style="padding: 12px 18px; font-size: 14px; font-weight: 700; color: #1e3a8a; border-bottom: 1px solid #f1f5f9;">
+                    ${ticketId}
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding: 12px 18px; font-size: 13px; color: #64748b; border-bottom: 1px solid #f1f5f9;">
+                    Subject / Concern
+                  </td>
+                  <td style="padding: 12px 18px; font-size: 13px; font-weight: 600; color: #0f172a; border-bottom: 1px solid #f1f5f9;">
+                    ${ticketSubject}
+                  </td>
+                </tr>
+                ${category ? `
+                <tr>
+                  <td style="padding: 12px 18px; font-size: 13px; color: #64748b; border-bottom: 1px solid #f1f5f9;">
+                    Category
+                  </td>
+                  <td style="padding: 12px 18px; font-size: 13px; color: #0f172a; border-bottom: 1px solid #f1f5f9;">
+                    ${category}
+                  </td>
+                </tr>` : ''}
+                <tr>
+                  <td style="padding: 12px 18px; font-size: 13px; color: #64748b; border-bottom: 1px solid #f1f5f9;">
+                    Date & Time Updated
+                  </td>
+                  <td style="padding: 12px 18px; font-size: 13px; color: #0f172a; border-bottom: 1px solid #f1f5f9;">
+                    ${displayDate}
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding: 12px 18px; font-size: 13px; color: #64748b;">
+                    Current Status
+                  </td>
+                  <td style="padding: 12px 18px; font-size: 13px; font-weight: 700; color: ${statusBadgeColor};">
+                    ${status}
+                  </td>
+                </tr>
+              </table>
+
+              <div style="background-color: #f1f5f9; border-radius: 8px; padding: 16px 20px; font-size: 13px; color: #475569; line-height: 1.6;">
+                <strong>Need Assistance?</strong> If you have any additional questions or need urgent legal counsel, you can reply directly to this email or reach us at <a href="mailto:grievance@hrsjm.org" style="color: #1e3a8a; text-decoration: underline;">grievance@hrsjm.org</a> quoting your Ticket ID <strong>${ticketId}</strong>.
+              </div>
+            </td>
+          </tr>
+
+          <tr>
+            <td style="background-color: #f8fafc; padding: 24px 30px; border-top: 1px solid #e2e8f0; text-align: center; font-size: 12px; color: #94a3b8; line-height: 1.6;">
+              <p style="margin: 0 0 6px 0; font-weight: 600; color: #64748b;">
+                Human Rights & Social Justice Mission (HRSJM)
+              </p>
+              <p style="margin: 0;">
+                Official correspondence from the Grievance & Legal Redressal Cell.
+              </p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
+    `;
+
+    const plainText = `
+HUMAN RIGHTS & SOCIAL JUSTICE MISSION (HRSJM)
+मानव अधिकार - सामाजिक न्याय
+
+TICKET STATUS UPDATE: ${status}
+------------------------------------------------------
+Dear ${cleanName},
+
+${actionExplanation}
+
+${note ? `OFFICIAL ADMINISTRATION NOTE:\n${note}\n\n` : ''}TICKET DETAILS:
+- Ticket ID      : ${ticketId}
+- Subject        : ${ticketSubject}
+- Category       : ${category || 'Grievance'}
+- Status         : ${status}
+- Updated Date   : ${displayDate}
+
+If you have any questions or require further guidance, contact grievance@hrsjm.org or support@hrsjm.org quoting your Ticket ID (${ticketId}).
+
+Warm regards,
+Human Rights & Social Justice Mission (HRSJM)
+https://hrsjm.org
+    `.trim();
+
+    const result = await this.sendMail({
+      to: complainantEmail,
+      subject: emailSubject,
+      html,
+      text: plainText,
+    });
+
+    return result.success;
+  }
+
+  /**
+   * Shoot official Membership Status Update Email (Approved, Active, Under Review, Rejected).
+   */
+  async sendMembershipStatusUpdateEmail(
+    payload: MembershipStatusUpdateMailPayload,
+  ): Promise<boolean> {
+    const {
+      memberName,
+      memberEmail,
+      membershipNumber,
+      categoryName,
+      status,
+      validFrom,
+      validUntil,
+      rejectionReason,
+      notes,
+    } = payload;
+
+    if (!memberEmail || !memberEmail.includes('@')) {
+      return false;
+    }
+
+    const cleanName = memberName?.trim() || 'Member';
+    const isApproved = status === 'APPROVED' || status === 'ACTIVE';
+    const isRejected = status === 'REJECTED';
+
+    const statusBadge = isApproved
+      ? { label: 'APPROVED & ACTIVE', bg: '#DCFCE7', text: '#15803D', border: '#86EFAC' }
+      : isRejected
+      ? { label: 'APPLICATION NOT APPROVED', bg: '#FEE2E2', text: '#B91C1C', border: '#FCA5A5' }
+      : { label: 'UNDER REVIEW', bg: '#FEF3C7', text: '#B45309', border: '#FCD34D' };
+
+    const emailSubject = isApproved
+      ? `🎉 Congratulations! Your HRSJM Membership #${membershipNumber} is Approved`
+      : isRejected
+      ? `Important: HRSJM Membership Application Update (${membershipNumber})`
+      : `Update: Your HRSJM Membership Application #${membershipNumber} is Under Review`;
+
+    const html = `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${emailSubject}</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #f1f5f9; margin: 0; padding: 24px 12px; color: #1e293b; }
+    .card { max-width: 620px; margin: 0 auto; background: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 16px rgba(0,0,0,0.08); border: 1px solid #e2e8f0; }
+    .gold-bar { height: 5px; background: linear-gradient(90deg, #d4af37, #f3e5ab, #d4af37); }
+    .header { background-color: #0F2C59; padding: 28px 24px; text-align: center; }
+    .header h1 { margin: 0; color: #ffffff; font-size: 20px; font-weight: 700; letter-spacing: 0.5px; }
+    .header p { margin: 6px 0 0 0; color: #cbd5e1; font-size: 13px; }
+    .content { padding: 32px 28px; }
+    .badge-wrap { text-align: center; margin: 16px 0 24px; }
+    .badge { display: inline-block; padding: 6px 18px; border-radius: 9999px; font-size: 13px; font-weight: 700; background: ${statusBadge.bg}; color: ${statusBadge.text}; border: 1px solid ${statusBadge.border}; text-transform: uppercase; }
+    .greeting { font-size: 18px; font-weight: 700; color: #0F2C59; margin-bottom: 12px; }
+    .desc { font-size: 14px; line-height: 1.6; color: #475569; margin-bottom: 24px; }
+    .info-table { width: 100%; border-collapse: collapse; margin-bottom: 24px; background: #f8fafc; border-radius: 8px; overflow: hidden; border: 1px solid #e2e8f0; }
+    .info-table td { padding: 12px 16px; font-size: 13px; border-bottom: 1px solid #e2e8f0; }
+    .info-table tr:last-child td { border-bottom: none; }
+    .label { color: #64748b; font-weight: 600; width: 38%; }
+    .value { color: #0F2C59; font-weight: 600; }
+    .alert-box { padding: 14px 16px; border-radius: 8px; margin-bottom: 24px; font-size: 13px; line-height: 1.5; background: ${isApproved ? '#eff6ff' : '#fffbeb'}; border-left: 4px solid ${isApproved ? '#3b82f6' : '#f59e0b'}; color: #1e293b; }
+    .footer { background: #f8fafc; padding: 24px; text-align: center; border-top: 1px solid #e2e8f0; font-size: 12px; color: #64748b; line-height: 1.5; }
+    .footer a { color: #0F2C59; font-weight: 600; text-decoration: none; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="gold-bar"></div>
+    <div class="header">
+      <h1>HUMAN RIGHTS & SOCIAL JUSTICE MISSION</h1>
+      <p>राष्ट्रीय मानवाधिकार एवं सामाजिक न्याय मिशन · Official Membership Registry</p>
+    </div>
+    <div class="content">
+      <div class="badge-wrap">
+        <span class="badge">${statusBadge.label}</span>
+      </div>
+      <div class="greeting">Dear ${cleanName},</div>
+      <div class="desc">
+        ${isApproved
+          ? `We are pleased to inform you that your membership application with the <strong>Human Rights & Social Justice Mission (HRSJM)</strong> has been officially approved and activated by the administrative committee. Welcome to our dedicated mission for truth, equality, and constitutional protection across India.`
+          : isRejected
+          ? `Thank you for your interest in joining the Human Rights & Social Justice Mission. After reviewing your submitted documents and application profile, our administrative committee was unable to approve your application at this time.`
+          : `Your membership application with the Human Rights & Social Justice Mission is currently under active review by the verification committee.`}
+      </div>
+
+      <table class="info-table">
+        <tr>
+          <td class="label">Membership Number</td>
+          <td class="value">${membershipNumber}</td>
+        </tr>
+        <tr>
+          <td class="label">Category / Post</td>
+          <td class="value">${categoryName || 'General Membership'}</td>
+        </tr>
+        <tr>
+          <td class="label">Current Status</td>
+          <td class="value">${status}</td>
+        </tr>
+        ${validFrom ? `<tr><td class="label">Valid From</td><td class="value">${new Date(validFrom).toLocaleDateString('en-IN')}</td></tr>` : ''}
+        ${validUntil ? `<tr><td class="label">Valid Until</td><td class="value">${new Date(validUntil).toLocaleDateString('en-IN')}</td></tr>` : ''}
+      </table>
+
+      ${rejectionReason ? `
+      <div class="alert-box" style="background:#fef2f2;border-left:4px solid #ef4444;">
+        <strong>Reason for Decision:</strong><br/>
+        ${rejectionReason}
+        <br/><br/>
+        You are welcome to re-apply or submit updated documents through your applicant portal.
+      </div>` : ''}
+
+      ${isApproved ? `
+      <div class="alert-box">
+        <strong>Member Access & Benefits:</strong><br/>
+        You can now log in to the <strong>HRSJM Member Portal / Mobile App</strong> using your registered mobile number and password to download your digital membership ID card, view national directives, and participate in mission initiatives.
+      </div>` : ''}
+
+      <div class="desc" style="margin-bottom:0;">
+        For any questions or clarification regarding your membership status, please email <a href="mailto:membership@hrsjm.org" style="color:#0F2C59;font-weight:600;">membership@hrsjm.org</a> quoting your Membership Number.
+      </div>
+    </div>
+    <div class="footer">
+      <strong>Human Rights & Social Justice Mission (HRSJM)</strong><br/>
+      National Headquarters, New Delhi, India<br/>
+      <a href="https://hrsjm.org">www.hrsjm.org</a> · <a href="mailto:support@hrsjm.org">support@hrsjm.org</a>
+    </div>
+  </div>
+</body>
+</html>
+    `.trim();
+
+    const plainText = `
+HUMAN RIGHTS & SOCIAL JUSTICE MISSION (HRSJM)
+Membership Status Update: ${status}
+
+Dear ${cleanName},
+
+${isApproved
+  ? `Congratulations! Your membership #${membershipNumber} with HRSJM has been approved and activated.`
+  : isRejected
+  ? `Your membership application #${membershipNumber} could not be approved at this time. Reason: ${rejectionReason || 'Document verification criteria not met'}.`
+  : `Your membership application #${membershipNumber} is currently under administrative review.`}
+
+MEMBERSHIP DETAILS:
+- Membership Number: ${membershipNumber}
+- Category: ${categoryName || 'General Membership'}
+- Status: ${status}
+${validUntil ? `- Validity Until: ${new Date(validUntil).toLocaleDateString('en-IN')}\n` : ''}
+
+For assistance, contact membership@hrsjm.org.
+
+Warm regards,
+Human Rights & Social Justice Mission (HRSJM)
+https://hrsjm.org
+    `.trim();
+
+    const result = await this.sendMail({
+      to: memberEmail,
+      subject: emailSubject,
+      html,
+      text: plainText,
+    });
+    return result.success;
+  }
+
+  /**
+   * Shoot Temporary Password Email when an administrator resets user/member password.
+   */
+  async sendAdminPasswordResetEmail(
+    payload: AdminPasswordResetMailPayload,
+  ): Promise<boolean> {
+    const { recipientName, recipientEmail, temporaryPassword, resetDate } = payload;
+    if (!recipientEmail || !recipientEmail.includes('@')) return false;
+
+    const cleanName = recipientName?.trim() || 'User';
+    const emailSubject = `🔐 Temporary Password for Your HRSJM Account`;
+
+    const html = `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>${emailSubject}</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background-color: #f1f5f9; margin: 0; padding: 24px 12px; color: #1e293b; }
+    .card { max-width: 600px; margin: 0 auto; background: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 16px rgba(0,0,0,0.08); border: 1px solid #e2e8f0; }
+    .gold-bar { height: 5px; background: linear-gradient(90deg, #d4af37, #f3e5ab, #d4af37); }
+    .header { background-color: #0F2C59; padding: 24px; text-align: center; color: #ffffff; }
+    .content { padding: 28px 24px; }
+    .pass-box { background: #f8fafc; border: 2px dashed #0F2C59; border-radius: 8px; padding: 18px; text-align: center; margin: 20px 0; }
+    .pass-text { font-family: monospace; font-size: 24px; font-weight: 700; color: #0F2C59; letter-spacing: 2px; }
+    .warning { font-size: 13px; color: #b45309; background: #fef3c7; padding: 12px 14px; border-radius: 6px; margin: 18px 0; line-height: 1.4; }
+    .footer { background: #f8fafc; padding: 20px; text-align: center; border-top: 1px solid #e2e8f0; font-size: 12px; color: #64748b; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="gold-bar"></div>
+    <div class="header">
+      <h2 style="margin:0;font-size:18px;">HUMAN RIGHTS & SOCIAL JUSTICE MISSION</h2>
+      <p style="margin:4px 0 0 0;font-size:12px;color:#cbd5e1;">Account Security Services</p>
+    </div>
+    <div class="content">
+      <h3 style="color:#0F2C59;margin-top:0;">Hello ${cleanName},</h3>
+      <p style="font-size:14px;color:#475569;line-height:1.5;">
+        An administrator has reset the password for your account on the <strong>HRSJM Official Portal / Mobile Application</strong>.
+      </p>
+      <div class="pass-box">
+        <div style="font-size:12px;color:#64748b;margin-bottom:6px;text-transform:uppercase;font-weight:600;">Your Temporary Password</div>
+        <div class="pass-text">${temporaryPassword}</div>
+      </div>
+      <div class="warning">
+        ⚠️ <strong>Important Security Notice:</strong> Please sign in immediately using this temporary password and change it to a strong, personal password under your Profile / Settings.
+      </div>
+      <p style="font-size:13px;color:#64748b;">
+        If you did not request this password reset or believe this was done in error, please contact our security team immediately at <a href="mailto:security@hrsjm.org" style="color:#0F2C59;font-weight:600;">security@hrsjm.org</a>.
+      </p>
+    </div>
+    <div class="footer">
+      HRSJM National IT & Security Division · <a href="https://hrsjm.org" style="color:#0F2C59;">hrsjm.org</a>
+    </div>
+  </div>
+</body>
+</html>
+    `.trim();
+
+    const plainText = `
+HUMAN RIGHTS & SOCIAL JUSTICE MISSION (HRSJM)
+Temporary Account Password
+
+Hello ${cleanName},
+
+An administrator has reset the password for your HRSJM account.
+
+Your Temporary Password: ${temporaryPassword}
+
+Please sign in immediately and update your password under your Profile Settings.
+
+If you did not request this change, contact security@hrsjm.org immediately.
+
+Human Rights & Social Justice Mission (HRSJM)
+https://hrsjm.org
+    `.trim();
+
+    const result = await this.sendMail({
+      to: recipientEmail,
+      subject: emailSubject,
+      html,
+      text: plainText,
+    });
+    return result.success;
+  }
+
+  /**
+   * Shoot Assistance Request Received Confirmation Email to citizen.
+   */
+  async sendAssistanceRequestConfirmationEmail(
+    payload: AssistanceRequestConfirmationMailPayload,
+  ): Promise<boolean> {
+    const { applicantName, applicantEmail, requestId, reason, requestedAmount, submittedAt, status } = payload;
+    if (!applicantEmail || !applicantEmail.includes('@')) return false;
+
+    const cleanName = applicantName?.trim() || 'Citizen';
+    const emailSubject = `Assistance Application Received: ${requestId} - HRSJM Legal & Social Aid`;
+
+    const html = `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>${emailSubject}</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background-color: #f1f5f9; margin: 0; padding: 24px 12px; color: #1e293b; }
+    .card { max-width: 600px; margin: 0 auto; background: #ffffff; border-radius: 12px; overflow: hidden; border: 1px solid #e2e8f0; }
+    .gold-bar { height: 5px; background: linear-gradient(90deg, #d4af37, #f3e5ab, #d4af37); }
+    .header { background-color: #0F2C59; padding: 24px; text-align: center; color: #ffffff; }
+    .content { padding: 28px 24px; }
+    .table { width: 100%; border-collapse: collapse; margin: 20px 0; background: #f8fafc; border-radius: 8px; border: 1px solid #e2e8f0; }
+    .table td { padding: 12px 16px; font-size: 13px; border-bottom: 1px solid #e2e8f0; }
+    .footer { background: #f8fafc; padding: 20px; text-align: center; border-top: 1px solid #e2e8f0; font-size: 12px; color: #64748b; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="gold-bar"></div>
+    <div class="header">
+      <h2 style="margin:0;font-size:18px;">HUMAN RIGHTS & SOCIAL JUSTICE MISSION</h2>
+      <p style="margin:4px 0 0 0;font-size:12px;color:#cbd5e1;">Legal & Humanitarian Assistance Wing</p>
+    </div>
+    <div class="content">
+      <h3 style="color:#0F2C59;margin-top:0;">Dear ${cleanName},</h3>
+      <p style="font-size:14px;color:#475569;line-height:1.5;">
+        Your application for citizen assistance has been successfully received and recorded in our humanitarian aid registry. Our advocacy and relief desk evaluates every request with utmost urgency and confidentiality.
+      </p>
+      <table class="table">
+        <tr>
+          <td style="color:#64748b;font-weight:600;width:38%;">Request Reference</td>
+          <td style="color:#0F2C59;font-weight:700;">${requestId}</td>
+        </tr>
+        <tr>
+          <td style="color:#64748b;font-weight:600;">Assistance Purpose</td>
+          <td style="color:#0F2C59;font-weight:600;">${reason}</td>
+        </tr>
+        ${requestedAmount ? `<tr><td style="color:#64748b;font-weight:600;">Requested Aid</td><td style="color:#0F2C59;font-weight:600;">₹${Number(requestedAmount).toLocaleString('en-IN')}</td></tr>` : ''}
+        <tr>
+          <td style="color:#64748b;font-weight:600;">Initial Status</td>
+          <td style="color:#059669;font-weight:600;">${status || 'Submitted (Pending Review)'}</td>
+        </tr>
+      </table>
+      <p style="font-size:13px;color:#64748b;line-height:1.5;">
+        Our team will review your application and contact you if supporting documentation is required. You can track your request at any time using your Reference ID.
+      </p>
+    </div>
+    <div class="footer">
+      HRSJM Humanitarian Aid Desk · <a href="https://hrsjm.org" style="color:#0F2C59;">hrsjm.org</a> · <a href="mailto:aid@hrsjm.org" style="color:#0F2C59;">aid@hrsjm.org</a>
+    </div>
+  </div>
+</body>
+</html>
+    `.trim();
+
+    const plainText = `
+HUMAN RIGHTS & SOCIAL JUSTICE MISSION (HRSJM)
+Assistance Request Confirmation
+
+Dear ${cleanName},
+
+Your application for assistance (${requestId}) has been received by our relief committee.
+
+DETAILS:
+- Reference ID: ${requestId}
+- Purpose: ${reason}
+${requestedAmount ? `- Amount: ₹${requestedAmount}\n` : ''}
+- Status: ${status || 'Submitted'}
+
+For inquiries, contact aid@hrsjm.org.
+
+Warm regards,
+Human Rights & Social Justice Mission (HRSJM)
+https://hrsjm.org
+    `.trim();
+
+    const result = await this.sendMail({
+      to: applicantEmail,
+      subject: emailSubject,
+      html,
+      text: plainText,
+    });
+    return result.success;
+  }
+
+  /**
+   * Shoot Assistance Status Update Email (Approved, Disbursed, Under Review, Rejected).
+   */
+  async sendAssistanceStatusUpdateEmail(
+    payload: AssistanceStatusUpdateMailPayload,
+  ): Promise<boolean> {
+    const { applicantName, applicantEmail, requestId, reason, status, approvedAmount, rejectionReason, notes } = payload;
+    if (!applicantEmail || !applicantEmail.includes('@')) return false;
+
+    const cleanName = applicantName?.trim() || 'Citizen';
+    const isApproved = status === 'APPROVED' || status === 'DISBURSED';
+    const isRejected = status === 'REJECTED';
+
+    const statusBadge = isApproved
+      ? { label: status === 'DISBURSED' ? 'AID DISBURSED' : 'AID APPROVED', bg: '#DCFCE7', text: '#15803D', border: '#86EFAC' }
+      : isRejected
+      ? { label: 'REQUEST NOT APPROVED', bg: '#FEE2E2', text: '#B91C1C', border: '#FCA5A5' }
+      : { label: 'UNDER REVIEW', bg: '#FEF3C7', text: '#B45309', border: '#FCD34D' };
+
+    const emailSubject = isApproved
+      ? `✅ Update: Your HRSJM Assistance Request ${requestId} is ${status === 'DISBURSED' ? 'Disbursed' : 'Approved'}`
+      : isRejected
+      ? `Update Regarding Your Assistance Request ${requestId}`
+      : `Update: Assistance Request ${requestId} is Under Review`;
+
+    const html = `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>${emailSubject}</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background-color: #f1f5f9; margin: 0; padding: 24px 12px; color: #1e293b; }
+    .card { max-width: 600px; margin: 0 auto; background: #ffffff; border-radius: 12px; overflow: hidden; border: 1px solid #e2e8f0; }
+    .gold-bar { height: 5px; background: linear-gradient(90deg, #d4af37, #f3e5ab, #d4af37); }
+    .header { background-color: #0F2C59; padding: 24px; text-align: center; color: #ffffff; }
+    .content { padding: 28px 24px; }
+    .badge-wrap { text-align: center; margin: 16px 0 20px; }
+    .badge { display: inline-block; padding: 6px 18px; border-radius: 9999px; font-size: 13px; font-weight: 700; background: ${statusBadge.bg}; color: ${statusBadge.text}; border: 1px solid ${statusBadge.border}; text-transform: uppercase; }
+    .table { width: 100%; border-collapse: collapse; margin: 20px 0; background: #f8fafc; border-radius: 8px; border: 1px solid #e2e8f0; }
+    .table td { padding: 12px 16px; font-size: 13px; border-bottom: 1px solid #e2e8f0; }
+    .footer { background: #f8fafc; padding: 20px; text-align: center; border-top: 1px solid #e2e8f0; font-size: 12px; color: #64748b; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="gold-bar"></div>
+    <div class="header">
+      <h2 style="margin:0;font-size:18px;">HUMAN RIGHTS & SOCIAL JUSTICE MISSION</h2>
+      <p style="margin:4px 0 0 0;font-size:12px;color:#cbd5e1;">Assistance & Relief Committee</p>
+    </div>
+    <div class="content">
+      <div class="badge-wrap">
+        <span class="badge">${statusBadge.label}</span>
+      </div>
+      <h3 style="color:#0F2C59;margin-top:0;">Dear ${cleanName},</h3>
+      <p style="font-size:14px;color:#475569;line-height:1.5;">
+        This is an official communication regarding your assistance application <strong>${requestId}</strong>.
+      </p>
+      <table class="table">
+        <tr>
+          <td style="color:#64748b;font-weight:600;width:38%;">Request Reference</td>
+          <td style="color:#0F2C59;font-weight:700;">${requestId}</td>
+        </tr>
+        <tr>
+          <td style="color:#64748b;font-weight:600;">Status</td>
+          <td style="color:#0F2C59;font-weight:600;">${status}</td>
+        </tr>
+        ${approvedAmount ? `<tr><td style="color:#64748b;font-weight:600;">Approved Aid</td><td style="color:#15803D;font-weight:700;">₹${Number(approvedAmount).toLocaleString('en-IN')}</td></tr>` : ''}
+      </table>
+      ${rejectionReason ? `
+      <div style="background:#fef2f2;border-left:4px solid #ef4444;padding:12px 16px;border-radius:6px;font-size:13px;margin:16px 0;color:#1e293b;">
+        <strong>Reason for Decision:</strong><br/>${rejectionReason}
+      </div>` : ''}
+      ${notes ? `
+      <div style="background:#f8fafc;border-left:4px solid #0F2C59;padding:12px 16px;border-radius:6px;font-size:13px;margin:16px 0;color:#1e293b;">
+        <strong>Committee Note:</strong><br/>${notes}
+      </div>` : ''}
+    </div>
+    <div class="footer">
+      HRSJM Humanitarian Aid Desk · <a href="https://hrsjm.org" style="color:#0F2C59;">hrsjm.org</a> · <a href="mailto:aid@hrsjm.org" style="color:#0F2C59;">aid@hrsjm.org</a>
+    </div>
+  </div>
+</body>
+</html>
+    `.trim();
+
+    const plainText = `
+HUMAN RIGHTS & SOCIAL JUSTICE MISSION (HRSJM)
+Assistance Status Update: ${status}
+
+Dear ${cleanName},
+
+Your assistance request ${requestId} status is now: ${status}.
+${approvedAmount ? `Approved Aid Amount: ₹${approvedAmount}\n` : ''}
+${rejectionReason ? `Reason: ${rejectionReason}\n` : ''}
+${notes ? `Committee Note: ${notes}\n` : ''}
+
+For questions, please contact aid@hrsjm.org.
+
+Warm regards,
+Human Rights & Social Justice Mission (HRSJM)
+https://hrsjm.org
+    `.trim();
+
+    const result = await this.sendMail({
+      to: applicantEmail,
+      subject: emailSubject,
+      html,
+      text: plainText,
+    });
+    return result.success;
+  }
+
+  /**
+   * Shoot security notification when user password is changed.
+   */
+  async sendPasswordChangedNoticeEmail(
+    payload: PasswordChangedNoticeMailPayload,
+  ): Promise<boolean> {
+    const { recipientName, recipientEmail, changedAt } = payload;
+    if (!recipientEmail || !recipientEmail.includes('@')) return false;
+
+    const cleanName = recipientName?.trim() || 'User';
+    const emailSubject = `Security Alert: Your HRSJM Account Password Was Changed`;
+    const displayDate = changedAt
+      ? new Date(changedAt).toLocaleString('en-IN')
+      : new Date().toLocaleString('en-IN');
+
+    const html = `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>${emailSubject}</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background-color: #f1f5f9; margin: 0; padding: 24px 12px; color: #1e293b; }
+    .card { max-width: 600px; margin: 0 auto; background: #ffffff; border-radius: 12px; overflow: hidden; border: 1px solid #e2e8f0; }
+    .gold-bar { height: 5px; background: linear-gradient(90deg, #d4af37, #f3e5ab, #d4af37); }
+    .header { background-color: #0F2C59; padding: 24px; text-align: center; color: #ffffff; }
+    .content { padding: 28px 24px; }
+    .footer { background: #f8fafc; padding: 20px; text-align: center; border-top: 1px solid #e2e8f0; font-size: 12px; color: #64748b; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="gold-bar"></div>
+    <div class="header">
+      <h2 style="margin:0;font-size:18px;">HUMAN RIGHTS & SOCIAL JUSTICE MISSION</h2>
+      <p style="margin:4px 0 0 0;font-size:12px;color:#cbd5e1;">Security Notice</p>
+    </div>
+    <div class="content">
+      <h3 style="color:#0F2C59;margin-top:0;">Hello ${cleanName},</h3>
+      <p style="font-size:14px;color:#475569;line-height:1.5;">
+        This email confirms that the password for your <strong>HRSJM account (${recipientEmail})</strong> was successfully changed on <strong>${displayDate}</strong>.
+      </p>
+      <div style="background:#fef2f2;border-left:4px solid #ef4444;padding:12px 16px;border-radius:6px;font-size:13px;margin:20px 0;color:#1e293b;">
+        <strong>Did not make this change?</strong><br/>
+        If you did not make this change, please contact our emergency security team immediately at <a href="mailto:security@hrsjm.org" style="color:#ef4444;font-weight:700;">security@hrsjm.org</a> to protect your account.
+      </div>
+    </div>
+    <div class="footer">
+      HRSJM Security Operations · <a href="https://hrsjm.org" style="color:#0F2C59;">hrsjm.org</a>
+    </div>
+  </div>
+</body>
+</html>
+    `.trim();
+
+    const plainText = `
+HUMAN RIGHTS & SOCIAL JUSTICE MISSION (HRSJM)
+Security Alert: Password Changed
+
+Hello ${cleanName},
+
+The password for your HRSJM account was changed on ${displayDate}.
+
+If you did not authorize this change, please contact security@hrsjm.org immediately.
+
+Human Rights & Social Justice Mission (HRSJM)
+https://hrsjm.org
+    `.trim();
+
+    const result = await this.sendMail({
+      to: recipientEmail,
+      subject: emailSubject,
+      html,
+      text: plainText,
+    });
+    return result.success;
+  }
+
+  /**
+   * Shoot Contact Form Acknowledgement Email to citizen and copy admin.
+   */
+  async sendContactInquiryEmail(
+    payload: ContactInquiryMailPayload,
+  ): Promise<boolean> {
+    const { senderName, senderEmail, senderPhone, subject, message, inquiryRef, submittedAt } = payload;
+    if (!senderEmail || !senderEmail.includes('@')) return false;
+
+    const cleanName = senderName?.trim() || 'Citizen';
+    const ref = inquiryRef || `INQ-${Date.now().toString().slice(-6)}`;
+    const emailSubject = `Inquiry Received [${ref}]: ${subject || 'HRSJM Support & Information'}`;
+
+    const html = `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>${emailSubject}</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background-color: #f1f5f9; margin: 0; padding: 24px 12px; color: #1e293b; }
+    .card { max-width: 600px; margin: 0 auto; background: #ffffff; border-radius: 12px; overflow: hidden; border: 1px solid #e2e8f0; }
+    .gold-bar { height: 5px; background: linear-gradient(90deg, #d4af37, #f3e5ab, #d4af37); }
+    .header { background-color: #0F2C59; padding: 24px; text-align: center; color: #ffffff; }
+    .content { padding: 28px 24px; }
+    .footer { background: #f8fafc; padding: 20px; text-align: center; border-top: 1px solid #e2e8f0; font-size: 12px; color: #64748b; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="gold-bar"></div>
+    <div class="header">
+      <h2 style="margin:0;font-size:18px;">HUMAN RIGHTS & SOCIAL JUSTICE MISSION</h2>
+      <p style="margin:4px 0 0 0;font-size:12px;color:#cbd5e1;">Citizen Information & Helpdesk</p>
+    </div>
+    <div class="content">
+      <h3 style="color:#0F2C59;margin-top:0;">Dear ${cleanName},</h3>
+      <p style="font-size:14px;color:#475569;line-height:1.5;">
+        Thank you for contacting the <strong>Human Rights & Social Justice Mission (HRSJM)</strong>. We have received your inquiry under reference number <strong>${ref}</strong>.
+      </p>
+      <div style="background:#f8fafc;border-left:4px solid #0F2C59;padding:14px;border-radius:6px;font-size:13px;margin:18px 0;color:#334155;line-height:1.5;">
+        <strong>Your Message:</strong><br/>
+        ${message}
+      </div>
+      <p style="font-size:13px;color:#64748b;line-height:1.5;">
+        Our secretariat team reviews all messages and will respond within 1-2 business days.
+      </p>
+    </div>
+    <div class="footer">
+      HRSJM National Secretariat · <a href="https://hrsjm.org" style="color:#0F2C59;">hrsjm.org</a> · <a href="mailto:contact@hrsjm.org" style="color:#0F2C59;">contact@hrsjm.org</a>
+    </div>
+  </div>
+</body>
+</html>
+    `.trim();
+
+    const plainText = `
+HUMAN RIGHTS & SOCIAL JUSTICE MISSION (HRSJM)
+Inquiry Acknowledgment [${ref}]
+
+Dear ${cleanName},
+
+Thank you for reaching out to HRSJM. We have received your inquiry (${ref}).
+Our team will get back to you shortly.
+
+Human Rights & Social Justice Mission (HRSJM)
+https://hrsjm.org
+    `.trim();
+
+    const result = await this.sendMail({
+      to: senderEmail,
+      subject: emailSubject,
+      html,
+      text: plainText,
+    });
     return result.success;
   }
 }

@@ -338,10 +338,19 @@ export class AdminService {
       );
     }
     if (query.membershipStatus) {
-      qb.andWhere(
-        `EXISTS (SELECT 1 FROM memberships m WHERE m.user_id = user.id AND m.status = :mstatus)`,
-        { mstatus: query.membershipStatus },
-      );
+      if (
+        query.membershipStatus === 'ACTIVE' ||
+        query.membershipStatus === 'APPROVED'
+      ) {
+        qb.andWhere(
+          `EXISTS (SELECT 1 FROM memberships m WHERE m.user_id = user.id AND m.status IN ('ACTIVE', 'APPROVED'))`,
+        );
+      } else {
+        qb.andWhere(
+          `EXISTS (SELECT 1 FROM memberships m WHERE m.user_id = user.id AND m.status = :mstatus)`,
+          { mstatus: query.membershipStatus },
+        );
+      }
     }
 
     const [users, total] = await qb.getManyAndCount();

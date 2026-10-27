@@ -12,6 +12,7 @@ import { PasswordResetTokenEntity } from '../users/entities/password-reset-token
 import { AuthController } from './controllers/auth.controller';
 import { AuthService } from './services/auth.service';
 import { PasswordResetDeliveryService } from './delivery/password-reset-delivery.service';
+import { MailModule } from '../mail/mail.module';
 
 @Module({
   imports: [
@@ -32,6 +33,7 @@ import { PasswordResetDeliveryService } from './delivery/password-reset-delivery
     }),
     UsersModule,
     AuditModule,
+    MailModule,
   ],
   controllers: [AuthController],
   providers: [AuthService, JwtAuthGuard, OptionalJwtAuthGuard, PasswordResetDeliveryService],
