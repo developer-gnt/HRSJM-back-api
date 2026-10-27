@@ -419,6 +419,11 @@ export class RenewalsService {
       `Your membership #${membership.membership_number} has been renewed and is now valid until ${newExpiry.toISOString().slice(0, 10)}. Receipt #${renewal.receipt_number}.`,
       actingUserId,
     );
+    await this.notifications.sendToAdmins(
+      'Membership Renewal Payment Received 💳',
+      `Member #${membership.membership_number} renewed membership for ${renewal.period_years} year(s). Receipt #${renewal.receipt_number}.`,
+      actingUserId,
+    );
 
     return saved;
   }

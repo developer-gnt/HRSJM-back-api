@@ -30,6 +30,7 @@ import { RelatedEntityType } from '../../documents/entities/document.entity';
 import { RenewalRequestEntity } from '../../renewals/entities/renewal-request.entity';
 import { NotificationsService } from '../../notifications/services/notifications.service';
 import { MailService } from '../../mail/mail.service';
+import { resolveMembershipValidityDays } from '../utils/membership-validity.util';
 
 @Injectable()
 export class MembershipsService {
@@ -198,15 +199,18 @@ export class MembershipsService {
           existingActiveOrPending.status === MembershipStatus.PENDING ||
           existingActiveOrPending.status === MembershipStatus.UNDER_REVIEW
         ) {
-          throw new ConflictException({
-            message: `A membership application is already submitted and currently under review for this mobile number / email (${existingActiveOrPending.membership_number || 'PENDING'}).`,
-            code: 'PENDING_APPLICATION_EXISTS',
-            details: {
-              membership_id: existingActiveOrPending.id,
-              membership_number: existingActiveOrPending.membership_number,
-              status: existingActiveOrPending.status,
-            },
-          });
+          const isSameApplicant = actingUserId && existingActiveOrPending.user_id === actingUserId;
+          if (!isSameApplicant) {
+            throw new ConflictException({
+              message: `A membership application is already submitted and currently under review for this mobile number / email (${existingActiveOrPending.membership_number || 'PENDING'}).`,
+              code: 'PENDING_APPLICATION_EXISTS',
+              details: {
+                membership_id: existingActiveOrPending.id,
+                membership_number: existingActiveOrPending.membership_number,
+                status: existingActiveOrPending.status,
+              },
+            });
+          }
         }
       }
 
@@ -676,10 +680,16 @@ export class MembershipsService {
       if (!membership.start_date) {
         membership.start_date = now;
       }
-      const validityDays = membership.category?.validity_days || 365;
+      const appData = (membership.application_data || {}) as Record<string, any>;
+      const validityInfo = resolveMembershipValidityDays(
+        membership.category?.name,
+        appData.membership_type,
+        appData.validity,
+        membership.category?.validity_days || 365,
+      );
       if (!membership.expiry_date) {
         membership.expiry_date = new Date(
-          now.getTime() + validityDays * 24 * 60 * 60 * 1000,
+          membership.start_date.getTime() + validityInfo.validityDays * 24 * 60 * 60 * 1000,
         );
       }
       if (!membership.membership_number) {

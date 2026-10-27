@@ -12,6 +12,7 @@ import { DonationPaymentsController } from './controllers/donation-payments.cont
 import { DonationPaymentsService } from './services/donation-payments.service';
 import { AccountingModule } from '../accounting/accounting.module';
 import { AuditModule } from '../audit/audit.module';
+import { NotificationsModule } from '../notifications/notifications.module';
 
 @Module({
   imports: [
@@ -27,6 +28,7 @@ import { AuditModule } from '../audit/audit.module';
     ]),
     AccountingModule,
     AuditModule,
+    NotificationsModule,
   ],
   controllers: [DonationPaymentsController],
   providers: [DonationPaymentsService],

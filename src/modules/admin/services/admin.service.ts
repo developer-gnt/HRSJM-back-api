@@ -271,6 +271,14 @@ export class AdminService {
         thisMonth: assistanceThisMonth,
         prevMonth: assistancePrevMonth,
       },
+      applications: {
+        total: totalMemberships + totalAssistance,
+        memberships: totalMemberships,
+        assistance: totalAssistance,
+        signups: 0,
+        thisMonth: membershipsThisMonth + assistanceThisMonth + usersThisMonth,
+        prevMonth: membershipsPrevMonth + assistancePrevMonth + usersPrevMonth,
+      },
       tickets: {
         total: totalTickets,
         open: openTickets,

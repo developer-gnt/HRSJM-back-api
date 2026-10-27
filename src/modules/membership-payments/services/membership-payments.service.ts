@@ -39,6 +39,7 @@ import {
 } from '../../renewals/entities/renewal-request.entity';
 import { addYearsSafe } from '../../renewals/services/renewal-calculation.service';
 import { MailService } from '../../mail/mail.service';
+import { resolveMembershipValidityDays } from '../../memberships/utils/membership-validity.util';
 
 function formatVoucherNumber(receiptDate: Date, seq: number): string {
   const y = receiptDate.getUTCFullYear();
@@ -364,6 +365,18 @@ export class MembershipPaymentsService implements OnModuleInit {
         if (!membership.approval_date) {
           membership.approval_date = now;
         }
+        const appData = (membership.application_data || {}) as Record<string, any>;
+        const validityInfo = resolveMembershipValidityDays(
+          membership.category?.name,
+          appData.membership_type,
+          appData.validity,
+          membership.category?.validity_days || 365,
+        );
+        if (!membership.expiry_date) {
+          membership.expiry_date = new Date(
+            membership.start_date.getTime() + validityInfo.validityDays * 24 * 60 * 60 * 1000,
+          );
+        }
         if (!membership.membership_number) {
           const count =
             typeof manager.getRepository === 'function'
@@ -451,11 +464,16 @@ export class MembershipPaymentsService implements OnModuleInit {
       },
     });
 
-    // Real-time notification to payer
+    // Real-time notification to payer and administrators
     await this.notifications.sendToUser(
       result.payment.user_id,
       'Payment Received & Receipt Generated 🧾',
       `Payment of ₹${result.payment.amount} was verified successfully. Receipt #${result.receipt.receipt_number} has been issued.`,
+      actingUserId,
+    );
+    await this.notifications.sendToAdmins(
+      'New Membership Payment Received 💳',
+      `Membership payment of ₹${result.payment.amount} verified (Receipt #${result.receipt.receipt_number}).`,
       actingUserId,
     );
 

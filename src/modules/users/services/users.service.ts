@@ -26,6 +26,11 @@ export interface UserProfile {
   created_at: Date;
   updated_at: Date;
   membership_status?: string | null;
+  membership_expires_at?: string | null;
+  membership_start_date?: string | null;
+  membership_category?: string | null;
+  membership_number?: string | null;
+  membership_days_remaining?: number | null;
   assistance_status?: string | null;
   account_type?: 'general' | 'member' | 'seeker' | 'admin';
 }
@@ -69,19 +74,17 @@ export class UsersService {
     });
     if (!user) return null;
 
-    let membershipStatus: string | null = null;
+    let membership: MembershipEntity | null = null;
     let assistanceStatus: string | null = null;
 
     try {
-      const membership = await this.dataSource
+      membership = await this.dataSource
         .getRepository(MembershipEntity)
         .findOne({
           where: { user_id: id },
           order: { created_at: 'DESC' },
+          relations: ['category'],
         });
-      if (membership) {
-        membershipStatus = membership.status;
-      }
     } catch {
       // Ignore if memberships table or repository unavailable
     }
@@ -100,12 +103,12 @@ export class UsersService {
       // Ignore if assistance_requests table or repository unavailable
     }
 
-    return this.toProfile(user, membershipStatus, assistanceStatus);
+    return this.toProfile(user, membership, assistanceStatus);
   }
 
   toProfile(
     user: UserEntity & { user_roles?: UserRoleEntity[] },
-    membershipStatus?: string | null,
+    membershipOrStatus?: MembershipEntity | string | null,
     assistanceStatus?: string | null,
   ): UserProfile {
     const roles = (user.user_roles ?? [])
@@ -115,6 +118,30 @@ export class UsersService {
         id: role.id,
         name: role.name,
       }));
+
+    let membershipStatus: string | null = null;
+    let membershipExpiresAt: string | null = null;
+    let membershipStartDate: string | null = null;
+    let membershipCategory: string | null = null;
+    let membershipNumber: string | null = null;
+    let membershipDaysRemaining: number | null = null;
+
+    if (membershipOrStatus && typeof membershipOrStatus === 'object') {
+      const m = membershipOrStatus as MembershipEntity;
+      membershipStatus = m.status;
+      membershipExpiresAt = m.expiry_date ? new Date(m.expiry_date).toISOString() : null;
+      membershipStartDate = m.start_date ? new Date(m.start_date).toISOString() : null;
+      membershipCategory = (m.application_data as any)?.membership_type || m.category?.name || null;
+      membershipNumber = m.membership_number ?? null;
+      if (m.expiry_date) {
+        membershipDaysRemaining = Math.max(
+          0,
+          Math.ceil((new Date(m.expiry_date).getTime() - Date.now()) / (1000 * 60 * 60 * 24)),
+        );
+      }
+    } else if (typeof membershipOrStatus === 'string') {
+      membershipStatus = membershipOrStatus;
+    }
 
     const roleNames = roles.map((r) => r.name.toUpperCase());
     let accountType: 'general' | 'member' | 'seeker' | 'admin' = 'general';
@@ -138,6 +165,11 @@ export class UsersService {
       created_at: user.created_at,
       updated_at: user.updated_at,
       membership_status: membershipStatus ?? null,
+      membership_expires_at: membershipExpiresAt,
+      membership_start_date: membershipStartDate,
+      membership_category: membershipCategory,
+      membership_number: membershipNumber,
+      membership_days_remaining: membershipDaysRemaining,
       assistance_status: assistanceStatus ?? null,
       account_type: accountType,
     };
