@@ -40,4 +40,7 @@ export class DonationEntity extends BaseEntity {
 
   @Column({ type: 'text', nullable: true })
   remark: string | null;
+
+  @Column({ type: 'varchar', length: 50, default: 'Website', nullable: true })
+  source: string | null;
 }

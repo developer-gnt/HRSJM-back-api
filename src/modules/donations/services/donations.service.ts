@@ -70,6 +70,7 @@ export class DonationsService {
       amount: dto.amount,
       status: 'PENDING',
       remark: dto.remark?.trim() || 'Donation from Website',
+      source: dto.source?.trim() || 'Website',
       created_by: actingUserId ?? null,
       updated_by: actingUserId ?? null,
     });
@@ -85,6 +86,7 @@ export class DonationsService {
         donor_name: saved.donor_name,
         amount: saved.amount,
         cause: saved.cause,
+        source: saved.source,
       },
     });
 
@@ -108,10 +110,14 @@ export class DonationsService {
       qb.andWhere('donation.status = :status', { status: dto.status });
     }
 
+    if (dto.source) {
+      qb.andWhere('LOWER(donation.source) = LOWER(:source)', { source: dto.source });
+    }
+
     if (dto.search) {
       const term = `%${dto.search.toLowerCase()}%`;
       qb.andWhere(
-        '(LOWER(donation.donor_name) LIKE :term OR LOWER(donation.donor_mobile) LIKE :term OR LOWER(donation.cause) LIKE :term)',
+        '(LOWER(donation.donor_name) LIKE :term OR LOWER(donation.donor_mobile) LIKE :term OR LOWER(donation.cause) LIKE :term OR LOWER(COALESCE(donation.source, \'\')) LIKE :term)',
         { term },
       );
     }

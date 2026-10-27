@@ -27,4 +27,9 @@ export class ListDonationsDto {
   @IsOptional()
   @IsString()
   search?: string;
+
+  @ApiPropertyOptional({ description: 'Filter by source platform: Website, Web App, Application UI' })
+  @IsOptional()
+  @IsString()
+  source?: string;
 }

@@ -70,4 +70,10 @@ export class CreateDonationDto {
   @IsOptional()
   @IsString()
   remark?: string;
+
+  @ApiPropertyOptional({ example: 'Website', description: 'Source platform: Website, Web App, or Application UI' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(50)
+  source?: string;
 }
