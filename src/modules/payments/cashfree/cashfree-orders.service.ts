@@ -545,6 +545,54 @@ export class CashfreeOrdersService {
       : null;
 
     if (!donationPayment && !membershipPayment && !existingTx) {
+      // Direct Cashfree lookup fallback before failing (e.g. registration order created without DB record)
+      try {
+        const cfOrder = await this.cashfreeService.getOrder(orderId);
+        if (cfOrder) {
+          const attempts = (await this.cashfreeService.getPaymentAttempts(orderId)) || [];
+          const successfulAttempt =
+            attempts.find((att: any) => att.payment_status === 'SUCCESS') ||
+            (cfOrder.order_status === 'PAID'
+              ? ({
+                  cf_payment_id: Date.now(),
+                  order_id: orderId,
+                  payment_status: 'SUCCESS',
+                  payment_amount: cfOrder.order_amount || 0,
+                  payment_currency: 'INR',
+                  payment_message: 'Confirmed via Cashfree order status',
+                  payment_time: new Date().toISOString(),
+                } as any)
+              : null);
+
+          if (successfulAttempt) {
+            const newTx = this.transactionsRepo.create({
+              gateway_name: 'CASHFREE',
+              gateway_order_id: orderId,
+              gateway_payment_id: String(successfulAttempt.cf_payment_id),
+              amount: Number(successfulAttempt.payment_amount || cfOrder.order_amount || 0),
+              status: 'SUCCESS',
+              raw_payload: cfOrder as Record<string, unknown>,
+            });
+            await this.transactionsRepo.save(newTx);
+
+            return {
+              status: 'SUCCESS',
+              order_id: orderId,
+              message: 'Membership registration payment confirmed via gateway',
+              payment: {
+                id: newTx.id,
+                amount: Number(newTx.amount),
+                gateway_order_id: orderId,
+                gateway_payment_id: String(successfulAttempt.cf_payment_id),
+                payment_status: 'SUCCESS',
+              },
+            };
+          }
+        }
+      } catch (directErr: any) {
+        this.logger.warn(`Gateway fallback lookup for ${orderId}: ${directErr.message}`);
+      }
+
       throw new NotFoundException(`No payment record found with gateway_order_id: ${orderId}`);
     }
 

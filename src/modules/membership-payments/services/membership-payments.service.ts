@@ -39,7 +39,6 @@ import {
 } from '../../renewals/entities/renewal-request.entity';
 import { addYearsSafe } from '../../renewals/services/renewal-calculation.service';
 import { MailService } from '../../mail/mail.service';
-import { resolveMembershipValidityDays } from '../../memberships/utils/membership-validity.util';
 
 function formatVoucherNumber(receiptDate: Date, seq: number): string {
   const y = receiptDate.getUTCFullYear();
