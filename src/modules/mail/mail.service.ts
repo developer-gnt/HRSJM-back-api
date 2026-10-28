@@ -1793,30 +1793,44 @@ https://hrsjm.org
   }
 
   /**
-   * Shoot Contact Form Acknowledgement Email to citizen and copy admin.
+   * Shoot Contact Form Acknowledgement Email to citizen and alert notification to admin.
    */
   async sendContactInquiryEmail(
     payload: ContactInquiryMailPayload,
-  ): Promise<boolean> {
+  ): Promise<{ citizenSent: boolean; adminSent: boolean; inquiryRef: string }> {
     const { senderName, senderEmail, senderPhone, subject, message, inquiryRef, submittedAt } = payload;
-    if (!senderEmail || !senderEmail.includes('@')) return false;
+    if (!senderEmail || !senderEmail.includes('@')) {
+      return { citizenSent: false, adminSent: false, inquiryRef: '' };
+    }
 
     const cleanName = senderName?.trim() || 'Citizen';
-    const ref = inquiryRef || `INQ-${Date.now().toString().slice(-6)}`;
-    const emailSubject = `Inquiry Received [${ref}]: ${subject || 'HRSJM Support & Information'}`;
+    const ref = inquiryRef || `INQ-${Date.now().toString(36).toUpperCase()}`;
+    const cleanSubject = subject?.trim() || 'General Inquiry';
+    const cleanPhone = senderPhone?.trim() || 'Not Provided';
+    const submittedDateStr = new Date(submittedAt || Date.now()).toLocaleString('en-IN', {
+      timeZone: 'Asia/Kolkata',
+      dateStyle: 'medium',
+      timeStyle: 'short',
+    });
 
-    const html = `
+    // 1. Citizen Acknowledgment Email
+    const citizenSubject = `Inquiry Received [${ref}] - Human Rights & Social Justice Mission`;
+    const citizenHtml = `
 <!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>${emailSubject}</title>
+  <title>${citizenSubject}</title>
   <style>
     body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background-color: #f1f5f9; margin: 0; padding: 24px 12px; color: #1e293b; }
     .card { max-width: 600px; margin: 0 auto; background: #ffffff; border-radius: 12px; overflow: hidden; border: 1px solid #e2e8f0; }
     .gold-bar { height: 5px; background: linear-gradient(90deg, #d4af37, #f3e5ab, #d4af37); }
     .header { background-color: #0F2C59; padding: 24px; text-align: center; color: #ffffff; }
     .content { padding: 28px 24px; }
+    .details-box { background: #f8fafc; border-radius: 8px; padding: 16px; margin: 20px 0; border: 1px solid #e2e8f0; font-size: 13.5px; }
+    .details-row { display: flex; padding: 6px 0; border-bottom: 1px solid #edf2f7; }
+    .details-label { font-weight: 600; width: 140px; color: #475569; }
+    .details-value { flex: 1; color: #0f172a; }
     .footer { background: #f8fafc; padding: 20px; text-align: center; border-top: 1px solid #e2e8f0; font-size: 12px; color: #64748b; }
   </style>
 </head>
@@ -1824,50 +1838,189 @@ https://hrsjm.org
   <div class="card">
     <div class="gold-bar"></div>
     <div class="header">
-      <h2 style="margin:0;font-size:18px;">HUMAN RIGHTS & SOCIAL JUSTICE MISSION</h2>
+      <h2 style="margin:0;font-size:18px;letter-spacing:0.5px;">HUMAN RIGHTS & SOCIAL JUSTICE MISSION</h2>
       <p style="margin:4px 0 0 0;font-size:12px;color:#cbd5e1;">Citizen Information & Helpdesk</p>
     </div>
     <div class="content">
       <h3 style="color:#0F2C59;margin-top:0;">Dear ${cleanName},</h3>
-      <p style="font-size:14px;color:#475569;line-height:1.5;">
-        Thank you for contacting the <strong>Human Rights & Social Justice Mission (HRSJM)</strong>. We have received your inquiry under reference number <strong>${ref}</strong>.
+      <p style="font-size:14px;color:#475569;line-height:1.6;">
+        Thank you for reaching out to the <strong>Human Rights & Social Justice Mission (HRSJM)</strong>. We have received your message regarding: <strong>${cleanSubject}</strong>.
       </p>
-      <div style="background:#f8fafc;border-left:4px solid #0F2C59;padding:14px;border-radius:6px;font-size:13px;margin:18px 0;color:#334155;line-height:1.5;">
-        <strong>Your Message:</strong><br/>
-        ${message}
+      <div class="details-box">
+        <div style="font-weight:700;color:#0F2C59;margin-bottom:8px;font-size:14px;">Your Submission Details:</div>
+        <div class="details-row"><span class="details-label">Reference ID:</span><span class="details-value"><strong>${ref}</strong></span></div>
+        <div class="details-row"><span class="details-label">Subject:</span><span class="details-value">${cleanSubject}</span></div>
+        <div class="details-row"><span class="details-label">Contact Phone:</span><span class="details-value">${cleanPhone}</span></div>
+        <div class="details-row"><span class="details-label">Submitted On:</span><span class="details-value">${submittedDateStr} (IST)</span></div>
+        <div style="margin-top:12px;padding-top:10px;border-top:1px dashed #cbd5e1;">
+          <div style="font-weight:600;color:#475569;margin-bottom:4px;">Your Message:</div>
+          <div style="color:#1e293b;line-height:1.5;white-space:pre-wrap;">${message}</div>
+        </div>
       </div>
-      <p style="font-size:13px;color:#64748b;line-height:1.5;">
-        Our secretariat team reviews all messages and will respond within 1-2 business days.
+      <p style="font-size:13.5px;color:#64748b;line-height:1.6;">
+        Our secretariat team reviews all incoming inquiries and will respond within <strong>24 to 48 hours</strong>.
+      </p>
+      <p style="font-size:12.5px;color:#94a3b8;line-height:1.5;margin-top:16px;">
+        For urgent matters, feel free to call our helpline at <strong>+91 7021057853</strong> or write to <strong>enquiry@hrsjm.org</strong> quoting reference <strong>${ref}</strong>.
       </p>
     </div>
     <div class="footer">
-      HRSJM National Secretariat · <a href="https://hrsjm.org" style="color:#0F2C59;">hrsjm.org</a> · <a href="mailto:contact@hrsjm.org" style="color:#0F2C59;">contact@hrsjm.org</a>
+      HRSJM National Secretariat · Sr. Mathuradas Vasani Rd, Marol Naka, Andheri East, Mumbai 400059<br/>
+      <a href="https://hrsjm.org" style="color:#0F2C59;text-decoration:none;font-weight:600;">hrsjm.org</a> · <a href="mailto:enquiry@hrsjm.org" style="color:#0F2C59;text-decoration:none;">enquiry@hrsjm.org</a>
     </div>
   </div>
 </body>
 </html>
     `.trim();
 
-    const plainText = `
+    const citizenPlainText = `
 HUMAN RIGHTS & SOCIAL JUSTICE MISSION (HRSJM)
 Inquiry Acknowledgment [${ref}]
 
 Dear ${cleanName},
 
-Thank you for reaching out to HRSJM. We have received your inquiry (${ref}).
-Our team will get back to you shortly.
+Thank you for reaching out to HRSJM. We have received your inquiry regarding "${cleanSubject}" under Reference Number: ${ref}.
 
-Human Rights & Social Justice Mission (HRSJM)
-https://hrsjm.org
+DETAILS:
+- Reference ID : ${ref}
+- Name         : ${cleanName}
+- Phone        : ${cleanPhone}
+- Subject      : ${cleanSubject}
+- Submitted On : ${submittedDateStr} (IST)
+
+YOUR MESSAGE:
+${message}
+
+Our secretariat team will get back to you within 24 to 48 hours.
+Helpline: +91 7021057853 | Email: enquiry@hrsjm.org | Website: https://hrsjm.org
     `.trim();
 
-    const result = await this.sendMail({
-      to: senderEmail,
-      subject: emailSubject,
-      html,
-      text: plainText,
-    });
-    return result.success;
+    // 2. Admin Notification Email
+    const adminEmail =
+      process.env.ADMIN_NOTIFICATION_EMAIL ||
+      process.env.ADMIN_EMAIL ||
+      process.env.MAIL_FROM ||
+      'thefarooquicollection@gmail.com';
+
+    const adminSubject = `[New Contact Inquiry] ${cleanName} - "${cleanSubject}" [${ref}]`;
+    const adminHtml = `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>${adminSubject}</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background-color: #f1f5f9; margin: 0; padding: 24px 12px; color: #1e293b; }
+    .card { max-width: 620px; margin: 0 auto; background: #ffffff; border-radius: 12px; overflow: hidden; border: 1px solid #e2e8f0; }
+    .alert-bar { height: 5px; background: #ea580c; }
+    .header { background-color: #0F2C59; padding: 22px 24px; color: #ffffff; }
+    .badge { display: inline-block; background: #ea580c; color: #ffffff; font-size: 11px; font-weight: 700; padding: 3px 8px; border-radius: 4px; text-transform: uppercase; margin-bottom: 8px; }
+    .content { padding: 24px; }
+    .info-table { width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 13.5px; }
+    .info-table td { padding: 8px 12px; border-bottom: 1px solid #edf2f7; }
+    .info-table td.label { width: 140px; font-weight: 600; color: #475569; background: #f8fafc; }
+    .message-card { background: #fffbeb; border: 1px solid #fef3c7; border-left: 4px solid #f59e0b; border-radius: 6px; padding: 16px; margin: 16px 0; font-size: 14px; color: #78350f; line-height: 1.6; }
+    .footer { background: #f8fafc; padding: 16px 24px; border-top: 1px solid #e2e8f0; font-size: 12px; color: #64748b; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="alert-bar"></div>
+    <div class="header">
+      <span class="badge">Website Contact Form</span>
+      <h2 style="margin:0;font-size:19px;">New Citizen Inquiry Received</h2>
+      <p style="margin:4px 0 0 0;font-size:12px;color:#cbd5e1;">Reference: ${ref}</p>
+    </div>
+    <div class="content">
+      <p style="font-size:14px;color:#334155;margin-top:0;">
+        A visitor has submitted a message via the <strong>HRSJM Contact Us</strong> form. Details are provided below:
+      </p>
+
+      <table class="info-table">
+        <tr>
+          <td class="label">Reference ID</td>
+          <td><strong>${ref}</strong></td>
+        </tr>
+        <tr>
+          <td class="label">Citizen Name</td>
+          <td><strong>${cleanName}</strong></td>
+        </tr>
+        <tr>
+          <td class="label">Email Address</td>
+          <td><a href="mailto:${senderEmail}" style="color:#0F2C59;font-weight:600;">${senderEmail}</a></td>
+        </tr>
+        <tr>
+          <td class="label">Phone Number</td>
+          <td><a href="tel:${cleanPhone}" style="color:#0F2C59;">${cleanPhone}</a></td>
+        </tr>
+        <tr>
+          <td class="label">Subject</td>
+          <td><strong>${cleanSubject}</strong></td>
+        </tr>
+        <tr>
+          <td class="label">Submitted At</td>
+          <td>${submittedDateStr} (IST)</td>
+        </tr>
+      </table>
+
+      <div style="font-weight:700;color:#0F2C59;margin:18px 0 6px 0;font-size:14px;">Inquiry Message:</div>
+      <div class="message-card">
+        ${message}
+      </div>
+
+      <div style="background:#eff6ff;border:1px solid #dbeafe;border-radius:6px;padding:12px 16px;font-size:13px;color:#1e40af;margin-top:16px;">
+        💡 <strong>Quick Action:</strong> Click "Reply" in your email client to respond directly to <strong>${cleanName}</strong> at <code>${senderEmail}</code>.
+      </div>
+    </div>
+    <div class="footer">
+      This is an automated notification from the HRSJM Website Portal.
+    </div>
+  </div>
+</body>
+</html>
+    `.trim();
+
+    const adminPlainText = `
+[NEW CONTACT INQUIRY RECEIVED]
+Reference ID : ${ref}
+Citizen Name : ${cleanName}
+Email        : ${senderEmail}
+Phone        : ${cleanPhone}
+Subject      : ${cleanSubject}
+Date & Time  : ${submittedDateStr} (IST)
+
+MESSAGE:
+${message}
+
+You can reply directly to this email to respond to ${senderEmail}.
+    `.trim();
+
+    // 3. Dispatch both emails in parallel
+    const [citizenResult, adminResult] = await Promise.all([
+      this.sendMail({
+        to: senderEmail,
+        subject: citizenSubject,
+        html: citizenHtml,
+        text: citizenPlainText,
+      }),
+      this.sendMail({
+        to: adminEmail,
+        replyTo: senderEmail,
+        subject: adminSubject,
+        html: adminHtml,
+        text: adminPlainText,
+      }),
+    ]);
+
+    this.logger.log(
+      `Contact inquiry [${ref}] processed: citizenEmail=${citizenResult.success ? 'sent' : 'failed'}, adminEmail=${adminResult.success ? 'sent' : 'failed'}`
+    );
+
+    return {
+      citizenSent: citizenResult.success,
+      adminSent: adminResult.success,
+      inquiryRef: ref,
+    };
   }
 }
 

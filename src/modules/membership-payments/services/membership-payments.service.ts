@@ -32,16 +32,13 @@ import { AccountingPostingService } from '../../accounting/services/accounting-p
 import { ACCOUNT_CODES } from '../../accounting/accounting.constants';
 import { ReferenceType } from '../../accounting/enums/accounting.enums';
 import { NotificationsService } from '../../notifications/services/notifications.service';
-<<<<<<< HEAD
 import {
   RenewalPaymentStatus,
   RenewalRequestEntity,
   RenewalStatus,
 } from '../../renewals/entities/renewal-request.entity';
 import { addYearsSafe } from '../../renewals/services/renewal-calculation.service';
-=======
 import { MailService } from '../../mail/mail.service';
->>>>>>> a25a39d98c43894871cebe86b2b4980b31f3c98a
 
 function formatVoucherNumber(receiptDate: Date, seq: number): string {
   const y = receiptDate.getUTCFullYear();

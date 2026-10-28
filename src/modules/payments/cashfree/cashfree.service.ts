@@ -113,7 +113,11 @@ export class CashfreeService {
         },
         order_meta: {
           return_url: input.returnUrl || this.returnUrl,
-          notify_url: this.webhookUrl,
+          ...(this.webhookUrl &&
+          !this.webhookUrl.includes('localhost') &&
+          !this.webhookUrl.includes('127.0.0.1')
+            ? { notify_url: this.webhookUrl }
+            : {}),
         },
         order_note: (input.purpose || 'HRSJM Payment').slice(0, 250),
       };

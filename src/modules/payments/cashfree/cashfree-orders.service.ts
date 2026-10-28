@@ -20,12 +20,9 @@ import { ReceiptEntity } from '../../membership-payments/entities/receipt.entity
 import { MembershipPaymentsService } from '../../membership-payments/services/membership-payments.service';
 import { CashfreeService } from './cashfree.service';
 import { CreateCashfreeOrderDto } from './dto/create-cashfree-order.dto';
-<<<<<<< HEAD
 import { RenewalRequestEntity } from '../../renewals/entities/renewal-request.entity';
 import { RenewalCalculationService } from '../../renewals/services/renewal-calculation.service';
-=======
 import { UserEntity } from '../../users/entities/user.entity';
->>>>>>> a25a39d98c43894871cebe86b2b4980b31f3c98a
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 function toValidUuid(val?: string | null): string | undefined {
@@ -353,7 +350,9 @@ export class CashfreeOrdersService {
         throw new ForbiddenException('You do not own this membership payment');
       }
 
-<<<<<<< HEAD
+      // Authoritatively fetch current user's profile from database
+      const dbUser = await this.getDbUser(safeActingUuid || payment.user_id);
+
       // Check if renewal payment and recalculate authoritative quote on server (Test 9)
       let renewalQuote: any = null;
       const mem =
@@ -402,13 +401,6 @@ export class CashfreeOrdersService {
       const orderAmount = renewalQuote
         ? renewalQuote.total_payable
         : Number(dto.amount !== undefined && dto.amount > 0 ? dto.amount : payment.amount);
-
-=======
-      // Authoritatively fetch current user's profile from database
-      const dbUser = await this.getDbUser(safeActingUuid || payment.user_id);
-
-      const orderAmount = Number(dto.amount !== undefined && dto.amount > 0 ? dto.amount : payment.amount);
->>>>>>> a25a39d98c43894871cebe86b2b4980b31f3c98a
       const orderId = `hrsjm_mem_${payment.id.replace(/-/g, '').slice(0, 16)}_${Date.now().toString(36)}`;
 
       // Prioritize mobile number fetched from current user's database record
@@ -553,6 +545,54 @@ export class CashfreeOrdersService {
       : null;
 
     if (!donationPayment && !membershipPayment && !existingTx) {
+      // Direct Cashfree lookup fallback before failing (e.g. registration order created without DB record)
+      try {
+        const cfOrder = await this.cashfreeService.getOrder(orderId);
+        if (cfOrder) {
+          const attempts = (await this.cashfreeService.getPaymentAttempts(orderId)) || [];
+          const successfulAttempt =
+            attempts.find((att: any) => att.payment_status === 'SUCCESS') ||
+            (cfOrder.order_status === 'PAID'
+              ? ({
+                  cf_payment_id: Date.now(),
+                  order_id: orderId,
+                  payment_status: 'SUCCESS',
+                  payment_amount: cfOrder.order_amount || 0,
+                  payment_currency: 'INR',
+                  payment_message: 'Confirmed via Cashfree order status',
+                  payment_time: new Date().toISOString(),
+                } as any)
+              : null);
+
+          if (successfulAttempt) {
+            const newTx = this.transactionsRepo.create({
+              gateway_name: 'CASHFREE',
+              gateway_order_id: orderId,
+              gateway_payment_id: String(successfulAttempt.cf_payment_id),
+              amount: Number(successfulAttempt.payment_amount || cfOrder.order_amount || 0),
+              status: 'SUCCESS',
+              raw_payload: cfOrder as Record<string, unknown>,
+            });
+            await this.transactionsRepo.save(newTx);
+
+            return {
+              status: 'SUCCESS',
+              order_id: orderId,
+              message: 'Membership registration payment confirmed via gateway',
+              payment: {
+                id: newTx.id,
+                amount: Number(newTx.amount),
+                gateway_order_id: orderId,
+                gateway_payment_id: String(successfulAttempt.cf_payment_id),
+                payment_status: 'SUCCESS',
+              },
+            };
+          }
+        }
+      } catch (directErr: any) {
+        this.logger.warn(`Gateway fallback lookup for ${orderId}: ${directErr.message}`);
+      }
+
       throw new NotFoundException(`No payment record found with gateway_order_id: ${orderId}`);
     }
 
