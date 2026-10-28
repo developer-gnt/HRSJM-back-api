@@ -369,7 +369,36 @@ export class MembershipsService {
       .take(limit);
 
     if (dto.status) {
-      qb.andWhere('membership.status = :status', { status: dto.status });
+      if (dto.status === 'ACTIVE') {
+        qb.andWhere(
+          '(membership.status IN (:...activeStatuses) OR (user.status = :userActiveStatus AND membership.status NOT IN (:...excludeStatuses)))',
+          {
+            activeStatuses: [MembershipStatus.ACTIVE, MembershipStatus.APPROVED],
+            userActiveStatus: 'ACTIVE',
+            excludeStatuses: [
+              MembershipStatus.EXPIRED,
+              MembershipStatus.CANCELLED,
+              MembershipStatus.REJECTED,
+              MembershipStatus.SUSPENDED,
+            ],
+          },
+        );
+      } else if ((dto.status as string) === 'INACTIVE' || dto.status === MembershipStatus.SUSPENDED) {
+        qb.andWhere(
+          '(membership.status IN (:...inactiveStatuses) OR user.status IN (:...userInactiveStatuses))',
+          {
+            inactiveStatuses: [
+              MembershipStatus.EXPIRED,
+              MembershipStatus.CANCELLED,
+              MembershipStatus.REJECTED,
+              MembershipStatus.SUSPENDED,
+            ],
+            userInactiveStatuses: ['INACTIVE', 'SUSPENDED'],
+          },
+        );
+      } else {
+        qb.andWhere('membership.status = :status', { status: dto.status });
+      }
     }
     if (dto.category_id) {
       qb.andWhere('membership.category_id = :categoryId', {
@@ -513,12 +542,21 @@ export class MembershipsService {
     applyFilters(totalQb);
     const total = await totalQb.getCount();
 
-    const activeQb = this.memberships
-      .createQueryBuilder('m')
-      .where('m.status IN (:...activeStatuses)', {
-        activeStatuses: [MembershipStatus.ACTIVE, MembershipStatus.APPROVED],
-      });
+    const activeQb = this.memberships.createQueryBuilder('m');
     applyFilters(activeQb);
+    activeQb.andWhere(
+      '(m.status IN (:...activeStatuses) OR (u.status = :userActiveStatus AND m.status NOT IN (:...excludeStatuses)))',
+      {
+        activeStatuses: [MembershipStatus.ACTIVE, MembershipStatus.APPROVED],
+        userActiveStatus: 'ACTIVE',
+        excludeStatuses: [
+          MembershipStatus.EXPIRED,
+          MembershipStatus.CANCELLED,
+          MembershipStatus.REJECTED,
+          MembershipStatus.SUSPENDED,
+        ],
+      },
+    );
     const active = await activeQb.getCount();
 
     const now = new Date();
@@ -535,17 +573,21 @@ export class MembershipsService {
     applyFilters(expiringSoonQb);
     const expiringSoon = await expiringSoonQb.getCount();
 
-    const inactiveQb = this.memberships
-      .createQueryBuilder('m')
-      .where('m.status IN (:...statuses)', {
+    const inactiveQb = this.memberships.createQueryBuilder('m');
+    applyFilters(inactiveQb);
+    inactiveQb.andWhere(
+      '(m.status IN (:...statuses) OR u.status IN (:...userInactiveStatuses))',
+      {
         statuses: [
           MembershipStatus.EXPIRED,
           MembershipStatus.SUSPENDED,
           MembershipStatus.CANCELLED,
           MembershipStatus.REJECTED,
+          MembershipStatus.SUSPENDED,
         ],
-      });
-    applyFilters(inactiveQb);
+        userInactiveStatuses: ['INACTIVE', 'SUSPENDED'],
+      },
+    );
     const inactive = await inactiveQb.getCount();
 
     const pendingQb = this.memberships
@@ -1100,11 +1142,32 @@ export class MembershipsService {
 
   private async generateMemberNumber(): Promise<string> {
     try {
-      const count = typeof this.memberships?.count === 'function' ? await this.memberships.count() : 0;
-      const nextNum = count + 1;
-      return `HRSJM-${String(nextNum).padStart(5, '0')}`;
+      const allMembers = await this.memberships
+        .createQueryBuilder('m')
+        .select('m.membership_number')
+        .where("m.membership_number LIKE 'HRSJM-%'")
+        .andWhere("m.membership_number NOT LIKE 'HRSJM-SEK%'")
+        .getRawMany();
+
+      let maxNum = 0;
+      for (const row of allMembers) {
+        const val = row.m_membership_number || row.membership_number;
+        if (val && typeof val === 'string' && val.startsWith('HRSJM-')) {
+          const num = parseInt(val.replace('HRSJM-', ''), 10);
+          if (!isNaN(num) && num > maxNum) {
+            maxNum = num;
+          }
+        }
+      }
+      let nextNum = maxNum + 1;
+      let candidate = `HRSJM-${String(nextNum).padStart(5, '0')}`;
+      while (await this.memberships.findOne({ where: { membership_number: candidate } })) {
+        nextNum++;
+        candidate = `HRSJM-${String(nextNum).padStart(5, '0')}`;
+      }
+      return candidate;
     } catch {
-      return 'HRSJM-00001';
+      return `HRSJM-${String(Date.now()).slice(-5)}`;
     }
   }
 
