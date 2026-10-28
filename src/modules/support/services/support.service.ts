@@ -579,11 +579,11 @@ ${dto.details.trim()}`;
       const descNameMatch = desc.match(/(?:Full Name|Complainant)\s*:\s*([^\n\r]+)/);
 
       const recipientEmail =
-        ticket.user?.email ||
-        (descEmailMatch ? descEmailMatch[1].trim() : null);
+        (descEmailMatch ? descEmailMatch[1].trim() : null) ||
+        ticket.user?.email;
       const recipientName =
-        ticket.user?.full_name ||
         (descNameMatch ? descNameMatch[1].trim() : null) ||
+        ticket.user?.full_name ||
         'Citizen';
 
       if (
@@ -595,8 +595,8 @@ ${dto.details.trim()}`;
         const catMatch = saved.subject.match(/^\[(?:Complaint:\s*)?(.*?)\]/i);
         const category = catMatch ? catMatch[1].trim() : 'Grievance';
 
-        this.mailService
-          .sendTicketStatusUpdateEmail({
+        try {
+          await this.mailService.sendTicketStatusUpdateEmail({
             complainantName: recipientName,
             complainantEmail: recipientEmail,
             ticketId: ticketRef,
@@ -605,12 +605,15 @@ ${dto.details.trim()}`;
             status: saved.status as any,
             note: dto.note?.trim(),
             updatedAt: saved.updated_at || new Date(),
-          })
-          .catch((mailErr) => {
-            this.logger.error(
-              `[SupportService] Failed to send status update email for ${ticketRef}: ${mailErr.message}`,
-            );
           });
+          this.logger.log(
+            `[SupportService] Dispatched status update email (${saved.status}) for ${ticketRef} to ${recipientEmail}`,
+          );
+        } catch (mailErr) {
+          this.logger.error(
+            `[SupportService] Failed to send status update email for ${ticketRef}: ${mailErr.message}`,
+          );
+        }
       }
     } catch (mailTriggerErr) {
       this.logger.warn(`Error resolving email for ticket update: ${(mailTriggerErr as Error).message}`);

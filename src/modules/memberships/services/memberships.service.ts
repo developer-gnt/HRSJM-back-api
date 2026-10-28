@@ -1,4 +1,4 @@
-import {
+﻿import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
@@ -240,6 +240,42 @@ export class MembershipsService {
 
     const saved = await this.memberships.save(membership);
 
+    // Record initial membership payment if category has fee
+    const extraData = appData as Record<string, any>;
+    const feeAmount = category.fee
+      ? Number(category.fee)
+      : extraData.package_fee
+        ? Number(String(extraData.package_fee).replace(/[^0-9.]/g, ''))
+        : 0;
+
+    if (feeAmount > 0) {
+      try {
+        const existingPayment = await this.payments.findOne({
+          where: { membership_id: saved.id },
+        });
+        if (!existingPayment) {
+          const newPayment = this.payments.create({
+            membership_id: saved.id,
+            user_id: targetUserId,
+            amount: feeAmount,
+            payment_method: (extraData.payment_mode as string) || 'ONLINE',
+            payment_status: 'SUCCESS',
+            gateway_payment_id:
+              (extraData.payment_order_id as string) ||
+              (extraData.payment_reference as string) ||
+              (extraData.gateway_payment_id as string) ||
+              `PAY-${Date.now()}`,
+            payment_date: new Date(),
+            created_by: actingUserId || targetUserId,
+            updated_by: actingUserId || targetUserId,
+          });
+          await this.payments.save(newPayment);
+        }
+      } catch (payErr: any) {
+        console.warn(`[MembershipsService] Could not persist payment record: ${payErr?.message}`);
+      }
+    }
+
     await this.audit.record({
       event: 'membership.applied',
       actorId: actingUserId || targetUserId,
@@ -278,6 +314,7 @@ export class MembershipsService {
     dto: CreateMembershipDto,
     appData: Record<string, unknown>,
   ) {
+    const extraData = appData as Record<string, any>;
     const appRef =
       membership.membership_number || `HRSJM-APP-${membership.id.slice(0, 8).toUpperCase()}`;
     const applicantEmail = dto.email || (appData.email as string);
@@ -298,13 +335,13 @@ export class MembershipsService {
           categoryName: category.name || (appData.package_name as string) || 'Membership',
           amount: feeAmount,
           transactionId:
-            (appData.payment_order_id as string) ||
-            (appData.payment_reference as string) ||
-            (appData.gateway_payment_id as string),
+            (extraData.payment_order_id as string) ||
+            (extraData.payment_reference as string) ||
+            (extraData.gateway_payment_id as string),
           paymentOrderRef:
-            (appData.payment_order_id as string) || (appData.payment_reference as string),
+            (extraData.payment_order_id as string) || (extraData.payment_reference as string),
           paymentMethod:
-            (appData.payment_mode as string) || 'Online (Cashfree Payment Gateway)',
+            (extraData.payment_mode as string) || 'Online (Cashfree Payment Gateway)',
           paymentDate: new Date(),
           status: membership.status,
         })
@@ -358,16 +395,23 @@ export class MembershipsService {
     const [rawItems, total] = await qb.getManyAndCount();
 
     const membershipIds = rawItems.map((m) => m.id);
+    const userIds = rawItems.map((m) => m.user_id).filter(Boolean);
     const paymentMap = new Map<string, MembershipPaymentEntity>();
 
     if (membershipIds.length > 0) {
       const paymentList = await this.payments.find({
-        where: { membership_id: In(membershipIds) },
+        where: [
+          { membership_id: In(membershipIds) },
+          ...(userIds.length > 0 ? [{ user_id: In(userIds) }] : []),
+        ],
         order: { created_at: 'DESC' },
       });
       for (const p of paymentList) {
-        if (!paymentMap.has(p.membership_id)) {
+        if (p.membership_id && !paymentMap.has(p.membership_id)) {
           paymentMap.set(p.membership_id, p);
+        }
+        if (p.user_id && !paymentMap.has(p.user_id)) {
+          paymentMap.set(p.user_id, p);
         }
       }
     }
@@ -377,7 +421,7 @@ export class MembershipsService {
       if (m.user) {
         delete (m.user as { password_hash?: string }).password_hash;
       }
-      return this.enrichMembershipPaymentDetails(m, paymentMap.get(m.id));
+      return this.enrichMembershipPaymentDetails(m, paymentMap.get(m.id) || paymentMap.get(m.user_id));
     });
 
     return {
@@ -411,13 +455,17 @@ export class MembershipsService {
             ? Number(String(appAmount).replace(/[^0-9.]/g, '')) || 0
             : 0;
 
+    const isSeeker =
+      (appData.type as string) === 'DONATION_SEEKER' ||
+      (appData.membership_type as string) === 'Donation Seeker' ||
+      (membership.category?.name as string) === 'Donation Seeker';
+
     const resolvedPaymentStatus =
       payment?.payment_status ||
       (appData.payment_status as string) ||
-      (membership.status === MembershipStatus.ACTIVE ||
-      membership.status === MembershipStatus.APPROVED
-        ? 'SUCCESS'
-        : 'PENDING');
+      (isSeeker
+        ? 'EXEMPT'
+        : 'SUCCESS');
 
     membership.payment = payment || null;
     membership.payment_amount = resolvedAmount;
@@ -456,13 +504,20 @@ export class MembershipsService {
       return qb;
     };
 
-    const totalQb = this.memberships.createQueryBuilder('m');
+    // Total = only real members (approved/active/expired/blocked); excludes pending applicants
+    const totalQb = this.memberships
+      .createQueryBuilder('m')
+      .where('m.status NOT IN (:...excludedStatuses)', {
+        excludedStatuses: [MembershipStatus.PENDING, MembershipStatus.UNDER_REVIEW],
+      });
     applyFilters(totalQb);
     const total = await totalQb.getCount();
 
     const activeQb = this.memberships
       .createQueryBuilder('m')
-      .where('m.status = :status', { status: MembershipStatus.ACTIVE });
+      .where('m.status IN (:...activeStatuses)', {
+        activeStatuses: [MembershipStatus.ACTIVE, MembershipStatus.APPROVED],
+      });
     applyFilters(activeQb);
     const active = await activeQb.getCount();
 
@@ -472,7 +527,9 @@ export class MembershipsService {
 
     const expiringSoonQb = this.memberships
       .createQueryBuilder('m')
-      .where('m.status = :status', { status: MembershipStatus.ACTIVE })
+      .where('m.status IN (:...expStatuses)', {
+        expStatuses: [MembershipStatus.ACTIVE, MembershipStatus.APPROVED],
+      })
       .andWhere('m.expiry_date >= :now', { now })
       .andWhere('m.expiry_date <= :in30Days', { in30Days });
     applyFilters(expiringSoonQb);
@@ -483,6 +540,7 @@ export class MembershipsService {
       .where('m.status IN (:...statuses)', {
         statuses: [
           MembershipStatus.EXPIRED,
+          MembershipStatus.SUSPENDED,
           MembershipStatus.CANCELLED,
           MembershipStatus.REJECTED,
         ],
@@ -538,7 +596,7 @@ export class MembershipsService {
     }
 
     const payment = await this.payments.findOne({
-      where: { membership_id: id },
+      where: [{ membership_id: id }, ...(membership.user_id ? [{ user_id: membership.user_id }] : [])],
       order: { created_at: 'DESC' },
     });
 
