@@ -1,4 +1,4 @@
-﻿import {
+import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
@@ -178,6 +178,7 @@ export class MembershipsService {
       ...(dto.email ? { email: dto.email } : {}),
       ...(policeStation ? { police_station: policeStation } : {}),
     };
+    const extraData = appData as Record<string, any>;
 
     if (existingActiveOrPending) {
       if (!isAdmin) {
@@ -214,13 +215,31 @@ export class MembershipsService {
         }
       }
 
+      const isPaid = extraData.payment_status === 'SUCCESS' || extraData.payment_completed === true;
+      const shouldBeActive = Boolean(isAdmin && isPaid);
+
       existingActiveOrPending.application_data = Object.keys(appData).length > 0 ? appData : null;
       existingActiveOrPending.category_id = category.id;
-      existingActiveOrPending.status = MembershipStatus.PENDING;
+      existingActiveOrPending.status = shouldBeActive ? MembershipStatus.ACTIVE : MembershipStatus.PENDING;
       existingActiveOrPending.applied_at = new Date();
       existingActiveOrPending.created_at = new Date();
       existingActiveOrPending.updated_at = new Date();
-      existingActiveOrPending.approval_date = null;
+      if (shouldBeActive) {
+        if (!existingActiveOrPending.membership_number) {
+          existingActiveOrPending.membership_number = await this.generateMemberNumber();
+        }
+        existingActiveOrPending.start_date = new Date();
+        existingActiveOrPending.approval_date = new Date();
+        const validityDays = category.validity_days || 365;
+        const expiry = new Date();
+        expiry.setDate(expiry.getDate() + validityDays);
+        existingActiveOrPending.expiry_date = expiry;
+        try {
+          await this.usersService.assignMemberRole(targetUserId);
+        } catch {}
+      } else {
+        existingActiveOrPending.approval_date = null;
+      }
       existingActiveOrPending.rejection_reason = null;
       existingActiveOrPending.updated_by = actingUserId || targetUserId;
       const saved = await this.memberships.save(existingActiveOrPending);
@@ -228,10 +247,33 @@ export class MembershipsService {
       return saved;
     }
 
+    // reuse extraData from above
+    const isPaid = extraData.payment_status === 'SUCCESS' || extraData.payment_completed === true;
+    const shouldBeActive = Boolean(isAdmin && isPaid);
+    let initialStatus = shouldBeActive ? MembershipStatus.ACTIVE : MembershipStatus.PENDING;
+    let initialNumber: string | null = null;
+    let initialStartDate: Date | null = null;
+    let initialExpiryDate: Date | null = null;
+    let initialApprovalDate: Date | null = null;
+
+    if (shouldBeActive) {
+      initialNumber = await this.generateMemberNumber();
+      initialStartDate = new Date();
+      initialApprovalDate = new Date();
+      const validityDays = category.validity_days || 365;
+      const expiry = new Date();
+      expiry.setDate(expiry.getDate() + validityDays);
+      initialExpiryDate = expiry;
+    }
+
     const membership = this.memberships.create({
       user_id: targetUserId,
       category_id: category.id,
-      status: MembershipStatus.PENDING,
+      status: initialStatus,
+      membership_number: initialNumber,
+      start_date: initialStartDate,
+      expiry_date: initialExpiryDate,
+      approval_date: initialApprovalDate,
       application_data: Object.keys(appData).length > 0 ? appData : null,
       admin_notes: dto.admin_notes ?? null,
       created_by: actingUserId || targetUserId,
@@ -240,8 +282,15 @@ export class MembershipsService {
 
     const saved = await this.memberships.save(membership);
 
+    if (shouldBeActive) {
+      try {
+        await this.usersService.assignMemberRole(targetUserId);
+      } catch (err: any) {
+        console.warn(`[MembershipsService] Could not assign member role: ${err?.message}`);
+      }
+    }
+
     // Record initial membership payment if category has fee
-    const extraData = appData as Record<string, any>;
     const feeAmount = category.fee
       ? Number(category.fee)
       : extraData.package_fee
@@ -637,10 +686,12 @@ export class MembershipsService {
       delete (membership.user as { password_hash?: string }).password_hash;
     }
 
-    const payment = await this.payments.findOne({
-      where: [{ membership_id: id }, ...(membership.user_id ? [{ user_id: membership.user_id }] : [])],
-      order: { created_at: 'DESC' },
-    });
+    const payment = (this.payments && typeof this.payments.findOne === 'function')
+      ? await this.payments.findOne({
+          where: [{ membership_id: id }, ...(membership.user_id ? [{ user_id: membership.user_id }] : [])],
+          order: { created_at: 'DESC' },
+        })
+      : null;
 
     return this.enrichMembershipPaymentDetails(membership, payment);
   }
