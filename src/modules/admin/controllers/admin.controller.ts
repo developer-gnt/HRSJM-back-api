@@ -1,7 +1,10 @@
 import {
+  Body,
   Controller,
   Get,
   Param,
+  Post,
+  Put,
   Query,
   UseGuards,
 } from '@nestjs/common';
@@ -43,5 +46,29 @@ export class AdminController {
   @ApiOperation({ summary: 'Get comprehensive 360-degree view of a member' })
   getMember360(@Param('id') id: string) {
     return this.adminService.getMember360(id);
+  }
+
+  @Get('settings')
+  @ApiOperation({ summary: 'Get all system settings' })
+  getSettings() {
+    return this.adminService.getSettings();
+  }
+
+  @Get('settings/:key')
+  @ApiOperation({ summary: 'Get a specific system setting' })
+  getSetting(@Param('key') key: string) {
+    return this.adminService.getSetting(key);
+  }
+
+  @Put('settings/:key')
+  @ApiOperation({ summary: 'Update a specific system setting' })
+  updateSetting(@Param('key') key: string, @Body() body: any) {
+    return this.adminService.updateSetting(key, body);
+  }
+
+  @Post('settings/:key')
+  @ApiOperation({ summary: 'Update a specific system setting (POST)' })
+  saveSetting(@Param('key') key: string, @Body() body: any) {
+    return this.adminService.updateSetting(key, body);
   }
 }

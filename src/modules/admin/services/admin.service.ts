@@ -1,3 +1,4 @@
+import { SystemSettingEntity } from '../entities/system-setting.entity';
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, IsNull, Not, Repository } from 'typeorm';
@@ -59,6 +60,8 @@ export class AdminService {
     private readonly auditRepo: Repository<AuditLogEntity>,
     @InjectRepository(EventEntity)
     private readonly eventsRepo: Repository<EventEntity>,
+    @InjectRepository(SystemSettingEntity)
+    private readonly settingsRepo: Repository<SystemSettingEntity>,
   ) {}
 
   async getDashboard(month?: string, growthMonths?: number) {
@@ -510,5 +513,30 @@ export class AdminService {
       },
       notifications: { read: readCount, unread: unreadCount },
     };
+  }
+
+  async getSettings(): Promise<Record<string, any>> {
+    const rows = await this.settingsRepo.find();
+    const result: Record<string, any> = {};
+    for (const row of rows) {
+      result[row.key] = row.value;
+    }
+    return result;
+  }
+
+  async getSetting(key: string): Promise<Record<string, any>> {
+    const row = await this.settingsRepo.findOne({ where: { key } });
+    return row ? row.value : { enabled: false, status: 'Disabled / Inactive' };
+  }
+
+  async updateSetting(key: string, value: Record<string, any>): Promise<Record<string, any>> {
+    let row = await this.settingsRepo.findOne({ where: { key } });
+    if (!row) {
+      row = this.settingsRepo.create({ key, value });
+    } else {
+      row.value = value;
+    }
+    await this.settingsRepo.save(row);
+    return row.value;
   }
 }
