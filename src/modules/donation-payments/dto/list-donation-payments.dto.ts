@@ -51,4 +51,11 @@ export class ListDonationPaymentsDto {
   @IsString()
   @MaxLength(255)
   search?: string;
+
+  @IsOptional()
+  @IsUUID()
+  user_id?: string;
+
+  @IsOptional()
+  my_only?: boolean;
 }

@@ -1,17 +1,23 @@
-import { Column, Entity, Index } from 'typeorm';
+import { Column, Entity, Index, JoinColumn, ManyToOne } from 'typeorm';
 import { BaseEntity } from '../../../common/entities/base.entity';
+import { UserEntity } from '../../users/entities/user.entity';
 
 /**
- * Minimal donations scaffold — full donation/donor/cause CRUD belongs to
- * Arshad (junior backend). This table exists so Phase 9's payment flow has
- * an authoritative donation record; Arshad extends it with his own module.
- * The final donation-status enum and approved-cause catalogue are TBC
- * (BRD §54 items 17/18/19) — status is a plain varchar until confirmed.
+ * Authoritative donations entity. Stores donation intent and details,
+ * linked to the donating user (when authenticated) and donation payments.
  */
 @Entity('donations')
 @Index('idx_donations_status', ['status'])
 @Index('idx_donations_donor_mobile', ['donor_mobile'])
+@Index('idx_donations_user_id', ['user_id'])
 export class DonationEntity extends BaseEntity {
+  @Column({ type: 'uuid', nullable: true })
+  user_id: string | null;
+
+  @ManyToOne(() => UserEntity, { onDelete: 'SET NULL', nullable: true })
+  @JoinColumn({ name: 'user_id' })
+  user?: UserEntity | null;
+
   @Column({ type: 'varchar', length: 150 })
   donor_name: string;
 

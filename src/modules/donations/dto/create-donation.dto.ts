@@ -76,4 +76,9 @@ export class CreateDonationDto {
   @IsString()
   @MaxLength(50)
   source?: string;
+
+  @ApiPropertyOptional({ description: 'User ID of authenticated donor' })
+  @IsOptional()
+  @IsString()
+  user_id?: string;
 }

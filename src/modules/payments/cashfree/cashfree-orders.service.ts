@@ -129,7 +129,7 @@ export class CashfreeOrdersService {
   ) {
     let payment: DonationPaymentEntity | null = null;
     const paymentId = dto.reference_id?.trim();
-    const validActingUserId = this.toValidUuidOrNull(actingUserId);
+    const validActingUserId = this.toValidUuidOrNull(actingUserId) || this.toValidUuidOrNull(dto.user_id);
 
     if (paymentId) {
       payment = await this.donationPaymentsRepo.findOne({
@@ -293,7 +293,7 @@ export class CashfreeOrdersService {
   ) {
     let payment: MembershipPaymentEntity | null = null;
     const refId = dto.reference_id?.trim();
-    const validActingUserId = this.toValidUuidOrNull(actingUserId);
+    const validActingUserId = this.toValidUuidOrNull(actingUserId) || this.toValidUuidOrNull(dto.user_id);
 
     if (refId) {
       payment = await this.membershipPaymentsRepo.findOne({

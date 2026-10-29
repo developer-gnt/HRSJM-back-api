@@ -111,7 +111,7 @@ export class MembershipPaymentsService implements OnModuleInit {
 
     const payment = this.payments.create({
       membership_id: membership.id,
-      user_id: membership.user_id,
+      user_id: membership.user_id || dto.user_id || actingUserId,
       amount,
       payment_method: dto.payment_method ?? 'ONLINE',
       payment_status: PaymentStatus.PENDING,

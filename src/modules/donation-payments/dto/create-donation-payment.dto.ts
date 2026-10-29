@@ -37,4 +37,8 @@ export class CreateDonationPaymentDto {
   @IsString()
   @MaxLength(1000)
   notes?: string;
+
+  @IsOptional()
+  @IsString()
+  user_id?: string;
 }

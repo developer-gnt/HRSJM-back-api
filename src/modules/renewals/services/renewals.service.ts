@@ -95,6 +95,7 @@ export class RenewalsService {
     const renewal = this.renewalsRepo.create({
       membership_id: dto.membership_id,
       requested_by: requestedBy,
+      user_id: requestedBy || dto.user_id,
       period_years: periodYears,
       amount,
       payment_method: dto.payment_method || 'CASH',

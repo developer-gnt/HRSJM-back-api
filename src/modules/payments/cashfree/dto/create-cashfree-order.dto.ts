@@ -43,4 +43,9 @@ export class CreateCashfreeOrderDto {
   @IsOptional()
   @IsString()
   return_url?: string;
+
+  @ApiPropertyOptional({ description: 'User ID of the donor / member' })
+  @IsOptional()
+  @IsString()
+  user_id?: string;
 }

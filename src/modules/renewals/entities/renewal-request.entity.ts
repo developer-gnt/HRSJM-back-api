@@ -35,6 +35,7 @@ export enum RenewalPaymentMethod {
 @Index('idx_membership_renewals_membership_id', ['membership_id'])
 @Index('idx_membership_renewals_status', ['status'])
 @Index('idx_membership_renewals_requested_by', ['requested_by'])
+@Index('idx_membership_renewals_user_id', ['user_id'])
 export class RenewalRequestEntity extends BaseEntity {
   @Column({ type: 'uuid' })
   membership_id: string;
@@ -49,6 +50,13 @@ export class RenewalRequestEntity extends BaseEntity {
   @ManyToOne(() => UserEntity, { onDelete: 'RESTRICT' })
   @JoinColumn({ name: 'requested_by' })
   requested_by_user?: UserEntity;
+
+  @Column({ type: 'uuid', nullable: true })
+  user_id?: string | null;
+
+  @ManyToOne(() => UserEntity, { onDelete: 'SET NULL', nullable: true })
+  @JoinColumn({ name: 'user_id' })
+  user?: UserEntity | null;
 
   @Column({ type: 'integer', default: 1 })
   period_years: number;

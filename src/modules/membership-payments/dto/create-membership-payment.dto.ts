@@ -28,4 +28,8 @@ export class CreateMembershipPaymentDto {
   @IsOptional()
   @IsString()
   notes?: string;
+
+  @IsOptional()
+  @IsUUID()
+  user_id?: string;
 }

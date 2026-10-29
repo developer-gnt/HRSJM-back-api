@@ -46,13 +46,14 @@ export class DonationsService {
     dto: CreateDonationDto,
     actingUserId?: string,
   ): Promise<DonationEntity> {
+    const resolvedUserId = actingUserId || dto.user_id || null;
     let dbUserMobile = '';
     let dbUserName = '';
     let dbUserEmail = '';
-    if (actingUserId && this.dataSource) {
+    if (resolvedUserId && this.dataSource) {
       try {
         const usersRepo = this.dataSource.getRepository(UserEntity);
-        const user = await usersRepo.findOne({ where: { id: actingUserId } });
+        const user = await usersRepo.findOne({ where: { id: resolvedUserId } });
         if (user) {
           dbUserMobile = user.mobile_number || '';
           dbUserName = user.full_name || '';
@@ -67,6 +68,7 @@ export class DonationsService {
     const donorName = (dbUserName || dto.donor_name || 'HRSJM Donor').trim();
 
     const donation = this.donations.create({
+      user_id: resolvedUserId,
       donor_name: donorName,
       donor_mobile: mobile.trim(),
       donor_email: email ? email.trim().toLowerCase() : null,
@@ -75,18 +77,19 @@ export class DonationsService {
       status: 'PENDING',
       remark: dto.remark?.trim() || 'Donation from Website',
       source: dto.source?.trim() || 'Website',
-      created_by: actingUserId ?? null,
-      updated_by: actingUserId ?? null,
+      created_by: resolvedUserId,
+      updated_by: resolvedUserId,
     });
 
     const saved = await this.donations.save(donation);
 
     await this.audit.record({
       event: 'donation.created',
-      actorId: actingUserId ?? null,
+      actorId: resolvedUserId,
       entityType: 'donations',
       entityId: saved.id,
       metadata: {
+        userId: saved.user_id,
         donor_name: saved.donor_name,
         amount: saved.amount,
         cause: saved.cause,
