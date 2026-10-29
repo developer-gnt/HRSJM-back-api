@@ -65,6 +65,55 @@ export class UpdateUserDto {
   @IsOptional()
   @IsString()
   avatar?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(20)
+  gender?: string;
+
+  @IsOptional()
+  @IsString()
+  address?: string;
+}
+
+export class CreateUserAdminDto {
+  @IsString()
+  @MinLength(2)
+  @MaxLength(255)
+  full_name: string;
+
+  @IsString()
+  @MaxLength(20)
+  mobile_number: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(255)
+  email?: string;
+
+  @IsOptional()
+  @IsString()
+  password?: string;
+
+  @IsOptional()
+  @IsString()
+  role_name?: string;
+
+  @IsOptional()
+  @IsString()
+  dob?: string;
+
+  @IsOptional()
+  @IsString()
+  gender?: string;
+
+  @IsOptional()
+  @IsString()
+  address?: string;
+
+  @IsOptional()
+  @IsString()
+  avatar?: string;
 }
 
 export { UpdateUserStatusDto } from './update-user-status.dto';

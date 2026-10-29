@@ -20,6 +20,7 @@ import {
   ListUsersDto,
   UpdateUserDto,
   UpdateUserStatusDto,
+  CreateUserAdminDto,
 } from '../dto/user-admin.dto';
 import { UsersService, UserProfile } from './users.service';
 
@@ -85,6 +86,32 @@ export class UsersAdminService {
     return profile;
   }
 
+  async createUser(dto: CreateUserAdminDto, actingUserId: string): Promise<UserProfile> {
+    const cleanMobile = dto.mobile_number.replace(/\D/g, '').slice(-10);
+    await this.usersService.assertNoDuplicates(cleanMobile, dto.email ?? null);
+    const pwd = dto.password || 'Hrsjm@123';
+    const salt = await bcrypt.genSalt(10);
+    const password_hash = await bcrypt.hash(pwd, salt);
+    const user = await this.usersService.createUserWithRole({
+      full_name: dto.full_name.trim(),
+      mobile_number: cleanMobile,
+      email: dto.email ? dto.email.trim().toLowerCase() : null,
+      password_hash,
+      roleName: dto.role_name || 'USER',
+    });
+    if (dto.dob || dto.avatar || dto.gender || dto.address) {
+      await this.usersService.updateProfile(user, {
+        dob: dto.dob,
+        avatar: dto.avatar,
+        gender: dto.gender,
+        address: dto.address,
+      });
+    }
+    void actingUserId;
+    const profile = await this.usersService.getProfile(user.id);
+    return profile || this.usersService.toProfile(user);
+  }
+
   async updateUser(
     id: string,
     patch: UpdateUserDto,
@@ -105,6 +132,8 @@ export class UsersAdminService {
       mobile_number: patch.mobile_number || patch.phone,
       dob: patch.dob,
       avatar: patch.avatar,
+      gender: patch.gender,
+      address: patch.address,
     });
     void actingUserId;
     return updated;

@@ -20,6 +20,8 @@ export interface UserProfile {
   mobile_number: string;
   email: string | null;
   dob?: string | null;
+  gender?: string | null;
+  address?: string | null;
   avatar?: string | null;
   status: string;
   roles: UserRoleInfo[];
@@ -159,6 +161,8 @@ export class UsersService {
       mobile_number: user.mobile_number,
       email: user.email,
       dob: user.dob ?? null,
+      gender: user.gender ?? null,
+      address: user.address ?? null,
       avatar: user.avatar ?? null,
       status: user.status,
       roles,
@@ -373,11 +377,13 @@ export class UsersService {
 
   async updateProfile(
     user: UserEntity,
-    patch: { full_name?: string; email?: string | null; mobile_number?: string; avatar?: string | null; dob?: string | null },
+    patch: { full_name?: string; email?: string | null; mobile_number?: string; avatar?: string | null; dob?: string | null; gender?: string | null; address?: string | null },
   ): Promise<UserProfile> {
     if (patch.full_name !== undefined) user.full_name = patch.full_name.trim();
     if (patch.avatar !== undefined) user.avatar = patch.avatar;
     if (patch.dob !== undefined) user.dob = patch.dob ? patch.dob.trim() : null;
+    if (patch.gender !== undefined) user.gender = patch.gender ? patch.gender.trim() : null;
+    if (patch.address !== undefined) user.address = patch.address ? patch.address.trim() : null;
     if (patch.email !== undefined) {
       const cleanEmail = patch.email ? patch.email.trim().toLowerCase() : null;
       const currentEmail = user.email ? user.email.trim().toLowerCase() : null;

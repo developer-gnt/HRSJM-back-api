@@ -27,6 +27,7 @@ import {
   ListUsersDto,
   UpdateUserDto,
   UpdateUserStatusDto,
+  CreateUserAdminDto,
   UserRoleDto,
 } from '../dto/user-admin.dto';
 
@@ -58,6 +59,16 @@ export class UsersController {
   @ApiOperation({ summary: 'List/search/filter users (admin)' })
   listUsers(@Query() dto: ListUsersDto) {
     return this.usersAdmin.listUsers(dto);
+  }
+
+  @Post()
+  @RequirePermissions('user.read')
+  @ApiOperation({ summary: 'Create user account (admin)' })
+  createUser(
+    @Body() dto: CreateUserAdminDto,
+    @AuthenticatedUser() actingUser: { sub: string },
+  ) {
+    return this.usersAdmin.createUser(dto, actingUser.sub);
   }
 
   @Get(':id')
