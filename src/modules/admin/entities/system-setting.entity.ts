@@ -11,3 +11,4 @@ export class SystemSettingEntity {
   @UpdateDateColumn({ type: 'timestamptz' })
   updated_at: Date;
 }
+
