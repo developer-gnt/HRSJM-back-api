@@ -151,6 +151,9 @@ export class UsersService {
       accountType = 'admin';
     } else if (roleNames.includes('MEMBER') || membershipStatus) {
       accountType = 'member';
+      if (!membershipStatus && user.status === 'ACTIVE') {
+        membershipStatus = 'ACTIVE';
+      }
     } else if (roleNames.some((r) => ['SEEKER', 'DONATION_SEEKER'].includes(r)) || assistanceStatus) {
       accountType = 'seeker';
     }
