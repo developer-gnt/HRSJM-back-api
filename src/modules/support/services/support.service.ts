@@ -168,6 +168,19 @@ export class SupportService {
       for (const att of dto.attachments) {
         if (!att || !att.name) continue;
         try {
+          let computedSize = att.size || 0;
+          if (!computedSize && att.base64) {
+            computedSize = Math.round((att.base64.length * 3) / 4);
+          } else if (!computedSize && att.formattedSize) {
+            const num = parseFloat(att.formattedSize);
+            if (!isNaN(num) && num > 0) {
+              if (att.formattedSize.toLowerCase().includes('mb')) computedSize = Math.round(num * 1024 * 1024);
+              else if (att.formattedSize.toLowerCase().includes('kb')) computedSize = Math.round(num * 1024);
+              else computedSize = Math.round(num);
+            }
+          }
+          if (!computedSize) computedSize = 153600; // 150 KB default
+
           const doc = await this.documentsService.createAttachmentRecord(
             {
               document_name: att.name,
@@ -177,7 +190,7 @@ export class SupportService {
               file_name: att.name,
               original_file_name: att.name,
               mime_type: att.type || 'application/octet-stream',
-              file_size: att.size || 0,
+              file_size: computedSize,
               file_url: att.uri || '',
               storage_path: att.uri || '',
               owner_id: actingUserId,
