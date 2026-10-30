@@ -109,6 +109,34 @@ export class MembershipPaymentsService implements OnModuleInit {
       });
     }
 
+    // 30-day renewal window validation for renewal payments
+    let renewalMeta: any = null;
+    if (dto.notes) {
+      try {
+        renewalMeta = JSON.parse(dto.notes);
+      } catch {}
+    }
+    const isRenewal =
+      renewalMeta?.type === 'MEMBERSHIP_RENEWAL' ||
+      dto.notes?.toLowerCase().includes('renewal');
+
+    if (isRenewal && membership.expiry_date) {
+      const now = new Date();
+      const currentExpiry = new Date(membership.expiry_date);
+      const isOverdue = currentExpiry.getTime() < now.getTime();
+      const daysRemaining = !isOverdue
+        ? Math.ceil((currentExpiry.getTime() - now.getTime()) / (1000 * 60 * 60 * 24))
+        : 0;
+
+      if (!isOverdue && daysRemaining > 30) {
+        throw new BadRequestException({
+          message: 'Membership renewal is allowed only within 30 days before the expiry date.',
+          code: 'RENEWAL_WINDOW_NOT_OPEN',
+          details: { daysRemaining, expiryDate: membership.expiry_date },
+        });
+      }
+    }
+
     const payment = this.payments.create({
       membership_id: membership.id,
       user_id: membership.user_id || dto.user_id || actingUserId,

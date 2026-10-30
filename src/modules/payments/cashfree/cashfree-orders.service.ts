@@ -366,35 +366,62 @@ export class CashfreeOrdersService {
         (mem && mem.status === MembershipStatus.EXPIRED) ||
         (mem && mem.expiry_date && new Date(mem.expiry_date).getTime() < Date.now());
 
-      if (isRenewal && mem && this.renewalCalculationService) {
-        const renewalsRepo = this.getRenewalsRepo();
-        const pastRenewals = renewalsRepo
-          ? await renewalsRepo.find({
-              where: { membership_id: mem.id },
-              order: { created_at: 'ASC' },
-            })
-          : [];
+      if (isRenewal && mem) {
+        if (mem.expiry_date) {
+          const now = new Date();
+          const currentExpiry = new Date(mem.expiry_date);
+          const isOverdue = currentExpiry.getTime() < now.getTime();
+          const daysRemaining = !isOverdue
+            ? Math.ceil((currentExpiry.getTime() - now.getTime()) / (1000 * 60 * 60 * 24))
+            : 0;
 
-        renewalQuote = this.renewalCalculationService.calculateQuote({
-          membership: mem,
-          successfulRenewals: pastRenewals,
-        });
-
-        if (renewalQuote.requires_verification) {
-          throw new BadRequestException({
-            message: `Membership renewal requires administrative verification: ${renewalQuote.verification_reason}`,
-            code: 'MEMBERSHIP_VERIFICATION_REQUIRED',
-            details: { reason: renewalQuote.verification_reason },
-          });
+          if (!isOverdue && daysRemaining > 30) {
+            throw new BadRequestException({
+              message: 'Membership renewal is allowed only within 30 days before the expiry date.',
+              code: 'RENEWAL_WINDOW_NOT_OPEN',
+              details: { daysRemaining, expiryDate: mem.expiry_date },
+            });
+          }
         }
 
-        // Validate amount against authoritative quote (Test 9)
-        if (dto.amount !== undefined && Math.abs(dto.amount - renewalQuote.total_payable) > 0.01) {
-          throw new BadRequestException({
-            message: `Payable amount mismatch: server quoted INR ${renewalQuote.total_payable}, but received INR ${dto.amount}`,
-            code: 'RENEWAL_AMOUNT_MISMATCH',
-            details: { expected: renewalQuote.total_payable, provided: dto.amount },
+        if (this.renewalCalculationService) {
+          const renewalsRepo = this.getRenewalsRepo();
+          const pastRenewals = renewalsRepo
+            ? await renewalsRepo.find({
+                where: { membership_id: mem.id },
+                order: { created_at: 'ASC' },
+              })
+            : [];
+
+          renewalQuote = this.renewalCalculationService.calculateQuote({
+            membership: mem,
+            successfulRenewals: pastRenewals,
           });
+
+          if (renewalQuote.requires_verification) {
+            throw new BadRequestException({
+              message: `Membership renewal requires administrative verification: ${renewalQuote.verification_reason}`,
+              code: 'MEMBERSHIP_VERIFICATION_REQUIRED',
+              details: { reason: renewalQuote.verification_reason },
+            });
+          }
+
+          if (!renewalQuote.is_eligible_for_renewal) {
+            throw new BadRequestException({
+              message: renewalQuote.renewal_validation_message || 'Membership renewal is allowed only within 30 days before the expiry date.',
+              code: 'RENEWAL_WINDOW_NOT_OPEN',
+              details: { daysRemaining: renewalQuote.days_remaining },
+            });
+          }
+
+          // Validate amount against authoritative quote (Test 9)
+          if (dto.amount !== undefined && Math.abs(dto.amount - renewalQuote.total_payable) > 0.01) {
+            throw new BadRequestException({
+              message: `Payable amount mismatch: server quoted INR ${renewalQuote.total_payable}, but received INR ${dto.amount}`,
+              code: 'RENEWAL_AMOUNT_MISMATCH',
+              details: { expected: renewalQuote.total_payable, provided: dto.amount },
+            });
+          }
         }
       }
 
