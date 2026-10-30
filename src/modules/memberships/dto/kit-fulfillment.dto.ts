@@ -41,3 +41,4 @@ export class KitFulfillmentDto {
   @IsArray()
   items?: string[];
 }
+

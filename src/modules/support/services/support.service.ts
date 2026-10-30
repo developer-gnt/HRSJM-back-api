@@ -163,6 +163,35 @@ export class SupportService {
       this.logger.warn(`Error resolving user email for ticket creation: ${(mailErr as Error).message}`);
     }
 
+    const savedDocs = [];
+    if (Array.isArray(dto.attachments) && dto.attachments.length > 0) {
+      for (const att of dto.attachments) {
+        if (!att || !att.name) continue;
+        try {
+          const doc = await this.documentsService.createAttachmentRecord(
+            {
+              document_name: att.name,
+              document_type: DocumentType.SUPPORT_TICKET_ATTACHMENT,
+              related_entity_type: RelatedEntityType.SUPPORT_TICKET,
+              related_entity_id: saved.id,
+              file_name: att.name,
+              original_file_name: att.name,
+              mime_type: att.type || 'application/octet-stream',
+              file_size: att.size || 0,
+              file_url: att.uri || '',
+              storage_path: att.uri || '',
+              owner_id: actingUserId,
+            },
+            actingUserId,
+          );
+          savedDocs.push(doc);
+        } catch (docErr) {
+          this.logger.warn(`Failed to save attachment ${att.name}: ${(docErr as Error).message}`);
+        }
+      }
+    }
+    (saved as any).documents = savedDocs;
+
     return saved;
   }
 
@@ -363,6 +392,22 @@ ${dto.details.trim()}`;
 
     const [rawItems, total] = await qb.getManyAndCount();
 
+    const ticketIds = rawItems.map((t) => t.id);
+    let allDocs: any[] = [];
+    if (ticketIds.length > 0) {
+      try {
+        allDocs = await this.documentsService.findForTicketIds(ticketIds);
+      } catch (err) {
+        this.logger.warn(`Could not load documents for tickets: ${(err as Error).message}`);
+      }
+    }
+    const docsByTicketId = new Map<string, any[]>();
+    for (const d of allDocs) {
+      const arr = docsByTicketId.get(d.related_entity_id) || [];
+      arr.push(d);
+      docsByTicketId.set(d.related_entity_id, arr);
+    }
+
     let items = rawItems.map((t) => {
       if (t.user) {
         delete (t.user as { password_hash?: string }).password_hash;
@@ -380,6 +425,7 @@ ${dto.details.trim()}`;
         category,
         priority: 'High',
         source,
+        documents: docsByTicketId.get(t.id) || [],
       });
     });
 
@@ -500,12 +546,22 @@ ${dto.details.trim()}`;
     const catMatch = ticket.subject.match(/^\[(?:Complaint:\s*)?(.*?)\]/i);
     const category = catMatch ? catMatch[1].trim() : 'Assistance';
     const source = detectTicketSource(ticket.description, ticket.subject);
+    let docs: any[] = [];
+    try {
+      docs = await this.documentsService.findByRelatedEntity(
+        RelatedEntityType.SUPPORT_TICKET,
+        ticket.id,
+      );
+    } catch (err) {
+      this.logger.warn(`Could not load documents for ticket ${ticket.id}: ${(err as Error).message}`);
+    }
     return Object.assign(ticket, {
       ticket_number: ticketRef,
       ticketId: ticketRef,
       category,
       priority: 'High',
       source,
+      documents: docs,
     });
   }
 
