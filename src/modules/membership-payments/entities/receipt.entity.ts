@@ -9,6 +9,7 @@ import {
 import { BaseEntity } from '../../../common/entities/base.entity';
 import { UserEntity } from '../../users/entities/user.entity';
 import { MembershipPaymentEntity } from './membership-payment.entity';
+import { DonationPaymentEntity } from '../../donation-payments/entities/donation-payment.entity';
 
 @Entity('receipts')
 @Index('uq_receipts_receipt_number', ['receipt_number'], { unique: true })
@@ -40,6 +41,13 @@ export class ReceiptEntity extends BaseEntity {
   @Column({ type: 'uuid', nullable: true })
   donation_payment_id: string | null;
 
+  @ManyToOne(() => DonationPaymentEntity, {
+    onDelete: 'SET NULL',
+    nullable: true,
+  })
+  @JoinColumn({ name: 'donation_payment_id' })
+  donation_payment?: DonationPaymentEntity | null;
+
   @Column({
     type: 'numeric',
     precision: 12,
@@ -65,4 +73,10 @@ export class ReceiptEntity extends BaseEntity {
 
   @Column({ type: 'uuid', nullable: true })
   accounting_entry_id: string | null;
+
+  /** Resolved cause name for receipts / donations / memberships */
+  cause?: string | null;
+
+  /** Alias for cause */
+  cause_name?: string | null;
 }
