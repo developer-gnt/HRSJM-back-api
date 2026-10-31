@@ -68,6 +68,7 @@ import { NotificationsService } from '../../notifications/services/notifications
 import { UsersService } from '../../users/services/users.service';
 import { MailService } from '../../mail/mail.service';
 import { CreatePublicComplaintDto } from '../dto/create-public-complaint.dto';
+import { CreateContactInquiryDto } from '../dto/create-contact-inquiry.dto';
 
 @Injectable()
 export class SupportService {
@@ -299,6 +300,95 @@ ${dto.details.trim()}`;
       message:
         'Your complaint has been successfully registered and assigned for review. A confirmation email has been sent.',
       submittedAt: saved.created_at,
+    };
+  }
+
+  async createContactInquiryTicket(dto: CreateContactInquiryDto): Promise<{
+    ticketId: string;
+    ticketRef: string;
+    savedTicket: SupportTicketEntity;
+  }> {
+    const cleanEmail = dto.email.trim().toLowerCase();
+    const cleanPhone = (dto.phone || '').trim();
+    let targetUserId = '';
+
+    if (cleanEmail) {
+      const emailUser = await this.usersService.findByLoginIdentifier(cleanEmail);
+      if (emailUser) targetUserId = emailUser.id;
+    }
+    if (!targetUserId && cleanPhone) {
+      const phoneUser = await this.usersService.findByLoginIdentifier(cleanPhone);
+      if (phoneUser) targetUserId = phoneUser.id;
+    }
+
+    if (!targetUserId) {
+      const passwordHash = await bcrypt.hash('Citizen@123', 10);
+      const generatedPhone = cleanPhone || ('98' + Date.now().toString().slice(-8));
+      const newUser = await this.usersService.createUserWithRole({
+        full_name: dto.name.trim() || 'Citizen',
+        mobile_number: generatedPhone,
+        email: cleanEmail,
+        password_hash: passwordHash,
+        roleName: 'USER',
+      });
+      targetUserId = newUser.id;
+    }
+
+    const category = dto.subject?.trim() || 'General Inquiry';
+    const subject = `[Contact Inquiry: ${category}] ${dto.name.trim()}`;
+    const description = `Contact Inquiry Information:
+- Full Name: ${dto.name.trim()}
+- Email: ${cleanEmail}
+- Phone: ${cleanPhone || 'Not Provided'}
+- Subject: ${category}
+- Source: Website
+
+Message:
+${dto.message.trim()}`;
+
+    const ticket = this.tickets.create({
+      user_id: targetUserId,
+      subject,
+      description,
+      status: TicketStatus.SUBMITTED,
+      created_by: targetUserId,
+      updated_by: targetUserId,
+    });
+
+    const saved = await this.tickets.save(ticket);
+    const ticketRef = `HRSJM-MSG-${saved.id.slice(0, 8).toUpperCase()}`;
+
+    try {
+      await this.audit.record({
+        event: 'support_ticket.contact_inquiry',
+        actorId: targetUserId,
+        entityType: 'support_tickets',
+        entityId: saved.id,
+        metadata: {
+          ticketRef,
+          subject: saved.subject,
+          senderName: dto.name.trim(),
+          email: cleanEmail,
+        },
+      });
+    } catch (auditErr) {
+      this.logger.warn('Could not record audit log: ' + auditErr?.message);
+    }
+
+    try {
+      await this.notifications.sendToAdmins(
+        'New Contact Inquiry',
+        `New contact message from ${dto.name.trim()} (${category}): "${dto.message.trim().slice(0, 80)}"`,
+        targetUserId,
+      );
+    } catch (notifErr) {
+      this.logger.warn('Could not send admin notification: ' + notifErr?.message);
+    }
+
+    return {
+      ticketId: saved.id,
+      ticketRef,
+      savedTicket: saved,
     };
   }
 
