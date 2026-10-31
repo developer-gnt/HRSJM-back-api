@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, ForbiddenException, UnauthorizedException } from '@nestjs/common';
+﻿import { BadRequestException, ConflictException, ForbiddenException, UnauthorizedException } from '@nestjs/common';
 import { createHash } from 'crypto';
 import * as bcrypt from 'bcryptjs';
 import { AuthService } from './auth.service';
@@ -33,7 +33,7 @@ describe('AuthService', () => {
       dataSource as never,
       refreshTokens as never,
       resetTokens as never,
-      {} as never,
+      { sendPasswordResetLinkEmail: jest.fn().mockResolvedValue(undefined), sendPasswordChangedNoticeEmail: jest.fn().mockResolvedValue(undefined), sendMail: jest.fn().mockResolvedValue({ success: true, messageId: 'test-mid' }) } as never,
       { sendToUser: jest.fn().mockResolvedValue(undefined), sendToAdmins: jest.fn().mockResolvedValue(undefined) } as never,
     );
 
@@ -194,7 +194,7 @@ describe('AuthService', () => {
     );
   });
 
-  it('TC-AUTH-023/026: refresh rotates — old token revoked, raw new token returned', async () => {
+  it('TC-AUTH-023/026: refresh rotates â€” old token revoked, raw new token returned', async () => {
     const raw = 'raw-refresh-token';
     const oldToken = {
       id: 'rt-old',
@@ -235,24 +235,30 @@ describe('AuthService', () => {
     expect(refreshTokens.save).not.toHaveBeenCalled();
   });
 
-  it('TC-AUTH-030: forgot password for an unknown account returns a generic result', async () => {
+  it('TC-AUTH-030: forgot password for an unknown account returns a generic result without inserting a token', async () => {
     usersService.findByLoginIdentifier = jest.fn().mockResolvedValue(null);
 
     const result = await service.forgotPassword('nobody@example.com', null, null);
-    expect(result).toEqual({ delivered_mechanism: 'TBC' });
+    // Security: generic response that does not reveal whether email exists
+    expect(result.delivered_mechanism).toBe('EMAIL');
+    expect(result.message).toBeDefined();
     expect(resetTokens.insert).not.toHaveBeenCalled();
   });
 
-  it('forgot password for an existing account inserts token into database and returns dev token', async () => {
+  it('forgot password for an existing account inserts a hashed token into the database and returns generic response', async () => {
     usersService.findByLoginIdentifier = jest.fn().mockResolvedValue({
       id: 'u1',
       email: 'member@hrsjm.org',
+      full_name: 'Test Member',
       mobile_number: '9876543210',
     });
+    resetTokens.update = jest.fn().mockResolvedValue(undefined);
 
     const result = await service.forgotPassword('member@hrsjm.org', '127.0.0.1', 'jest-agent');
-    expect(result.delivered_mechanism).toBe('TBC');
-    expect(result.reset_token).toBeDefined();
+    // Returns generic EMAIL response - raw token never returned in response (security requirement)
+    expect(result.delivered_mechanism).toBe('EMAIL');
+    expect(result.message).toBeDefined();
+    expect((result as any).reset_token).toBeUndefined();
     expect(resetTokens.insert).toHaveBeenCalledWith(
       expect.objectContaining({
         user_id: 'u1',

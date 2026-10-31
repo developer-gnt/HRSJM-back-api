@@ -19,6 +19,7 @@ import { MembershipPaymentEntity } from '../../membership-payments/entities/memb
 import { UsersService } from '../../users/services/users.service';
 import { CreateMembershipDto } from '../dto/create-membership.dto';
 import { UpdateMembershipDto } from '../dto/update-membership.dto';
+import { KitFulfillmentDto } from '../dto/kit-fulfillment.dto';
 import { ListMembershipsDto } from '../dto/list-memberships.dto';
 import { UpdateMembershipStatusDto } from '../dto/update-membership-status.dto';
 import { CommonStatus } from '../../../common/enums/common-status.enum';
@@ -578,6 +579,25 @@ export class MembershipsService {
     membership.amount = resolvedAmount;
     membership.payment_status = resolvedPaymentStatus;
 
+    const personal = (appData.personal_details || {}) as Record<string, any>;
+    const existingKit = appData.kit_fulfillment || null;
+
+    (membership as any).kit_fulfillment = existingKit || {
+      status: membership.status === MembershipStatus.ACTIVE ? 'PROCESSING' : 'PENDING',
+      courier_name: 'India Post Speed Post',
+      tracking_number: membership.membership_number ? `SP-${membership.membership_number.replace(/[^a-zA-Z0-9]/g, '')}` : '',
+      dispatch_date: membership.approval_date || membership.start_date || null,
+      delivery_address: [personal.address, personal.city, personal.state, personal.pincode].filter(Boolean).join(', ') || 'Registered Address',
+      items: [
+        'Official Appointment Letter',
+        'Membership Certificate',
+        'Physical ID Card & Lanyard',
+        'Car / Bike Sticker',
+        'HRSJM Official T-Shirt',
+      ],
+      notes: 'Welcome kit prepared upon membership verification',
+    };
+
     return membership;
   }
 
@@ -814,6 +834,18 @@ export class MembershipsService {
       membership.admin_notes = dto.admin_notes;
     }
 
+    if (dto.kit_fulfillment !== undefined) {
+      const appData = (membership.application_data || {}) as Record<string, any>;
+      membership.application_data = {
+        ...appData,
+        kit_fulfillment: {
+          ...(appData.kit_fulfillment || {}),
+          ...dto.kit_fulfillment,
+          updated_at: new Date().toISOString(),
+        },
+      };
+    }
+
     membership.updated_by = actingUserId;
     const saved = await this.memberships.save(membership);
 
@@ -825,7 +857,57 @@ export class MembershipsService {
       metadata: { changes: dto },
     });
 
-    return saved;
+    return this.enrichMembershipPaymentDetails(saved, saved.payment);
+  }
+
+  async updateKitFulfillment(
+    id: string,
+    dto: KitFulfillmentDto,
+    actingUserId: string,
+  ): Promise<MembershipEntity> {
+    const membership = await this.getById(id, actingUserId, true);
+
+    const appData = (membership.application_data || {}) as Record<string, any>;
+    const personal = (appData.personal_details || {}) as Record<string, any>;
+    const currentKit = (appData.kit_fulfillment || {}) as Record<string, any>;
+
+    const defaultItems = [
+      'Official Appointment Letter',
+      'Membership Certificate',
+      'Physical ID Card & Lanyard',
+      'Car / Bike Sticker',
+      'HRSJM Official T-Shirt',
+    ];
+
+    const updatedKit = {
+      ...currentKit,
+      ...dto,
+      items: dto.items && dto.items.length > 0 ? dto.items : currentKit.items || defaultItems,
+      delivery_address:
+        dto.delivery_address ||
+        currentKit.delivery_address ||
+        [personal.address, personal.city, personal.state, personal.pincode].filter(Boolean).join(', ') ||
+        'Registered Address',
+      updated_at: new Date().toISOString(),
+    };
+
+    membership.application_data = {
+      ...appData,
+      kit_fulfillment: updatedKit,
+    };
+    membership.updated_by = actingUserId;
+
+    const saved = await this.memberships.save(membership);
+
+    await this.audit.record({
+      event: 'membership.kit_fulfillment_updated',
+      actorId: actingUserId,
+      entityType: 'memberships',
+      entityId: saved.id,
+      metadata: { kit_fulfillment: updatedKit },
+    });
+
+    return this.enrichMembershipPaymentDetails(saved, saved.payment);
   }
 
   async updateStatus(

@@ -58,7 +58,7 @@ describe('PasswordResetDeliveryService', () => {
   });
 
   describe('PasswordResetDeliveryService Dispatch', () => {
-    it('should use LogResetDeliveryProvider in development mode', async () => {
+    it('should deliver via MailService (email channel) regardless of environment', async () => {
       const mockConfig = {
         get: jest.fn((key: string) => {
           if (key === 'app.env') return 'development';
@@ -79,7 +79,10 @@ describe('PasswordResetDeliveryService', () => {
       });
 
       expect(res.success).toBe(true);
-      expect(res.channel).toBe('log');
+      expect(res.channel).toBe('email');
+      expect(mockMailService.sendMail).toHaveBeenCalledWith(
+        expect.objectContaining({ to: 'user@example.com' }),
+      );
     });
   });
 });

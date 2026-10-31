@@ -26,6 +26,14 @@ async function bootstrap() {
 
   const expressApp = app.getHttpAdapter().getInstance();
   expressApp.set('trust proxy', 1);
+  // Dedicated responsive Reset Password webpage served at root path
+  expressApp.get('/reset-password', (req: any, res: any) => {
+    const token = (req.query.token as string) || '';
+    const { getResetPasswordPageHtml } = require('./modules/auth/services/reset-password-page.template');
+    res.setHeader('Content-Type', 'text/html');
+    return res.send(getResetPasswordPageHtml(token));
+  });
+
 
   app.setGlobalPrefix('api/v1');
 

@@ -127,3 +127,10 @@ export interface ContactInquiryMailPayload {
 }
 
 
+
+export interface PasswordResetLinkMailPayload {
+  recipientName: string;
+  recipientEmail: string;
+  resetUrl: string;
+  expiresInMinutes?: number;
+}

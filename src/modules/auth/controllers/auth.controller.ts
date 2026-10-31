@@ -6,12 +6,14 @@ import {
   HttpStatus,
   Patch,
   Post,
+  Query,
   Req,
+  Res,
   UseGuards,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
-import { Request } from 'express';
+import { Request, Response } from 'express';
 import { JwtAuthGuard, AuthenticatedRequest } from '../../../common/guards/jwt-auth.guard';
 import { AuthService } from '../services/auth.service';
 import { RegisterDto } from '../dto/register.dto';
@@ -90,6 +92,25 @@ export class AuthController {
   }
 
   @Throttle({ default: { limit: 5, ttl: 60000 } })
+    @Get('reset-password')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Serve the dedicated responsive Reset Password webpage' })
+  getResetPasswordPage(@Req() req: Request, @Res() res: Response) {
+    const token = (req.query.token as string) || '';
+    const html = this.authService.getResetPasswordPageHtml(token);
+    res.setHeader('Content-Type', 'text/html');
+    return res.send(html);
+  }
+
+  
+  @Throttle({ default: { limit: 15, ttl: 60000 } })
+  @Get('verify-reset-token')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Verify if a reset token is valid and unexpired' })
+  verifyResetToken(@Query('token') token: string) {
+    return this.authService.verifyResetToken(token);
+  }
+
   @Post('reset-password')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Reset the password with a valid reset token' })

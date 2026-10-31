@@ -348,5 +348,63 @@ describe('RenewalCalculationService (Arrears Logic Acceptance Tests)', () => {
       expect(subsequentQuote.periods[0].sequence).toBe(6);
       expect(subsequentQuote.periods[0].fee).toBe(300);
     });
+
+    describe('30-Day Renewal Window Validation', () => {
+      it('prevents renewal when more than 30 days remain until expiry', () => {
+        const asOf = new Date('2026-05-01');
+        const expiry = new Date('2026-06-15'); // 45 days remaining
+
+        const quote = service.calculateQuote({
+          membership: {
+            id: 'mem-early',
+            status: MembershipStatus.ACTIVE,
+            expiry_date: expiry,
+          },
+          asOfDate: asOf,
+        });
+
+        expect(quote.days_remaining).toBe(45);
+        expect(quote.is_eligible_for_renewal).toBe(false);
+        expect(quote.renewal_validation_message).toBe(
+          'Membership renewal is allowed only within 30 days before the expiry date.',
+        );
+      });
+
+      it('allows renewal when within 30 days of expiry date', () => {
+        const asOf = new Date('2026-05-20');
+        const expiry = new Date('2026-06-15'); // 26 days remaining
+
+        const quote = service.calculateQuote({
+          membership: {
+            id: 'mem-eligible',
+            status: MembershipStatus.ACTIVE,
+            expiry_date: expiry,
+          },
+          asOfDate: asOf,
+        });
+
+        expect(quote.days_remaining).toBe(26);
+        expect(quote.is_eligible_for_renewal).toBe(true);
+        expect(quote.renewal_validation_message).toBeUndefined();
+      });
+
+      it('allows renewal when membership is expired/overdue', () => {
+        const asOf = new Date('2026-06-20');
+        const expiry = new Date('2026-06-15'); // 5 days overdue
+
+        const quote = service.calculateQuote({
+          membership: {
+            id: 'mem-expired',
+            status: MembershipStatus.EXPIRED,
+            expiry_date: expiry,
+          },
+          asOfDate: asOf,
+        });
+
+        expect(quote.is_overdue).toBe(true);
+        expect(quote.is_eligible_for_renewal).toBe(true);
+        expect(quote.renewal_validation_message).toBeUndefined();
+      });
+    });
   });
 });
