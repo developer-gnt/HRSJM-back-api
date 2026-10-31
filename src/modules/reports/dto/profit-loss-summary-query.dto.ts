@@ -1,11 +1,21 @@
-import { IsDateString, IsNotEmpty } from 'class-validator';
+import { IsDateString, IsOptional } from 'class-validator';
 
 export class ProfitLossSummaryQueryDto {
-  @IsNotEmpty()
+  @IsOptional()
   @IsDateString()
-  from_date: string;
+  from_date?: string;
 
-  @IsNotEmpty()
+  @IsOptional()
   @IsDateString()
-  to_date: string;
+  to_date?: string;
+
+  @IsOptional()
+  @IsDateString()
+  start_date?: string;
+
+  @IsOptional()
+  @IsDateString()
+  end_date?: string;
 }
+
+
