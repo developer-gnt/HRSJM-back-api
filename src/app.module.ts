@@ -38,6 +38,7 @@ import cashfreeConfig from './config/cashfree.config';
 import mailConfig from './config/mail.config';
 import { CashfreeModule } from './modules/payments/cashfree/cashfree.module';
 import { MailModule } from './modules/mail/mail.module';
+import { TransactionsModule } from './modules/transactions/transactions.module';
 
 @Module({
   imports: [
@@ -85,6 +86,7 @@ import { MailModule } from './modules/mail/mail.module';
     MockGatewayModule,
     CashfreeModule,
     MailModule,
+    TransactionsModule,
   ],
   providers: [
     {

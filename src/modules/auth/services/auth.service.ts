@@ -32,6 +32,7 @@ import {
 } from '../../assistance/entities/assistance-request.entity';
 
 import { MailService } from '../../mail/mail.service';
+import { validateAgeEligibility } from '../../../common/utils/age.util';
 
 const BCRYPT_ROUNDS = 10;
 const RESET_TOKEN_TTL_MS = 30 * 60 * 1000;
@@ -74,6 +75,27 @@ export class AuthService {
       dto.email ?? null,
     );
 
+    // 18+ Age Eligibility Enforcement
+    const rawDob = dto.dob || dto.date_of_birth;
+    const ageCheck = validateAgeEligibility(rawDob);
+    if (!ageCheck.isValid) {
+      throw new BadRequestException({
+        message: ageCheck.error || 'Date of birth is required and must be valid',
+        code: ageCheck.errorCode || 'INVALID_DOB',
+        details: null,
+      });
+    }
+    if (!ageCheck.isEligible) {
+      throw new BadRequestException({
+        message: 'You must be at least 18 years old to register with HRSJM',
+        code: 'AGE_NOT_ELIGIBLE',
+        details: {
+          minimum_age: 18,
+          calculated_age: ageCheck.age,
+        },
+      });
+    }
+
     const isDonationSeekerRequest = dto.role_name === 'DONATION_SEEKER';
     // When someone creates an account as Donation Seeker, they are provisioned with
     // initial role USER while their application goes to the admin for verification/approval.
@@ -89,6 +111,7 @@ export class AuthService {
       // Self-service registration picks role by name (never ADMIN);
       // defaults to USER when unspecified or when seeker application is pending admin approval.
       roleName: dto.role_id ? undefined : initialRoleName,
+      dob: rawDob,
     });
 
     if (isDonationSeekerRequest) {
@@ -577,6 +600,62 @@ export class AuthService {
       message: 'Password changed successfully',
     };
   }
+
+  async getUserImpact(userId: string): Promise<{
+    complaintsSubmitted: number;
+    causesSupported: number;
+    totalDonations: number;
+    eventsAttended: number;
+  }> {
+    let complaintsSubmitted = 0;
+    let causesSupported = 0;
+    let totalDonations = 0;
+    let eventsAttended = 0;
+
+    try {
+      const tickets = await this.dataSource.query(
+        'SELECT count(*)::int as count FROM support_tickets WHERE user_id = $1',
+        [userId],
+      );
+      complaintsSubmitted = tickets[0]?.count ?? 0;
+    } catch {
+      // ignore
+    }
+
+    try {
+      const donations = await this.dataSource.query(
+        'SELECT count(*)::int as count, count(DISTINCT cause)::int as causes FROM donations WHERE user_id = $1',
+        [userId],
+      );
+      causesSupported = donations[0]?.causes ?? donations[0]?.count ?? 0;
+      totalDonations = donations[0]?.count ?? 0;
+    } catch {
+      // ignore
+    }
+
+    try {
+      const events = await this.dataSource.query(
+        "SELECT count(*)::int as count FROM events WHERE status = 'COMPLETED'",
+      );
+      eventsAttended = events[0]?.count ?? 0;
+      if (eventsAttended === 0) {
+        const anyEvents = await this.dataSource.query(
+          "SELECT count(*)::int as count FROM events WHERE status != 'CANCELLED'",
+        );
+        eventsAttended = anyEvents[0]?.count ?? 0;
+      }
+    } catch {
+      // ignore
+    }
+
+    return {
+      complaintsSubmitted,
+      causesSupported,
+      totalDonations,
+      eventsAttended,
+    };
+  }
+
 
   /**
    * Loads a user profile or fails loudly — after a successful auth operation the

@@ -39,11 +39,12 @@ export class ReportsAnalyticsService {
       const now = new Date();
       let startDate: Date;
       let endDate: Date;
+      const isPeriodQuery = Boolean(query?.start_date && query?.end_date);
 
-      if (query?.start_date && query?.end_date) {
-        startDate = new Date(query.start_date);
-        endDate = new Date(query.end_date);
-        if (query.end_date.length <= 10) {
+      if (isPeriodQuery) {
+        startDate = new Date(query!.start_date!);
+        endDate = new Date(query!.end_date!);
+        if (query!.end_date!.length <= 10) {
           endDate.setHours(23, 59, 59, 999);
         }
       } else {
@@ -56,8 +57,18 @@ export class ReportsAnalyticsService {
       const prevEndDate = new Date(startDate.getTime());
 
       // 1. REAL USERS & GROWTH
-      const [totalUsersAllTime, usersInPeriod, usersInPrevPeriod, activeMembers] = await Promise.all([
+      const [
+        totalUsersAllTime,
+        totalUsersAtEndDate,
+        usersInPeriod,
+        usersInPrevPeriod,
+        activeMembers,
+      ] = await Promise.all([
         this.usersRepo.count(),
+        this.usersRepo
+          .createQueryBuilder('u')
+          .where('u.created_at <= :end', { end: endDate })
+          .getCount(),
         this.usersRepo
           .createQueryBuilder('u')
           .where('u.created_at >= :start AND u.created_at <= :end', { start: startDate, end: endDate })
@@ -71,7 +82,7 @@ export class ReportsAnalyticsService {
 
       const usersGrowthPct = usersInPrevPeriod > 0
         ? Math.round(((usersInPeriod - usersInPrevPeriod) / usersInPrevPeriod) * 100)
-        : (usersInPeriod > 0 ? 100 : 0);
+        : (usersInPeriod > 0 ? 0 : 0);
 
       // 2. REAL DONATIONS & GROWTH
       const [totalDonationsAllTimeCount, totalDonationsAllTimeRow, donPeriodRow, donPrevRow] = await Promise.all([
@@ -96,12 +107,23 @@ export class ReportsAnalyticsService {
       const totalDonationsAmount = parseFloat(totalDonationsAllTimeRow?.total || '0');
       const periodDonationsAmount = parseFloat(donPeriodRow?.total || '0');
       const prevDonationsAmount = parseFloat(donPrevRow?.total || '0');
+      const periodDonationsCount = parseInt(donPeriodRow?.cnt || '0', 10);
       const donationsGrowthPct = prevDonationsAmount > 0
         ? Math.round(((periodDonationsAmount - prevDonationsAmount) / prevDonationsAmount) * 100)
-        : (periodDonationsAmount > 0 ? 100 : 0);
+        : (periodDonationsAmount > 0 ? 0 : 0);
 
       // 3. REAL COMPLAINTS / TICKETS
-      const [totalComplaintsAllTime, resolvedTickets, inProgressTickets, pendingTickets, ticketsInPeriod, ticketsInPrevPeriod] = await Promise.all([
+      const [
+        totalComplaintsAllTime,
+        resolvedTicketsAllTime,
+        inProgressTicketsAllTime,
+        pendingTicketsAllTime,
+        ticketsInPeriod,
+        ticketsInPrevPeriod,
+        periodResolved,
+        periodInProgress,
+        periodPending,
+      ] = await Promise.all([
         this.ticketsRepo.count(),
         this.ticketsRepo.createQueryBuilder('t').where("t.status IN ('RESOLVED', 'CLOSED')").getCount(),
         this.ticketsRepo.createQueryBuilder('t').where("t.status = 'UNDER_REVIEW'").getCount(),
@@ -114,14 +136,32 @@ export class ReportsAnalyticsService {
           .createQueryBuilder('t')
           .where('t.created_at >= :start AND t.created_at < :end', { start: prevStartDate, end: prevEndDate })
           .getCount(),
+        this.ticketsRepo
+          .createQueryBuilder('t')
+          .where("t.status IN ('RESOLVED', 'CLOSED') AND t.created_at >= :start AND t.created_at <= :end", { start: startDate, end: endDate })
+          .getCount(),
+        this.ticketsRepo
+          .createQueryBuilder('t')
+          .where("t.status = 'UNDER_REVIEW' AND t.created_at >= :start AND t.created_at <= :end", { start: startDate, end: endDate })
+          .getCount(),
+        this.ticketsRepo
+          .createQueryBuilder('t')
+          .where("t.status = 'SUBMITTED' AND t.created_at >= :start AND t.created_at <= :end", { start: startDate, end: endDate })
+          .getCount(),
       ]);
 
       const complaintsGrowthPct = ticketsInPrevPeriod > 0
         ? Math.round(((ticketsInPeriod - ticketsInPrevPeriod) / ticketsInPrevPeriod) * 100)
-        : (ticketsInPeriod > 0 ? 100 : 0);
+        : (ticketsInPeriod > 0 ? 0 : 0);
 
       // 4. REAL EVENTS
-      const [totalEventsAllTime, eventsInPeriod, eventsInPrevPeriod, eventRegsRow] = await Promise.all([
+      const [
+        totalEventsAllTime,
+        eventsInPeriod,
+        eventsInPrevPeriod,
+        eventRegsRow,
+        periodEventRegsRow,
+      ] = await Promise.all([
         this.eventsRepo.count(),
         this.eventsRepo
           .createQueryBuilder('e')
@@ -135,14 +175,20 @@ export class ReportsAnalyticsService {
           .createQueryBuilder('e')
           .select('COALESCE(SUM(e.registrations), 0)', 'total')
           .getRawOne<{ total: string }>(),
+        this.eventsRepo
+          .createQueryBuilder('e')
+          .select('COALESCE(SUM(e.registrations), 0)', 'total')
+          .where('e.created_at >= :start AND e.created_at <= :end', { start: startDate, end: endDate })
+          .getRawOne<{ total: string }>(),
       ]);
 
       const totalRegistrations = parseInt(eventRegsRow?.total || '0', 10);
+      const periodRegistrations = parseInt(periodEventRegsRow?.total || '0', 10);
       const eventsGrowthPct = eventsInPrevPeriod > 0
         ? Math.round(((eventsInPeriod - eventsInPrevPeriod) / eventsInPrevPeriod) * 100)
-        : (eventsInPeriod > 0 ? 100 : 0);
+        : (eventsInPeriod > 0 ? 0 : 0);
 
-      // 5. USER GROWTH TIMELINE (5 points across the period)
+      // 5. USER GROWTH TIMELINE (5 points across the selected period)
       const ratios = [0, 0.25, 0.5, 0.75, 1];
       const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
       const userGrowthTimeline = await Promise.all(
@@ -162,33 +208,56 @@ export class ReportsAnalyticsService {
         }),
       );
 
-      // 6. USER DISTRIBUTION
-      const donorRow = await this.donationsRepo
-        .createQueryBuilder('d')
-        .select('COUNT(DISTINCT d.donor_mobile)', 'cnt')
-        .getRawOne<{ cnt: string }>();
+      // 6. REAL USER DISTRIBUTION FROM DATABASE ROLES & TABLES
+      const [dbMembers, dbSeekers, dbGeneralUsers, donorRow, ticketUserRow] = await Promise.all([
+        this.usersRepo
+          .createQueryBuilder('u')
+          .innerJoin('u.user_roles', 'ur')
+          .innerJoin('ur.role', 'r')
+          .where("r.name = 'MEMBER'")
+          .getCount(),
+        this.usersRepo
+          .createQueryBuilder('u')
+          .innerJoin('u.user_roles', 'ur')
+          .innerJoin('ur.role', 'r')
+          .where("r.name = 'DONATION_SEEKER'")
+          .getCount(),
+        this.usersRepo
+          .createQueryBuilder('u')
+          .innerJoin('u.user_roles', 'ur')
+          .innerJoin('ur.role', 'r')
+          .where("r.name = 'USER'")
+          .getCount(),
+        this.donationsRepo
+          .createQueryBuilder('d')
+          .select('COUNT(DISTINCT d.donor_mobile)', 'cnt')
+          .getRawOne<{ cnt: string }>(),
+        this.ticketsRepo
+          .createQueryBuilder('t')
+          .select('COUNT(DISTINCT t.user_id)', 'cnt')
+          .where('t.user_id IS NOT NULL')
+          .getRawOne<{ cnt: string }>(),
+      ]);
+
       const donorCount = parseInt(donorRow?.cnt || '0', 10);
-
-      const ticketUserRow = await this.ticketsRepo
-        .createQueryBuilder('t')
-        .select('COUNT(DISTINCT t.user_id)', 'cnt')
-        .getRawOne<{ cnt: string }>();
       const complaintUserCount = parseInt(ticketUserRow?.cnt || '0', 10);
-
-      const generalUserCount = Math.max(0, totalUsersAllTime - (activeMembers + donorCount + complaintUserCount));
-      const denom = totalUsersAllTime > 0 ? totalUsersAllTime : 1;
+      const memberCount = dbMembers || activeMembers;
+      const seekerCount = dbSeekers;
+      const generalCount = dbGeneralUsers;
+      const displayTotalUsers = isPeriodQuery ? totalUsersAtEndDate : totalUsersAllTime;
+      const denom = displayTotalUsers > 0 ? displayTotalUsers : 1;
 
       const userDistribution = [
         {
           label: 'Members',
-          count: activeMembers,
-          pct: `${Math.round((activeMembers / denom) * 100)}%`,
+          count: memberCount,
+          pct: `${Math.round((memberCount / denom) * 100)}%`,
           color: '#3B82F6',
         },
         {
           label: 'Donation Seekers',
-          count: 0,
-          pct: '0%',
+          count: seekerCount,
+          pct: `${Math.round((seekerCount / denom) * 100)}%`,
           color: '#10B981',
         },
         {
@@ -205,8 +274,8 @@ export class ReportsAnalyticsService {
         },
         {
           label: 'General Users',
-          count: generalUserCount,
-          pct: `${Math.round((generalUserCount / denom) * 100)}%`,
+          count: generalCount,
+          pct: `${Math.round((generalCount / denom) * 100)}%`,
           color: '#8B5CF6',
         },
       ];
@@ -297,47 +366,56 @@ export class ReportsAnalyticsService {
         }),
       );
 
-      const complaintsDenom = totalComplaintsAllTime > 0 ? totalComplaintsAllTime : 1;
+      const activeComplaintsTotal = isPeriodQuery ? ticketsInPeriod : totalComplaintsAllTime;
+      const complaintsDenom = activeComplaintsTotal > 0 ? activeComplaintsTotal : 1;
+      const activeResolved = isPeriodQuery ? periodResolved : resolvedTicketsAllTime;
+      const activeInProgress = isPeriodQuery ? periodInProgress : inProgressTicketsAllTime;
+      const activePending = isPeriodQuery ? periodPending : pendingTicketsAllTime;
+
+      const activeDonationsAmount = isPeriodQuery ? periodDonationsAmount : totalDonationsAmount;
+      const activeDonationsCount = isPeriodQuery ? periodDonationsCount : totalDonationsAllTimeCount;
+      const activeEventsCount = isPeriodQuery ? eventsInPeriod : totalEventsAllTime;
+      const activeRegistrations = isPeriodQuery ? periodRegistrations : totalRegistrations;
 
       return {
         kpis: {
-          total_users: totalUsersAllTime,
+          total_users: isPeriodQuery ? totalUsersAtEndDate : totalUsersAllTime,
           users_growth_pct: usersGrowthPct,
-          total_donations_amount: totalDonationsAmount,
+          total_donations_amount: activeDonationsAmount,
           donations_growth_pct: donationsGrowthPct,
-          total_donations_count: totalDonationsAllTimeCount,
-          total_complaints: totalComplaintsAllTime,
+          total_donations_count: activeDonationsCount,
+          total_complaints: activeComplaintsTotal,
           complaints_growth_pct: complaintsGrowthPct,
-          total_events: totalEventsAllTime,
+          total_events: activeEventsCount,
           events_growth_pct: eventsGrowthPct,
         },
         user_growth: userGrowthTimeline,
         user_distribution: userDistribution,
         donations_overview: {
-          total_amount: totalDonationsAmount,
+          total_amount: activeDonationsAmount,
           growth_pct: donationsGrowthPct,
-          total_donations: totalDonationsAllTimeCount,
+          total_donations: activeDonationsCount,
           donations_count_growth_pct: donationsGrowthPct,
           timeline: donationsTimeline,
         },
         complaints_overview: {
-          total: totalComplaintsAllTime,
-          resolved: resolvedTickets,
-          in_progress: inProgressTickets,
-          pending: pendingTickets,
+          total: activeComplaintsTotal,
+          resolved: activeResolved,
+          in_progress: activeInProgress,
+          pending: activePending,
           growth_pct: complaintsGrowthPct,
-          resolved_pct: totalComplaintsAllTime > 0 ? Math.round((resolvedTickets / complaintsDenom) * 100) : 0,
-          in_progress_pct: totalComplaintsAllTime > 0 ? Math.round((inProgressTickets / complaintsDenom) * 100) : 0,
-          pending_pct: totalComplaintsAllTime > 0 ? Math.round((pendingTickets / complaintsDenom) * 100) : 0,
+          resolved_pct: Math.round((activeResolved / complaintsDenom) * 100),
+          in_progress_pct: Math.round((activeInProgress / complaintsDenom) * 100),
+          pending_pct: Math.round((activePending / complaintsDenom) * 100),
           timeline: complaintsTimeline,
         },
         top_content: topContent,
         events_overview: {
-          total_events: totalEventsAllTime,
+          total_events: activeEventsCount,
           events_growth_pct: eventsGrowthPct,
-          total_registrations: totalRegistrations,
+          total_registrations: activeRegistrations,
           registrations_growth_pct: eventsGrowthPct,
-          avg_attendance_pct: totalRegistrations > 0 ? 80 : 0,
+          avg_attendance_pct: activeRegistrations > 0 ? 80 : 0,
           timeline: eventsTimeline,
         },
       };

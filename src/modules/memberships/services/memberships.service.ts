@@ -30,6 +30,7 @@ import { RelatedEntityType } from '../../documents/entities/document.entity';
 import { RenewalRequestEntity } from '../../renewals/entities/renewal-request.entity';
 import { NotificationsService } from '../../notifications/services/notifications.service';
 import { MailService } from '../../mail/mail.service';
+import { validateAgeEligibility } from '../../../common/utils/age.util';
 import { resolveMembershipValidityDays } from '../utils/membership-validity.util';
 
 @Injectable()
@@ -73,6 +74,32 @@ export class MembershipsService {
         message: 'Cannot apply for an inactive membership category',
         code: 'INACTIVE_CATEGORY_SELECTION_BLOCKED',
         details: { category_id: dto.category_id, status: category.status },
+      });
+    }
+
+    // 18+ Age Eligibility Enforcement for Members
+    const rawDob =
+      (dto.personal_details as any)?.dob ||
+      (dto.personal_details as any)?.dateOfBirth ||
+      (dto.personal_details as any)?.date_of_birth ||
+      (dto as any).dob ||
+      (dto as any).date_of_birth;
+    const ageCheck = validateAgeEligibility(rawDob);
+    if (!ageCheck.isValid) {
+      throw new BadRequestException({
+        message: ageCheck.error || 'Date of birth is required for membership registration',
+        code: ageCheck.errorCode || 'INVALID_DOB',
+        details: null,
+      });
+    }
+    if (!ageCheck.isEligible) {
+      throw new BadRequestException({
+        message: 'You must be at least 18 years old to register with HRSJM',
+        code: 'AGE_NOT_ELIGIBLE',
+        details: {
+          minimum_age: 18,
+          calculated_age: ageCheck.age,
+        },
       });
     }
 
@@ -128,6 +155,7 @@ export class MembershipsService {
           email: dto.email ? dto.email.toLowerCase() : null,
           password_hash: passwordHash,
           roleName: 'MEMBER',
+          dob: rawDob,
         });
         targetUserId = newUser.id;
       }

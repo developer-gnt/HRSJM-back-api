@@ -130,4 +130,13 @@ export class AuthController {
     const { ip, userAgent } = this.requestContext(req);
     return this.authService.changePassword(req.user!.sub, dto, ip, userAgent);
   }
+
+  @Get('me/impact')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Get impact statistics for authenticated user' })
+  getMyImpact(@Req() req: AuthenticatedRequest) {
+    return this.authService.getUserImpact(req.user!.sub);
+  }
+
 }

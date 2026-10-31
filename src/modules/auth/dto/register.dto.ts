@@ -60,4 +60,14 @@ export class RegisterDto {
   @IsOptional()
   @IsIn(PUBLIC_REGISTER_ROLE_NAMES)
   role_name?: string;
+
+  @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
+  @IsOptional()
+  @IsString()
+  dob?: string;
+
+  @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
+  @IsOptional()
+  @IsString()
+  date_of_birth?: string;
 }

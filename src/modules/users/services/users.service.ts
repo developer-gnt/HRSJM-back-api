@@ -220,6 +220,8 @@ export class UsersService {
     password_hash: string;
     roleName?: string;
     roleId?: string;
+    dob?: string | null;
+    gender?: string | null;
   }): Promise<UserEntity> {
     return this.dataSource.transaction(async (manager) => {
       const user = await manager
@@ -230,6 +232,8 @@ export class UsersService {
             mobile_number: input.mobile_number,
             email: input.email,
             password_hash: input.password_hash,
+            dob: input.dob ?? null,
+            gender: input.gender ?? null,
           }),
         );
 
