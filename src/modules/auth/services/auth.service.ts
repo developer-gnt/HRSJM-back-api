@@ -492,8 +492,9 @@ async resetPassword(
     ip: string | null,
     userAgent: string | null,
   ): Promise<void> {
+    const rawToken = dto.token ? dto.token.trim() : '';
     const stored = await this.resetTokens.findOne({
-      where: { token_hash: sha256(dto.token) },
+      where: { token_hash: sha256(rawToken) },
     });
 
     if (!stored || stored.used_at || stored.expires_at.getTime() < Date.now()) {
@@ -506,33 +507,57 @@ async resetPassword(
 
     const password_hash = await bcrypt.hash(dto.password, BCRYPT_ROUNDS);
 
-    await this.dataSource.transaction(async (manager) => {
-      const user = await manager
-        .getRepository(UserEntity)
-        .findOne({ where: { id: stored.user_id } });
-      if (!user) {
-        throw new BadRequestException({
-          message: 'Invalid or expired reset token',
-          code: 'RESET_TOKEN_INVALID',
-          details: null,
-        });
+    try {
+      await this.dataSource.transaction(async (manager) => {
+        const user = await manager
+          .getRepository(UserEntity)
+          .findOne({ where: { id: stored.user_id } });
+        if (!user) {
+          throw new BadRequestException({
+            message: 'Invalid or expired reset token',
+            code: 'RESET_TOKEN_INVALID',
+            details: null,
+          });
+        }
+
+        user.password_hash = password_hash;
+        user.updated_by = user.id;
+        await manager.getRepository(UserEntity).save(user);
+
+        stored.used_at = new Date();
+        await manager.getRepository(PasswordResetTokenEntity).save(stored);
+
+        // Revoke every still-active refresh token of the user (TC-AUTH-031).
+        if (typeof (manager as any).createQueryBuilder === 'function') {
+          await (manager as any)
+            .createQueryBuilder()
+            .update(RefreshTokenEntity)
+            .set({ revoked_at: new Date() })
+            .where('user_id = :userId AND revoked_at IS NULL', { userId: user.id })
+            .execute();
+        } else {
+          await manager
+            .getRepository(RefreshTokenEntity)
+            .update(
+              { user_id: user.id, revoked_at: IsNull() },
+              { revoked_at: new Date() },
+            );
+        }
+      });
+    } catch (err) {
+      if (err instanceof BadRequestException) {
+        throw err;
       }
-
-      user.password_hash = password_hash;
-      user.updated_by = user.id;
-      await manager.getRepository(UserEntity).save(user);
-
-      stored.used_at = new Date();
-      await manager.getRepository(PasswordResetTokenEntity).save(stored);
-
-      // Revoke every still-active refresh token of the user (TC-AUTH-031).
-      await manager
-        .getRepository(RefreshTokenEntity)
-        .update(
-          { user_id: user.id, revoked_at: IsNull() },
-          { revoked_at: new Date() },
-        );
-    });
+      this.logger.error(
+        `[AuthService] Password reset transaction failed: ${err.message}`,
+        err.stack,
+      );
+      throw new InternalServerErrorException({
+        message: 'Unable to update password at this time. Please try again.',
+        code: 'PASSWORD_RESET_FAILED',
+        details: null,
+      });
+    }
 
     await this.auditService.record({
       event: 'AUTH_PASSWORD_RESET',
@@ -554,11 +579,11 @@ async resetPassword(
             changedAt: new Date(),
           })
           .catch((mailErr) => {
-            console.error(`[AuthService] Failed to send password changed alert: ${mailErr.message}`);
+            this.logger.error(`[AuthService] Failed to send password changed alert: ${mailErr.message}`);
           });
       }
     } catch (mailErr) {
-      console.warn('Error initiating password changed security email:', mailErr);
+      this.logger.warn('Error initiating password changed security email:', mailErr);
     }
   }
 

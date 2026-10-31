@@ -500,7 +500,7 @@ export function getResetPasswordPageHtml(prefillToken = ''): string {
 
   <script>
     // Extract token from query param or fallback
-    (function initToken() {
+    (async function initToken() {
       const urlParams = new URLSearchParams(window.location.search);
       const queryToken = urlParams.get('token');
       if (queryToken) {
@@ -510,6 +510,27 @@ export function getResetPasswordPageHtml(prefillToken = ''): string {
       if (!token) {
         showAlert('Missing reset token. Please open this page using the link provided in your email.', 'warning');
         document.getElementById('submitBtn').disabled = true;
+        return;
+      }
+
+      // Proactively verify the reset token on page load
+      try {
+        const verifyRes = await fetch('/api/v1/auth/verify-reset-token?token=' + encodeURIComponent(token.trim()));
+        const verifyData = await verifyRes.json().catch(() => ({}));
+        if (!verifyRes.ok) {
+          showAlert(verifyData.message || 'This reset link has expired or is invalid. Please request a new link from the mobile app.', 'danger');
+          document.getElementById('submitBtn').disabled = true;
+          document.getElementById('newPassword').disabled = true;
+          document.getElementById('confirmPassword').disabled = true;
+        } else if (verifyData.data?.email || verifyData.email) {
+          const userEmail = verifyData.data?.email || verifyData.email;
+          const descEl = document.querySelector('.card-desc');
+          if (descEl) {
+            descEl.innerHTML = 'Enter a new, secure password for <strong>' + userEmail + '</strong> to regain access.';
+          }
+        }
+      } catch (e) {
+        // Allow proceeding if initial verification encounters network error
       }
     })();
 
@@ -603,7 +624,10 @@ export function getResetPasswordPageHtml(prefillToken = ''): string {
         const data = await response.json().catch(() => ({}));
 
         if (!response.ok) {
-          const msg = data.message || 'Invalid or expired reset token. Please request a new link from the mobile app.';
+          let msg = data.message || 'Invalid or expired reset token. Please request a new link from the mobile app.';
+          if (msg === 'Internal server error') {
+            msg = 'Unable to update password at this time. Please request a new reset link or try again.';
+          }
           showAlert(Array.isArray(msg) ? msg.join(', ') : msg, 'danger');
           submitBtn.disabled = false;
           btnText.textContent = 'Update Password';

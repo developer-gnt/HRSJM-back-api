@@ -138,6 +138,7 @@ describe('AuthService', () => {
         password: 'password123',
         confirm_password: 'password123',
         role_name: 'DONATION_SEEKER',
+        dob: '1995-01-01',
       },
       null,
       null,
