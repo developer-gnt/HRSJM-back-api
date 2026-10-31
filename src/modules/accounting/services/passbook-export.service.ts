@@ -624,7 +624,7 @@ export class PassbookExportService {
 
     const headerRow = sheet.addRow(headers);
     headerRow.height = 24;
-    headerRow.eachCell((cell) => {
+    headerRow.eachCell((cell: ExcelJS.Cell) => {
       cell.font = { name: 'Calibri', size: 11, bold: true, color: { argb: 'FFFFFFFF' } };
       cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0F2860' } };
       cell.alignment = { horizontal: 'center', vertical: 'middle' };
@@ -654,7 +654,7 @@ export class PassbookExportService {
       const isEven = idx % 2 === 0;
       const bg = isEven ? 'FFFFFFFF' : 'FFF8FAFC';
 
-      row.eachCell((cell, colNum) => {
+      row.eachCell((cell: ExcelJS.Cell, colNum: number) => {
         cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: bg } };
         cell.border = {
           top: { style: 'thin', color: { argb: 'FFE2E8F0' } },
@@ -703,7 +703,7 @@ export class PassbookExportService {
       data.closingBalance,
     ]);
     totalRow.height = 24;
-    totalRow.eachCell((cell, colNum) => {
+    totalRow.eachCell((cell: ExcelJS.Cell, colNum: number) => {
       cell.font = { bold: true, color: { argb: 'FF0F2860' } };
       cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF1F5F9' } };
       cell.border = {
@@ -752,9 +752,9 @@ export class PassbookExportService {
         });
 
         const chunks: Buffer[] = [];
-        doc.on('data', (chunk) => chunks.push(chunk));
+        doc.on('data', (chunk: Buffer) => chunks.push(chunk));
         doc.on('end', () => resolve(Buffer.concat(chunks)));
-        doc.on('error', (err) => reject(err));
+        doc.on('error', (err: Error) => reject(err));
 
         const pageW = doc.page.width;
         const pageH = doc.page.height;
