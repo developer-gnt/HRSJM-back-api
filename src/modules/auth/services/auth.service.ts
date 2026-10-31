@@ -368,12 +368,13 @@ export class AuthService {
     };
   }
 
-  async forgotPassword(
+    async forgotPassword(
     identifier: string,
     ip: string | null,
     userAgent: string | null,
   ): Promise<{ delivered_mechanism: 'EMAIL'; message: string }> {
-    const user = await this.usersService.findByLoginIdentifier(identifier);
+    const cleanEmail = identifier ? identifier.trim().toLowerCase() : '';
+    const user = cleanEmail ? await this.usersService.findByLoginIdentifier(cleanEmail) : null;
     await this.auditService.record({
       event: 'AUTH_PASSWORD_RESET_REQUESTED',
       actorId: user?.id ?? null,
@@ -386,10 +387,10 @@ export class AuthService {
 
     const genericResponse: { delivered_mechanism: 'EMAIL'; message: string } = {
       delivered_mechanism: 'EMAIL',
-      message: 'If an account exists with this email, a password reset link has been sent.',
+      message: 'If an account exists with this email address, you will receive a password-reset link.',
     };
 
-    if (!user) {
+    if (!user || !user.email || !user.email.includes('@')) {
       return genericResponse;
     }
 
@@ -411,32 +412,59 @@ export class AuthService {
     // Build the reset password URL without exposing or logging it
     const baseUrl = (
       process.env.PASSWORD_RESET_BASE_URL ||
+      process.env.FRONTEND_URL ||
       process.env.APP_URL ||
-      'http://localhost:3000'
+      'http://194.164.151.17:3000'
     ).replace(/\/+$/, '');
     const resetUrl = `${baseUrl}/reset-password?token=${rawToken}`;
 
     // Dispatch email containing the reset URL if user has an email address
-    if (user.email && user.email.includes('@')) {
-      this.mailService
-        .sendPasswordResetLinkEmail({
-          recipientName: user.full_name,
-          recipientEmail: user.email,
-          resetUrl,
-          expiresInMinutes: 15,
-        })
-        .catch((err) => {
-          this.logger.error(`Failed to deliver password reset email: ${err.message}`);
-        });
+    try {
+      await this.mailService.sendPasswordResetLinkEmail({
+        recipientName: user.full_name,
+        recipientEmail: user.email,
+        resetUrl,
+        expiresInMinutes: 15,
+      });
+      this.logger.log(`[AuthService] Password reset link dispatched for account (expires in 15m)`);
+    } catch (err) {
+      this.logger.error(`Failed to deliver password reset email: ${err.message}`);
     }
-
-    // Never store or log raw reset tokens or full reset URLs
-    this.logger.log(`[AuthService] Password reset link dispatched for account (expires in 15m)`);
 
     return genericResponse;
   }
 
-  async resetPassword(
+  async verifyResetToken(token: string): Promise<{ valid: boolean; email?: string }> {
+    if (!token || typeof token !== 'string') {
+      throw new BadRequestException({
+        message: 'Invalid or missing reset token',
+        code: 'RESET_TOKEN_INVALID',
+      });
+    }
+
+    const stored = await this.resetTokens.findOne({
+      where: { token_hash: sha256(token.trim()) },
+    });
+
+    if (!stored || stored.used_at || stored.expires_at.getTime() < Date.now()) {
+      throw new BadRequestException({
+        message: 'Invalid or expired reset token',
+        code: 'RESET_TOKEN_INVALID',
+      });
+    }
+
+    const user = await this.usersService.findById(stored.user_id);
+    const maskedEmail = user?.email
+      ? `${user.email.slice(0, 3)}***@${user.email.split('@')[1]}`
+      : undefined;
+
+    return {
+      valid: true,
+      email: maskedEmail,
+    };
+  }
+
+async resetPassword(
     dto: ResetPasswordDto,
     ip: string | null,
     userAgent: string | null,

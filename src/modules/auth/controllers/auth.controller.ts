@@ -6,6 +6,7 @@ import {
   HttpStatus,
   Patch,
   Post,
+  Query,
   Req,
   Res,
   UseGuards,
@@ -99,6 +100,15 @@ export class AuthController {
     const html = this.authService.getResetPasswordPageHtml(token);
     res.setHeader('Content-Type', 'text/html');
     return res.send(html);
+  }
+
+  
+  @Throttle({ default: { limit: 15, ttl: 60000 } })
+  @Get('verify-reset-token')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Verify if a reset token is valid and unexpired' })
+  verifyResetToken(@Query('token') token: string) {
+    return this.authService.verifyResetToken(token);
   }
 
   @Post('reset-password')

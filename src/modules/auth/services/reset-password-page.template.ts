@@ -485,9 +485,9 @@ export function getResetPasswordPageHtml(prefillToken = ''): string {
           </div>
           <h2 class="success-title">Password Reset Complete!</h2>
           <p class="success-desc">
-            Your account password has been updated securely. You can now return to the <strong>HRSJM Mobile App</strong> or portal and sign in with your new password.
+            Your password has been reset successfully. You can now sign in with your new password.
           </p>
-          <a href="#" class="btn-open-app" onclick="returnToApp()">Return to Sign In</a>
+          <a href="#" class="btn-open-app" onclick="returnToApp()">Sign In</a>
         </div>
       </div>
     </div>
