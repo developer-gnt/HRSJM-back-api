@@ -25,6 +25,8 @@ export interface RenewalQuoteResult {
   is_overdue: boolean;
   days_overdue: number;
   days_remaining: number;
+  is_eligible_for_renewal: boolean;
+  renewal_validation_message?: string;
   unpaid_periods_count: number;
   paid_periods_count: number;
   periods: RenewalPeriodQuote[];
@@ -132,6 +134,8 @@ export class RenewalCalculationService {
         is_overdue: false,
         days_overdue: 0,
         days_remaining: 0,
+        is_eligible_for_renewal: false,
+        renewal_validation_message: validation.reason,
         unpaid_periods_count: 0,
         paid_periods_count: 0,
         periods: [],
@@ -227,6 +231,11 @@ export class RenewalCalculationService {
       explanation = `Normal annual renewal fee for Year ${paidPeriodsCount + 1}.`;
     }
 
+    const isEligibleForRenewal = isOverdue || daysRemaining <= 30;
+    const renewalValidationMessage = isEligibleForRenewal
+      ? undefined
+      : 'Membership renewal is allowed only within 30 days before the expiry date.';
+
     return {
       membership_id: membershipId,
       membership_number: membershipNumber,
@@ -237,6 +246,8 @@ export class RenewalCalculationService {
       is_overdue: isOverdue,
       days_overdue: daysOverdue,
       days_remaining: daysRemaining,
+      is_eligible_for_renewal: isEligibleForRenewal,
+      renewal_validation_message: renewalValidationMessage,
       unpaid_periods_count: isOverdue ? unpaidPeriodsCount : 0,
       paid_periods_count: paidPeriodsCount,
       periods,

@@ -1,7 +1,9 @@
+import { getResetPasswordPageHtml } from './reset-password-page.template';
 import {
   BadRequestException,
   ForbiddenException,
   Injectable,
+  Logger,
   InternalServerErrorException,
   UnauthorizedException,
   Optional,
@@ -34,7 +36,7 @@ import {
 import { MailService } from '../../mail/mail.service';
 
 const BCRYPT_ROUNDS = 10;
-const RESET_TOKEN_TTL_MS = 30 * 60 * 1000;
+const RESET_TOKEN_TTL_MS = 15 * 60 * 1000; // 15-minute expiry per security requirements
 
 function sha256(value: string): string {
   return createHash('sha256').update(value).digest('hex');
@@ -49,6 +51,7 @@ import { NotificationsService } from '../../notifications/services/notifications
 
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
   constructor(
     private readonly usersService: UsersService,
     private readonly jwtService: JwtService,
@@ -369,7 +372,7 @@ export class AuthService {
     identifier: string,
     ip: string | null,
     userAgent: string | null,
-  ): Promise<{ delivered_mechanism: 'TBC'; reset_token?: string }> {
+  ): Promise<{ delivered_mechanism: 'EMAIL'; message: string }> {
     const user = await this.usersService.findByLoginIdentifier(identifier);
     await this.auditService.record({
       event: 'AUTH_PASSWORD_RESET_REQUESTED',
@@ -381,7 +384,20 @@ export class AuthService {
       metadata: { account_found: Boolean(user) },
     });
 
-    if (!user) return { delivered_mechanism: 'TBC' };
+    const genericResponse: { delivered_mechanism: 'EMAIL'; message: string } = {
+      delivered_mechanism: 'EMAIL',
+      message: 'If an account exists with this email, a password reset link has been sent.',
+    };
+
+    if (!user) {
+      return genericResponse;
+    }
+
+    // Invalidate any previously issued, unused reset tokens for this user
+    await this.resetTokens.update(
+      { user_id: user.id, used_at: IsNull() },
+      { used_at: new Date() },
+    );
 
     const rawToken = randomBytes(32).toString('hex');
     await this.resetTokens.insert(
@@ -392,13 +408,32 @@ export class AuthService {
       }),
     );
 
-    // Delivery channel (email/SMS) is TBC per BRD. Outside production the raw
-    // token is returned in the response for manual testing only.
-    const isProduction = this.configService.get('app')?.env === 'production';
-    return {
-      delivered_mechanism: 'TBC',
-      ...(isProduction ? {} : { reset_token: rawToken }),
-    };
+    // Build the reset password URL without exposing or logging it
+    const baseUrl = (
+      process.env.PASSWORD_RESET_BASE_URL ||
+      process.env.APP_URL ||
+      'http://localhost:3000'
+    ).replace(/\/+$/, '');
+    const resetUrl = `${baseUrl}/reset-password?token=${rawToken}`;
+
+    // Dispatch email containing the reset URL if user has an email address
+    if (user.email && user.email.includes('@')) {
+      this.mailService
+        .sendPasswordResetLinkEmail({
+          recipientName: user.full_name,
+          recipientEmail: user.email,
+          resetUrl,
+          expiresInMinutes: 15,
+        })
+        .catch((err) => {
+          this.logger.error(`Failed to deliver password reset email: ${err.message}`);
+        });
+    }
+
+    // Never store or log raw reset tokens or full reset URLs
+    this.logger.log(`[AuthService] Password reset link dispatched for account (expires in 15m)`);
+
+    return genericResponse;
   }
 
   async resetPassword(
@@ -726,4 +761,12 @@ export class AuthService {
       });
     }
   }
+
+  /**
+   * Serve the dedicated responsive Reset Password webpage HTML
+   */
+  getResetPasswordPageHtml(token?: string): string {
+    return getResetPasswordPageHtml(token);
+  }
+
 }

@@ -25,6 +25,7 @@ import { UpdateMembershipDto } from '../dto/update-membership.dto';
 import { ListMembershipsDto } from '../dto/list-memberships.dto';
 import { UpdateMembershipStatusDto } from '../dto/update-membership-status.dto';
 import { AdminResetPasswordDto } from '../dto/admin-reset-password.dto';
+import { KitFulfillmentDto } from '../dto/kit-fulfillment.dto';
 import { OptionalJwtAuthGuard } from '../../../common/guards/optional-jwt-auth.guard';
 
 @ApiTags('memberships')
@@ -127,6 +128,18 @@ export class MembershipsController {
     @AuthenticatedUser() user: { sub: string },
   ) {
     return this.membershipsService.adminResetPassword(id, dto, user.sub);
+  }
+
+  @Patch('memberships/:id/kit-fulfillment')
+  @UseGuards(JwtAuthGuard, PermissionsGuard)
+  @RequirePermissions('membership.manage_status')
+  @ApiOperation({ summary: 'Update physical kit fulfillment / dispatch tracking (admin)' })
+  updateKitFulfillment(
+    @Param('id') id: string,
+    @Body() dto: KitFulfillmentDto,
+    @AuthenticatedUser() user: { sub: string },
+  ) {
+    return this.membershipsService.updateKitFulfillment(id, dto, user.sub);
   }
 
   @Get('memberships/:id/documents')

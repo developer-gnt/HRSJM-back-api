@@ -1,4 +1,4 @@
-﻿import {
+import {
   BadRequestException,
   ForbiddenException,
   Injectable,
@@ -11,8 +11,8 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { randomUUID } from 'crypto';
 import { mkdir, writeFile } from 'fs/promises';
 import * as path from 'path';
-import { Repository } from 'typeorm';
-import { DocumentEntity, RelatedEntityType } from '../entities/document.entity';
+import { In, Repository } from 'typeorm';
+import { DocumentEntity, DocumentType, RelatedEntityType } from '../entities/document.entity';
 import { UploadDocumentDto } from '../dto/upload-document.dto';
 import { ListDocumentsDto } from '../dto/list-documents.dto';
 import { AuditService } from '../../audit/services/audit.service';
@@ -216,6 +216,55 @@ export class DocumentsService {
     }
 
     return document;
+  }
+
+  async createAttachmentRecord(
+    payload: {
+      document_name: string;
+      document_type?: DocumentType;
+      related_entity_type?: RelatedEntityType;
+      related_entity_id?: string;
+      file_name?: string;
+      original_file_name?: string;
+      mime_type?: string;
+      file_size?: number;
+      file_url?: string;
+      storage_path?: string;
+      description?: string;
+      owner_id: string;
+    },
+    actingUserId: string,
+  ): Promise<DocumentEntity> {
+    const document = this.documents.create({
+      user_id: payload.owner_id,
+      created_by: actingUserId,
+      updated_by: actingUserId,
+      document_name: payload.document_name.trim(),
+      document_type: payload.document_type || DocumentType.SUPPORT_TICKET_ATTACHMENT,
+      file_name: payload.file_name || payload.document_name,
+      original_file_name: payload.original_file_name || payload.document_name,
+      mime_type: payload.mime_type || 'application/octet-stream',
+      file_size: payload.file_size || 0,
+      storage_path: payload.file_url || payload.storage_path || '',
+      related_entity_type: payload.related_entity_type ?? RelatedEntityType.SUPPORT_TICKET,
+      related_entity_id: payload.related_entity_id ?? null,
+      description: payload.description ?? null,
+      is_archived: false,
+    });
+
+    return this.documents.save(document);
+  }
+
+  async findForTicketIds(ticketIds: string[]): Promise<DocumentEntity[]> {
+    if (!ticketIds || ticketIds.length === 0) return [];
+    return this.documents.find({
+      where: {
+        related_entity_type: RelatedEntityType.SUPPORT_TICKET,
+        related_entity_id: In(ticketIds),
+        is_archived: false,
+      },
+      order: { created_at: 'ASC' },
+    });
   }
 
   async findByRelatedEntity(

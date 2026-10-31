@@ -70,6 +70,24 @@ export class RenewalsService {
       });
     }
 
+    // 30-day renewal window validation: allow renewal only within 30 days before expiry date or after expiry
+    if (membership.expiry_date) {
+      const now = new Date();
+      const currentExpiry = new Date(membership.expiry_date);
+      const isOverdue = currentExpiry.getTime() < now.getTime();
+      const daysRemaining = !isOverdue
+        ? Math.ceil((currentExpiry.getTime() - now.getTime()) / (1000 * 60 * 60 * 24))
+        : 0;
+
+      if (!isOverdue && daysRemaining > 30) {
+        throw new BadRequestException({
+          message: 'Membership renewal is allowed only within 30 days before the expiry date.',
+          code: 'RENEWAL_WINDOW_NOT_OPEN',
+          details: { daysRemaining, expiryDate: membership.expiry_date },
+        });
+      }
+    }
+
     const pastRenewals = await this.renewalsRepo.find({
       where: { membership_id: membership.id },
       order: { created_at: 'ASC' },

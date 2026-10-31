@@ -25,4 +25,8 @@ export class UpdateMembershipDto {
   @IsOptional()
   @IsString()
   admin_notes?: string;
+
+  @IsOptional()
+  @IsObject()
+  kit_fulfillment?: Record<string, unknown>;
 }

@@ -386,6 +386,7 @@ export class DonationPaymentsService implements OnModuleInit {
         }
       }
 
+      const causeTitle = savedPayment.donation?.cause || 'General Donation';
       const receipt = manager.create(ReceiptEntity, {
         receipt_number: receiptNumber,
         receipt_date: now,
@@ -395,7 +396,7 @@ export class DonationPaymentsService implements OnModuleInit {
         payment_method: savedPayment.payment_method,
         receipt_type: 'DONATION',
         issued_to: savedPayment.donation?.donor_name ?? 'Donor',
-        notes: `Donation payment verified via ${savedPayment.payment_method}`,
+        notes: causeTitle,
         accounting_entry_id: entry.id,
         created_by: receiptUserId,
         updated_by: receiptUserId,

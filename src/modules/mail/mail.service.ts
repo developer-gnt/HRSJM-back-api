@@ -12,6 +12,7 @@ import {
   MembershipStatusUpdateMailPayload,
   MembershipWelcomeMailPayload,
   PasswordChangedNoticeMailPayload,
+  PasswordResetLinkMailPayload,
   SendMailOptions,
   TicketStatusUpdateMailPayload,
 } from './mail.interface';
@@ -2022,6 +2023,111 @@ You can reply directly to this email to respond to ${senderEmail}.
       inquiryRef: ref,
     };
   }
+
+  /**
+   * Dispatch password reset link email with 15-minute validity.
+   * Never logs the raw reset URL or tokens.
+   */
+  async sendPasswordResetLinkEmail(
+    payload: PasswordResetLinkMailPayload,
+  ): Promise<boolean> {
+    const { recipientName, recipientEmail, resetUrl, expiresInMinutes = 15 } = payload;
+    if (!recipientEmail || !recipientEmail.includes('@')) return false;
+
+    const cleanName = recipientName?.trim() || 'Valued Member';
+    const emailSubject = `🔐 Reset Your Password - Human Rights & Social Justice Mission`;
+
+    const html = `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${emailSubject}</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #FAF7F0; margin: 0; padding: 24px 12px; color: #1e293b; }
+    .card { max-width: 580px; margin: 0 auto; background: #ffffff; border-radius: 14px; overflow: hidden; box-shadow: 0 4px 20px rgba(1,31,57,0.08); border: 1px solid #DCE4EC; }
+    .gold-bar { height: 4px; background: linear-gradient(90deg, #FAD465, #E9B82E, #FAD465); }
+    .header { background-color: #011F39; padding: 28px 24px; text-align: center; color: #ffffff; }
+    .header h2 { margin: 0; font-size: 19px; letter-spacing: 0.5px; font-weight: 800; color: #FFFFFF; }
+    .header p { margin: 6px 0 0 0; font-size: 12px; color: #FAD465; text-transform: uppercase; letter-spacing: 1.5px; font-weight: 600; }
+    .content { padding: 32px 28px; }
+    .content h3 { color: #0B2F52; margin-top: 0; font-size: 18px; font-weight: 700; }
+    .content p { font-size: 14px; color: #34516D; line-height: 1.6; margin: 12px 0; }
+    .btn-container { text-align: center; margin: 28px 0; }
+    .reset-btn { background-color: #FAD465; color: #011F39 !important; font-weight: 700; font-size: 15px; padding: 14px 32px; border-radius: 8px; text-decoration: none; display: inline-block; box-shadow: 0 2px 8px rgba(250,212,101,0.4); }
+    .link-box { background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 6px; padding: 12px 14px; margin: 20px 0; word-break: break-all; font-size: 12px; color: #64748B; line-height: 1.4; }
+    .warning { font-size: 13px; color: #92400E; background: #FEF3C7; border: 1px solid #FDE68A; padding: 12px 16px; border-radius: 8px; margin: 20px 0; line-height: 1.5; }
+    .footer { background: #F8FAFC; padding: 22px 24px; text-align: center; border-top: 1px solid #E2E8F0; font-size: 12px; color: #718096; line-height: 1.5; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="gold-bar"></div>
+    <div class="header">
+      <h2>HUMAN RIGHTS &amp; SOCIAL JUSTICE MISSION</h2>
+      <p>Official Account Security</p>
+    </div>
+    <div class="content">
+      <h3>Hello ${cleanName},</h3>
+      <p>
+        We received a request to reset the password for your account associated with <strong>${recipientEmail}</strong> on the <strong>HRSJM Portal and Mobile Application</strong>.
+      </p>
+      <p>
+        To choose a new password, please click the button below:
+      </p>
+      <div class="btn-container">
+        <a href="${resetUrl}" class="reset-btn" target="_blank" rel="noopener noreferrer">Reset Password</a>
+      </div>
+      <div class="warning">
+        ⏳ <strong>Security Notice:</strong> This password reset link is valid for <strong>${expiresInMinutes} minutes</strong> only and can be used once. For your protection, never share this link with anyone.
+      </div>
+      <p style="font-size: 12px; color: #64748B;">
+        If the button above does not work, copy and paste the following URL into your mobile or desktop browser:
+      </p>
+      <div class="link-box">
+        <a href="${resetUrl}" style="color: #174A78; text-decoration: none;">${resetUrl}</a>
+      </div>
+      <p style="font-size: 13px; color: #718096; margin-top: 24px;">
+        If you did not request this password reset, please disregard this email. Your password will remain unchanged and your account is completely safe.
+      </p>
+    </div>
+    <div class="footer">
+      Human Rights &amp; Social Justice Mission (HRSJM)<br>
+      National IT &amp; Security Division · <a href="https://hrsjm.org" style="color: #0B2F52; text-decoration: none;">hrsjm.org</a> · New Delhi, India
+    </div>
+  </div>
+</body>
+</html>
+    `.trim();
+
+    const plainText = `
+HUMAN RIGHTS & SOCIAL JUSTICE MISSION (HRSJM)
+Account Password Reset
+
+Hello ${cleanName},
+
+We received a request to reset your password for your account (${recipientEmail}) on the HRSJM application and portal.
+
+To reset your password, please open the following link in your browser:
+${resetUrl}
+
+This link is valid for ${expiresInMinutes} minutes and can only be used once.
+
+If you did not request this reset, you can safely ignore this email. Your password will remain unchanged.
+
+Human Rights & Social Justice Mission
+https://hrsjm.org
+    `.trim();
+
+    const result = await this.sendMail({
+      to: recipientEmail,
+      subject: emailSubject,
+      html,
+      text: plainText,
+    });
+
+    return result.success;
+  }
+
 }
-
-
