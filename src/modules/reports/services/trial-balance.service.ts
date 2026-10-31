@@ -63,8 +63,9 @@ export class TrialBalanceService {
   async getTrialBalance(
     dto: TrialBalanceQueryDto,
   ): Promise<TrialBalanceReportResponse> {
-    const asOfDate = dto.as_of_date
-      ? toInclusiveEnd(dto.as_of_date)
+    const rawDate = dto.as_of_date || dto.asOfDate || dto.date || dto.to_date;
+    const asOfDate = rawDate
+      ? toInclusiveEnd(rawDate)
       : new Date();
 
     const qb = this.accountRepo
@@ -133,8 +134,11 @@ export class TrialBalanceService {
       }
 
       // Filter zero balances unless explicitly requested
+      const shouldIncludeZero = Boolean(
+        dto.include_zero_balances || dto.include_zero_balance || dto.includeZero,
+      );
       if (
-        !dto.include_zero_balances &&
+        !shouldIncludeZero &&
         grossDebitPaise === 0 &&
         grossCreditPaise === 0
       ) {
