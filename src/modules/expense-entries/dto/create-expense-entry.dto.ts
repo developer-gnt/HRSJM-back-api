@@ -40,13 +40,13 @@ export class CreateExpenseEntryDto {
   @IsUUID()
   expense_account_id: string;
 
-  @ApiProperty({
+  @ApiPropertyOptional({
     example: '00000000-0000-4000-8000-000000000751',
-    description: 'ID of the paid-from asset account (Bank or Cash)',
+    description: 'ID of the paid-from asset account (Bank or Cash). Optional: auto-resolved from payment_method if omitted.',
   })
-  @IsNotEmpty()
+  @IsOptional()
   @IsUUID()
-  paid_from_account_id: string;
+  paid_from_account_id?: string;
 
   @ApiProperty({
     example: 5000.0,
