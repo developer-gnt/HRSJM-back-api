@@ -40,13 +40,13 @@ export class CreateReceiptEntryDto {
   @IsUUID()
   income_account_id: string;
 
-  @ApiProperty({
+  @ApiPropertyOptional({
     example: '00000000-0000-4000-8000-000000000751',
-    description: 'ID of the receiving asset account (Bank or Cash)',
+    description: 'ID of the receiving asset account (Bank or Cash). Optional: auto-resolved from payment_method if omitted.',
   })
-  @IsNotEmpty()
+  @IsOptional()
   @IsUUID()
-  received_in_account_id: string;
+  received_in_account_id?: string;
 
   @ApiProperty({
     example: 25000.0,
