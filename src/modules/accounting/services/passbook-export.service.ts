@@ -767,88 +767,124 @@ export class PassbookExportService {
         doc.rect(0, 46, pageW, 3).fill('#C9A227');
 
         // Banner Text
-        doc.fontSize(14).fillColor('#FFFFFF').text('HUMAN RIGHTS & SOCIAL JUSTICE MISSION', margin, 12, {
+        doc.fontSize(13).fillColor('#FFFFFF').text('HUMAN RIGHTS & SOCIAL JUSTICE MISSION', margin, 12, {
           bold: true,
+          lineBreak: false,
         } as any);
         doc
-          .fontSize(8.5)
-          .fillColor('#C9A227')
-          .text('Regd. National Public Charitable NGO • Financial Passbook & Live Ledger Statement', margin, 28);
+          .fontSize(8)
+          .fillColor('#EAA224')
+          .text('Regd. National Public Charitable NGO • Financial Passbook & Live Ledger Statement', margin, 29, {
+            lineBreak: false,
+          });
+
+        // Filter label mapping
+        const filterLabel =
+          data.transactionType === 'PAYMENT_IN'
+            ? 'Incoming Credits Only'
+            : data.transactionType === 'PAYMENT_OUT'
+            ? 'Outgoing Expenses Only'
+            : 'All Transactions (In & Out)';
 
         // Document Meta on right of header
-        doc.fontSize(8).fillColor('#FFFFFF').text(`Generated: ${new Date().toLocaleDateString('en-GB')}`, pageW - margin - 150, 14, {
+        doc.fontSize(8).fillColor('#FFFFFF').text(`Generated: ${new Date().toLocaleDateString('en-GB')}`, pageW - margin - 180, 13, {
           align: 'right',
-          width: 150,
+          width: 180,
+          lineBreak: false,
         });
-        doc.fontSize(8).fillColor('#CBD5E1').text(`Filter: ${data.transactionType}`, pageW - margin - 150, 26, {
+        doc.fontSize(8).fillColor('#CBD5E1').text(`Scope: ${filterLabel}`, pageW - margin - 180, 27, {
           align: 'right',
-          width: 150,
+          width: 180,
+          lineBreak: false,
         });
 
         let y = 62;
 
         // Title and Scope Box
-        doc.fontSize(14).fillColor('#0F2860').text('PASSBOOK STATEMENT', margin, y, { bold: true } as any);
-        doc.fontSize(9).fillColor('#64748B').text(`Period: ${data.periodLabel}   •   Total Transactions: ${data.totalCount}`, margin, y + 18);
+        doc.fontSize(14).fillColor('#0F2860').text('PASSBOOK STATEMENT', margin, y, { bold: true, lineBreak: false } as any);
+        doc.fontSize(8.5).fillColor('#64748B').text(
+          `Period: ${data.periodLabel}   •   Total Transactions: ${data.totalCount}   •   Official Reconciled Ledger`,
+          margin,
+          y + 18,
+          { lineBreak: false },
+        );
 
         y += 40;
 
-        // KPI Summary Cards
-        const cardW = (printW - 24) / 4;
-        const cardH = 42;
+        // KPI Summary Cards (Cleanly distributed across printW)
+        const cardGap = 12;
+        const cardW = (printW - cardGap * 3) / 4;
+        const cardH = 46;
         const cards = [
-          { title: 'Opening Balance', amt: `Rs. ${formatINR(data.openingBalance)}`, color: '#1E293B', bg: '#F8FAFC' },
-          { title: 'Total Inflow (Credits)', amt: `+ Rs. ${formatINR(data.totalCredit)}`, color: '#15803D', bg: '#F0FDF4' },
-          { title: 'Total Outflow (Debits)', amt: `- Rs. ${formatINR(data.totalDebit)}`, color: '#DC2626', bg: '#FEF2F2' },
-          { title: 'Closing Balance', amt: `Rs. ${formatINR(data.closingBalance)}`, color: '#0F2860', bg: '#EFF6FF' },
+          { title: 'OPENING BALANCE', amt: `Rs. ${formatINR(data.openingBalance)}`, color: '#0F2860', bg: '#F8FAFC', border: '#E2E8F0' },
+          { title: 'TOTAL INFLOW (CREDITS)', amt: `+ Rs. ${formatINR(data.totalCredit)}`, color: '#15803D', bg: '#F0FDF4', border: '#BBF7D0' },
+          { title: 'TOTAL OUTFLOW (DEBITS)', amt: `- Rs. ${formatINR(data.totalDebit)}`, color: '#DC2626', bg: '#FEF2F2', border: '#FECACA' },
+          { title: 'CLOSING BALANCE', amt: `Rs. ${formatINR(data.closingBalance)}`, color: '#0F2860', bg: '#EFF6FF', border: '#BFDBFE' },
         ];
 
         cards.forEach((c, idx) => {
-          const cx = margin + idx * (cardW + 8);
-          doc.roundedRect(cx, y, cardW, cardH, 4).fillAndStroke(c.bg, '#E2E8F0');
-          doc.fontSize(7.5).fillColor('#64748B').text(c.title, cx + 8, y + 8);
-          doc.fontSize(10.5).fillColor(c.color).text(c.amt, cx + 8, y + 22, { bold: true } as any);
+          const cx = margin + idx * (cardW + cardGap);
+          doc.roundedRect(cx, y, cardW, cardH, 5).fillAndStroke(c.bg, c.border);
+          doc.fontSize(7.5).fillColor('#64748B').text(c.title, cx + 10, y + 9, { bold: true, lineBreak: false } as any);
+          doc.fontSize(11.5).fillColor(c.color).text(c.amt, cx + 10, y + 24, { bold: true, lineBreak: false } as any);
         });
 
         y += cardH + 16;
 
-        // Table Column Config (Total width = printW = ~782 pt in A4 landscape)
+        // Table Column Config (Total width = printW = 781.89 pt in A4 landscape)
         const cols = [
-          { label: 'Date', width: 68, align: 'left' },
-          { label: 'Voucher No', width: 95, align: 'left' },
-          { label: 'Type', width: 85, align: 'left' },
-          { label: 'Party / Particulars', width: 150, align: 'left' },
-          { label: 'Mode', width: 65, align: 'left' },
-          { label: 'Debit (Rs.)', width: 90, align: 'right' },
-          { label: 'Credit (Rs.)', width: 95, align: 'right' },
-          { label: 'Balance (Rs.)', width: 134, align: 'right' },
+          { label: 'Date', width: 66, align: 'left' },
+          { label: 'Voucher No', width: 96, align: 'left' },
+          { label: 'Type', width: 78, align: 'left' },
+          { label: 'Party / Particulars', width: 196, align: 'left' },
+          { label: 'Mode', width: 85, align: 'left' },
+          { label: 'Debit (Rs.)', width: 85, align: 'right' },
+          { label: 'Credit (Rs.)', width: 85, align: 'right' },
+          { label: 'Balance (Rs.)', width: 90.89, align: 'right' },
         ];
 
         const drawTableHeader = (posY: number) => {
-          doc.rect(margin, posY, printW, 20).fill('#0F2860');
+          doc.rect(margin, posY, printW, 22).fill('#0F2860');
           let cx = margin + 4;
           cols.forEach((col) => {
-            doc.fontSize(8).fillColor('#FFFFFF').text(col.label, cx, posY + 6, {
+            doc.fontSize(8).fillColor('#FFFFFF').text(col.label, cx, posY + 7, {
               width: col.width - 8,
               align: col.align as any,
               bold: true,
+              lineBreak: false,
             } as any);
             cx += col.width;
           });
-          return posY + 20;
+          return posY + 22;
         };
 
         y = drawTableHeader(y);
 
+        // Helper to format payment method into clean title case without overflow
+        const formatPaymentMode = (mode: string) => {
+          if (!mode) return '—';
+          const clean = mode.trim().toUpperCase().replace(/[-_]/g, ' ');
+          if (clean === 'BANK TRANSFER' || clean === 'BANK' || clean === 'NEFT' || clean === 'RTGS' || clean === 'IMPS') {
+            return 'Bank Transfer';
+          }
+          if (clean === 'CASH') return 'Cash';
+          if (clean === 'UPI') return 'UPI';
+          if (clean === 'CHEQUE' || clean === 'CHECK') return 'Cheque';
+          if (clean === 'CARD' || clean === 'CREDIT CARD' || clean === 'DEBIT CARD') return 'Card';
+          if (clean === 'ONLINE') return 'Online PG';
+          return clean.replace(/\w\S*/g, (txt) => txt.charAt(0).toUpperCase() + txt.substr(1).toLowerCase());
+        };
+
         // Data Rows
-        const rowH = 18;
+        const rowH = 22;
         data.transactions.forEach((tx, idx) => {
           if (y + rowH > pageH - 45) {
             doc.addPage();
             // Header bar on continuation page
-            doc.rect(0, 0, pageW, 20).fill('#0F2860');
-            doc.fontSize(8).fillColor('#FFFFFF').text('HUMAN RIGHTS & SOCIAL JUSTICE MISSION — PASSBOOK STATEMENT (Contd.)', margin, 6);
-            y = drawTableHeader(32);
+            doc.rect(0, 0, pageW, 22).fill('#0F2860');
+            doc.rect(0, 22, pageW, 2).fill('#C9A227');
+            doc.fontSize(8).fillColor('#FFFFFF').text('HUMAN RIGHTS & SOCIAL JUSTICE MISSION — PASSBOOK STATEMENT (Contd.)', margin, 7, { bold: true, lineBreak: false } as any);
+            y = drawTableHeader(34);
           }
 
           const isEven = idx % 2 === 0;
@@ -859,32 +895,33 @@ export class PassbookExportService {
           let cx = margin + 4;
 
           // 1. Date
-          doc.fontSize(7.5).fillColor('#334155').text(tx.date, cx, y + 5, { width: cols[0].width - 8 });
+          doc.fontSize(7.5).fillColor('#334155').text(tx.date, cx, y + 7, { width: cols[0].width - 8, lineBreak: false });
           cx += cols[0].width;
 
           // 2. Voucher No
-          doc.fontSize(7.5).fillColor('#0F2860').text(tx.voucherNumber, cx, y + 5, { width: cols[1].width - 8, bold: true } as any);
+          doc.fontSize(7.5).fillColor('#0F2860').text(tx.voucherNumber, cx, y + 7, { width: cols[1].width - 8, bold: true, lineBreak: false } as any);
           cx += cols[1].width;
 
           // 3. Type
           const typeColor = tx.type === 'PAYMENT_IN' ? '#15803D' : '#DC2626';
-          doc.fontSize(7.5).fillColor(typeColor).text(tx.typeLabel.replace('Payment ', ''), cx, y + 5, { width: cols[2].width - 8 });
+          const typeText = tx.type === 'PAYMENT_IN' ? 'In (Receipt)' : 'Out (Expense)';
+          doc.fontSize(7.5).fillColor(typeColor).text(typeText, cx, y + 7, { width: cols[2].width - 8, lineBreak: false });
           cx += cols[2].width;
 
-          // 4. Party Name
-          doc.fontSize(7.5).fillColor('#0F172A').text(tx.partyName.slice(0, 32), cx, y + 5, { width: cols[3].width - 8 });
+          // 4. Party Name (with clean ellipsis)
+          doc.fontSize(7.5).fillColor('#0F172A').text(tx.partyName.slice(0, 42), cx, y + 7, { width: cols[3].width - 8, lineBreak: false, ellipsis: true });
           cx += cols[3].width;
 
-          // 5. Payment Mode
-          doc.fontSize(7.5).fillColor('#475569').text(tx.paymentMethod, cx, y + 5, { width: cols[4].width - 8 });
+          // 5. Payment Mode (Clean formatted, plenty of width, single line)
+          doc.fontSize(7.5).fillColor('#475569').text(formatPaymentMode(tx.paymentMethod), cx, y + 7, { width: cols[4].width - 8, lineBreak: false, ellipsis: true });
           cx += cols[4].width;
 
           // 6. Debit
           doc.fontSize(7.5).fillColor(tx.debit > 0 ? '#DC2626' : '#94A3B8').text(
             tx.debit > 0 ? formatINR(tx.debit) : '—',
             cx,
-            y + 5,
-            { width: cols[5].width - 8, align: 'right' },
+            y + 7,
+            { width: cols[5].width - 8, align: 'right', lineBreak: false },
           );
           cx += cols[5].width;
 
@@ -892,8 +929,8 @@ export class PassbookExportService {
           doc.fontSize(7.5).fillColor(tx.credit > 0 ? '#15803D' : '#94A3B8').text(
             tx.credit > 0 ? formatINR(tx.credit) : '—',
             cx,
-            y + 5,
-            { width: cols[6].width - 8, align: 'right', bold: tx.credit > 0 } as any,
+            y + 7,
+            { width: cols[6].width - 8, align: 'right', bold: tx.credit > 0, lineBreak: false } as any,
           );
           cx += cols[6].width;
 
@@ -901,55 +938,71 @@ export class PassbookExportService {
           doc.fontSize(7.5).fillColor('#0F2860').text(
             formatINR(tx.runningBalance),
             cx,
-            y + 5,
-            { width: cols[7].width - 8, align: 'right', bold: true } as any,
+            y + 7,
+            { width: cols[7].width - 8, align: 'right', bold: true, lineBreak: false } as any,
           );
 
           // Row bottom border
-          doc.rect(margin, y + rowH, printW, 0.4).fill('#E2E8F0');
+          doc.rect(margin, y + rowH, printW, 0.5).fill('#E2E8F0');
           y += rowH;
         });
 
         // Totals summary row
-        if (y + 24 > pageH - 40) {
+        if (y + 26 > pageH - 40) {
           doc.addPage();
           y = 30;
         }
 
-        doc.rect(margin, y, printW, 20).fill('#F1F5F9');
-        doc.fontSize(8).fillColor('#0F2860').text('TOTALS', margin + 8, y + 6, { bold: true } as any);
-        doc.fontSize(7.5).fillColor('#64748B').text(`${data.totalCount} items`, margin + 60, y + 6);
+        doc.rect(margin, y, printW, 22).fill('#F1F5F9');
+        doc.rect(margin, y, printW, 1).fill('#0F2860');
+        doc.rect(margin, y + 22, printW, 0.8).fill('#CBD5E1');
 
-        // Debit Total
-        doc.fontSize(8).fillColor('#DC2626').text(
-          formatINR(data.totalDebit),
-          margin + cols[0].width + cols[1].width + cols[2].width + cols[3].width + cols[4].width,
-          y + 6,
-          { width: cols[5].width - 8, align: 'right', bold: true } as any,
-        );
-
-        // Credit Total
-        doc.fontSize(8).fillColor('#15803D').text(
-          formatINR(data.totalCredit),
-          margin + cols[0].width + cols[1].width + cols[2].width + cols[3].width + cols[4].width + cols[5].width,
-          y + 6,
-          { width: cols[6].width - 8, align: 'right', bold: true } as any,
-        );
-
-        // Closing Balance
-        doc.fontSize(8).fillColor('#0F2860').text(
-          formatINR(data.closingBalance),
-          margin + cols[0].width + cols[1].width + cols[2].width + cols[3].width + cols[4].width + cols[5].width + cols[6].width,
-          y + 6,
-          { width: cols[7].width - 8, align: 'right', bold: true } as any,
-        );
+        let txX = margin + 4;
+        cols.forEach((col, cIdx) => {
+          if (cIdx === 0) {
+            doc.fontSize(8).fillColor('#0F2860').text('TOTALS', txX, y + 7, {
+              width: col.width - 8,
+              align: 'left',
+              bold: true,
+              lineBreak: false,
+            } as any);
+          } else if (cIdx === 1) {
+            doc.fontSize(7.5).fillColor('#64748B').text(`${data.totalCount} items`, txX, y + 7, {
+              width: col.width - 8,
+              align: 'left',
+              lineBreak: false,
+            });
+          } else if (cIdx === 5) {
+            doc.fontSize(8).fillColor('#DC2626').text(
+              formatINR(data.totalDebit),
+              txX,
+              y + 7,
+              { width: col.width - 8, align: 'right', bold: true, lineBreak: false } as any,
+            );
+          } else if (cIdx === 6) {
+            doc.fontSize(8).fillColor('#15803D').text(
+              formatINR(data.totalCredit),
+              txX,
+              y + 7,
+              { width: col.width - 8, align: 'right', bold: true, lineBreak: false } as any,
+            );
+          } else if (cIdx === 7) {
+            doc.fontSize(8).fillColor('#0F2860').text(
+              formatINR(data.closingBalance),
+              txX,
+              y + 7,
+              { width: col.width - 8, align: 'right', bold: true, lineBreak: false } as any,
+            );
+          }
+          txX += col.width;
+        });
 
         // Footer note
-        doc.fontSize(7).fillColor('#94A3B8').text(
-          'This is a system-generated financial document issued by Human Rights & Social Justice Mission.',
+        doc.fontSize(7.5).fillColor('#94A3B8').text(
+          'This is an official system-generated passbook statement issued by Human Rights & Social Justice Mission. Reconciled with General Ledger.',
           margin,
           pageH - 22,
-          { align: 'center', width: printW },
+          { align: 'center', width: printW, lineBreak: false },
         );
 
         doc.end();
@@ -959,4 +1012,3 @@ export class PassbookExportService {
     });
   }
 }
-
