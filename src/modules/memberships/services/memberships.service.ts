@@ -216,11 +216,10 @@ export class MembershipsService {
           existingActiveOrPending.status === MembershipStatus.APPROVED
         ) {
           throw new ConflictException({
-            message: `An active membership already exists for this mobile number or email (${existingActiveOrPending.membership_number || 'ACTIVE'}). Please renew or manage your existing membership.`,
+            message: 'An active membership already exists for this mobile number or email. Please renew or manage your existing membership.',
             code: 'ACTIVE_MEMBERSHIP_EXISTS',
             details: {
               membership_id: existingActiveOrPending.id,
-              membership_number: existingActiveOrPending.membership_number,
               status: existingActiveOrPending.status,
             },
           });
@@ -232,11 +231,10 @@ export class MembershipsService {
           const isSameApplicant = actingUserId && existingActiveOrPending.user_id === actingUserId;
           if (!isSameApplicant) {
             throw new ConflictException({
-              message: `A membership application is already submitted and currently under review for this mobile number / email (${existingActiveOrPending.membership_number || 'PENDING'}).`,
+              message: 'A membership application is already submitted and currently under review for this mobile number or email.',
               code: 'PENDING_APPLICATION_EXISTS',
               details: {
                 membership_id: existingActiveOrPending.id,
-                membership_number: existingActiveOrPending.membership_number,
                 status: existingActiveOrPending.status,
               },
             });
@@ -1393,15 +1391,14 @@ export class MembershipsService {
           activeOrPending.status === MembershipStatus.ACTIVE ||
           activeOrPending.status === MembershipStatus.APPROVED;
         const msg = isApproved
-          ? `An active membership already exists with this ${field === 'both' ? 'mobile number and email' : (field === 'phone' ? 'mobile number' : 'email')} (Membership No: ${activeOrPending.membership_number || 'Active'}).`
-          : `A membership application with this ${field === 'both' ? 'mobile number and email' : (field === 'phone' ? 'mobile number' : 'email')} has already been submitted and is currently pending review (${activeOrPending.membership_number || 'Under Review'}).`;
+          ? `An active membership already exists with this ${field === 'both' ? 'mobile number and email' : (field === 'phone' ? 'mobile number' : 'email')}.`
+          : `A membership application with this ${field === 'both' ? 'mobile number and email' : (field === 'phone' ? 'mobile number' : 'email')} has already been submitted and is currently pending review.`;
 
         return {
           isDuplicate: true,
           field,
           message: msg,
           existingStatus: activeOrPending.status,
-          membershipNumber: activeOrPending.membership_number || undefined,
         };
       }
 

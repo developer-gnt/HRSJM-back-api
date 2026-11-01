@@ -1,3 +1,5 @@
+import * as fs from 'fs';
+import * as path from 'path';
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as nodemailer from 'nodemailer';
@@ -118,6 +120,36 @@ export class MailService implements OnModuleInit {
       };
     }
 
+    // Automatically attach official logo when referenced via CID in HTML
+    const candidateLogoPaths = [
+      path.resolve(__dirname, '../../assets/logo.png'),
+      path.resolve(__dirname, '../../../assets/logo.png'),
+      path.resolve(__dirname, '../../../../assets/logo.png'),
+      path.resolve(process.cwd(), 'src/assets/logo.png'),
+      path.resolve(process.cwd(), 'assets/logo.png'),
+      path.resolve(process.cwd(), '../hrsjm-application-ui/src/assets/logo/logo.png'),
+      path.resolve(process.cwd(), '../HRSJM-NGO-WEBSITE/public/logo.png'),
+    ];
+    let resolvedLogoPath: string | undefined;
+    for (const p of candidateLogoPaths) {
+      if (fs.existsSync(p)) {
+        resolvedLogoPath = p;
+        break;
+      }
+    }
+
+    const attachments = options.attachments ? [...options.attachments] : [];
+    if (html && (html.includes('cid:hrsjm_logo') || html.includes('cid:logo')) && resolvedLogoPath) {
+      const alreadyHasLogo = attachments.some(a => a.cid === 'hrsjm_logo' || a.cid === 'logo');
+      if (!alreadyHasLogo) {
+        attachments.push({
+          filename: 'hrsjm-logo.png',
+          path: resolvedLogoPath,
+          cid: 'hrsjm_logo',
+        });
+      }
+    }
+
     try {
       const info = await this.transporter.sendMail({
         from: options.from || formattedFrom,
@@ -128,6 +160,7 @@ export class MailService implements OnModuleInit {
         replyTo: replyTo || this.fromAddress,
         cc,
         bcc,
+        attachments,
       });
 
       this.logger.log(`Email successfully delivered to ${to} | MessageId: ${info.messageId}`);
@@ -205,11 +238,14 @@ export class MailService implements OnModuleInit {
           
           <!-- Top Decorative Header Bar -->
           <tr>
-            <td style="background: linear-gradient(135deg, #1e3a8a 0%, #0f172a 100%); padding: 32px 30px; text-align: center;">
-              <h1 style="margin: 0 0 6px 0; color: #ffffff; font-size: 22px; font-weight: 700; letter-spacing: 0.5px;">
+            <td style="background: linear-gradient(135deg, #1e3a8a 0%, #0f172a 100%); padding: 28px 24px; text-align: center;">
+              <div style="margin-bottom: 12px; text-align: center;">
+                <img src="cid:hrsjm_logo" alt="HRSJM Crest" width="76" height="auto" style="display: block; margin: 0 auto 10px auto; width: 76px; max-width: 76px; height: auto; border: 0;" />
+              </div>
+              <h1 style="margin: 0 0 6px 0; color: #ffffff; font-size: 20px; font-weight: 700; letter-spacing: 0.5px;">
                 HUMAN RIGHTS & SOCIAL JUSTICE MISSION
               </h1>
-              <p style="margin: 0; color: #fbbf24; font-size: 14px; font-weight: 600; letter-spacing: 1px;">
+              <p style="margin: 0; color: #fbbf24; font-size: 13px; font-weight: 600; letter-spacing: 1px;">
                 मानव अधिकार - सामाजिक न्याय
               </p>
             </td>
@@ -483,11 +519,14 @@ Human Rights & Social Justice Mission (HRSJM)
           
           <!-- Header Bar -->
           <tr>
-            <td style="background: linear-gradient(135deg, #1e3a8a 0%, #0f172a 100%); padding: 32px 30px; text-align: center;">
-              <h1 style="margin: 0 0 6px 0; color: #ffffff; font-size: 22px; font-weight: 700; letter-spacing: 0.5px;">
+            <td style="background: linear-gradient(135deg, #1e3a8a 0%, #0f172a 100%); padding: 28px 24px; text-align: center;">
+              <div style="margin-bottom: 12px; text-align: center;">
+                <img src="cid:hrsjm_logo" alt="HRSJM Crest" width="76" height="auto" style="display: block; margin: 0 auto 10px auto; width: 76px; max-width: 76px; height: auto; border: 0;" />
+              </div>
+              <h1 style="margin: 0 0 6px 0; color: #ffffff; font-size: 20px; font-weight: 700; letter-spacing: 0.5px;">
                 HUMAN RIGHTS & SOCIAL JUSTICE MISSION
               </h1>
-              <p style="margin: 0; color: #fbbf24; font-size: 14px; font-weight: 600; letter-spacing: 1px;">
+              <p style="margin: 0; color: #fbbf24; font-size: 13px; font-weight: 600; letter-spacing: 1px;">
                 मानव अधिकार - सामाजिक न्याय
               </p>
             </td>
@@ -771,11 +810,14 @@ https://hrsjm.org
           
           <!-- Header Bar -->
           <tr>
-            <td style="background: linear-gradient(135deg, #1e3a8a 0%, #0f172a 100%); padding: 32px 30px; text-align: center;">
-              <h1 style="margin: 0 0 6px 0; color: #ffffff; font-size: 22px; font-weight: 700; letter-spacing: 0.5px;">
+            <td style="background: linear-gradient(135deg, #1e3a8a 0%, #0f172a 100%); padding: 28px 24px; text-align: center;">
+              <div style="margin-bottom: 12px; text-align: center;">
+                <img src="cid:hrsjm_logo" alt="HRSJM Crest" width="76" height="auto" style="display: block; margin: 0 auto 10px auto; width: 76px; max-width: 76px; height: auto; border: 0;" />
+              </div>
+              <h1 style="margin: 0 0 6px 0; color: #ffffff; font-size: 20px; font-weight: 700; letter-spacing: 0.5px;">
                 HUMAN RIGHTS & SOCIAL JUSTICE MISSION
               </h1>
-              <p style="margin: 0; color: #fbbf24; font-size: 14px; font-weight: 600; letter-spacing: 1px;">
+              <p style="margin: 0; color: #fbbf24; font-size: 13px; font-weight: 600; letter-spacing: 1px;">
                 मानव अधिकार - सामाजिक न्याय
               </p>
             </td>
@@ -1114,11 +1156,14 @@ https://hrsjm.org
       <td align="center">
         <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%" style="max-width: 600px; background-color: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);">
           <tr>
-            <td style="background: linear-gradient(135deg, #1e3a8a 0%, #0f172a 100%); padding: 32px 30px; text-align: center;">
-              <h1 style="margin: 0 0 6px 0; color: #ffffff; font-size: 22px; font-weight: 700; letter-spacing: 0.5px;">
+            <td style="background: linear-gradient(135deg, #1e3a8a 0%, #0f172a 100%); padding: 28px 24px; text-align: center;">
+              <div style="margin-bottom: 12px; text-align: center;">
+                <img src="cid:hrsjm_logo" alt="HRSJM Crest" width="76" height="auto" style="display: block; margin: 0 auto 10px auto; width: 76px; max-width: 76px; height: auto; border: 0;" />
+              </div>
+              <h1 style="margin: 0 0 6px 0; color: #ffffff; font-size: 20px; font-weight: 700; letter-spacing: 0.5px;">
                 HUMAN RIGHTS & SOCIAL JUSTICE MISSION
               </h1>
-              <p style="margin: 0; color: #fbbf24; font-size: 14px; font-weight: 600; letter-spacing: 1px;">
+              <p style="margin: 0; color: #fbbf24; font-size: 13px; font-weight: 600; letter-spacing: 1px;">
                 मानव अधिकार • सामाजिक न्याय
               </p>
             </td>
@@ -1536,6 +1581,9 @@ https://hrsjm.org
   <div class="card">
     <div class="gold-bar"></div>
     <div class="header">
+      <div style="margin-bottom: 10px; text-align: center;">
+        <img src="cid:hrsjm_logo" alt="HRSJM Crest" width="68" height="auto" style="display: block; margin: 0 auto; width: 68px; max-width: 68px; height: auto; border: 0;" />
+      </div>
       <h2 style="margin:0;font-size:18px;">HUMAN RIGHTS & SOCIAL JUSTICE MISSION</h2>
       <p style="margin:4px 0 0 0;font-size:12px;color:#cbd5e1;">Legal & Humanitarian Assistance Wing</p>
     </div>
@@ -1649,6 +1697,9 @@ https://hrsjm.org
   <div class="card">
     <div class="gold-bar"></div>
     <div class="header">
+      <div style="margin-bottom: 10px; text-align: center;">
+        <img src="cid:hrsjm_logo" alt="HRSJM Crest" width="68" height="auto" style="display: block; margin: 0 auto; width: 68px; max-width: 68px; height: auto; border: 0;" />
+      </div>
       <h2 style="margin:0;font-size:18px;">HUMAN RIGHTS & SOCIAL JUSTICE MISSION</h2>
       <p style="margin:4px 0 0 0;font-size:12px;color:#cbd5e1;">Assistance & Relief Committee</p>
     </div>
@@ -1749,6 +1800,9 @@ https://hrsjm.org
   <div class="card">
     <div class="gold-bar"></div>
     <div class="header">
+      <div style="margin-bottom: 10px; text-align: center;">
+        <img src="cid:hrsjm_logo" alt="HRSJM Crest" width="68" height="auto" style="display: block; margin: 0 auto; width: 68px; max-width: 68px; height: auto; border: 0;" />
+      </div>
       <h2 style="margin:0;font-size:18px;">HUMAN RIGHTS & SOCIAL JUSTICE MISSION</h2>
       <p style="margin:4px 0 0 0;font-size:12px;color:#cbd5e1;">Security Notice</p>
     </div>
@@ -1839,6 +1893,9 @@ https://hrsjm.org
   <div class="card">
     <div class="gold-bar"></div>
     <div class="header">
+      <div style="margin-bottom: 10px; text-align: center;">
+        <img src="cid:hrsjm_logo" alt="HRSJM Crest" width="68" height="auto" style="display: block; margin: 0 auto; width: 68px; max-width: 68px; height: auto; border: 0;" />
+      </div>
       <h2 style="margin:0;font-size:18px;letter-spacing:0.5px;">HUMAN RIGHTS & SOCIAL JUSTICE MISSION</h2>
       <p style="margin:4px 0 0 0;font-size:12px;color:#cbd5e1;">Citizen Information & Helpdesk</p>
     </div>
@@ -2065,6 +2122,9 @@ You can reply directly to this email to respond to ${senderEmail}.
   <div class="card">
     <div class="gold-bar"></div>
     <div class="header">
+      <div style="margin-bottom: 10px; text-align: center;">
+        <img src="cid:hrsjm_logo" alt="HRSJM Crest" width="68" height="auto" style="display: block; margin: 0 auto; width: 68px; max-width: 68px; height: auto; border: 0;" />
+      </div>
       <h2>HUMAN RIGHTS &amp; SOCIAL JUSTICE MISSION</h2>
       <p>Official Account Security</p>
     </div>

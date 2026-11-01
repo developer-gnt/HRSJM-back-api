@@ -7,6 +7,7 @@ export interface SendMailOptions {
   replyTo?: string;
   cc?: string | string[];
   bcc?: string | string[];
+  attachments?: any[];
 }
 
 export interface DonationThankYouMailPayload {
