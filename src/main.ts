@@ -81,8 +81,8 @@ async function bootstrap() {
         return callback(null, true);
       }
 
-      // In non-production, allow localhost/127.0.0.1 on any port
-      if (!isProduction && /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) {
+      // Allow requests from localhost, 127.0.0.1, or VPS IP on any port
+      if (/^https?:\/\/(localhost|127\.0\.0\.1|194\.164\.151\.17)(:\d+)?$/.test(origin)) {
         return callback(null, true);
       }
 
@@ -98,7 +98,7 @@ async function bootstrap() {
       if (isAllowed) {
         callback(null, true);
       } else {
-        callback(new Error(`CORS origin '${origin}' not allowed by policy`));
+        callback(null, false);
       }
     },
     credentials: true,

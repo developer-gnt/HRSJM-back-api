@@ -222,6 +222,7 @@ export class UsersService {
     roleId?: string;
     dob?: string | null;
     gender?: string | null;
+    avatar?: string | null;
   }): Promise<UserEntity> {
     return this.dataSource.transaction(async (manager) => {
       const user = await manager
@@ -234,6 +235,7 @@ export class UsersService {
             password_hash: input.password_hash,
             dob: input.dob ?? null,
             gender: input.gender ?? null,
+            avatar: input.avatar ?? null,
           }),
         );
 

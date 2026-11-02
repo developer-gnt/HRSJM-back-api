@@ -104,6 +104,29 @@ export class MembershipsService {
       });
     }
 
+    const inputPersonal = (dto.personal_details as any) || {};
+    const inputAppData = (dto.application_data as any) || {};
+    const rawDocs = (inputAppData.documents as any[]) || [];
+    const photoDoc = Array.isArray(rawDocs)
+      ? rawDocs.find((d: any) =>
+          ['photograph', 'photo', 'profile'].some((k) =>
+            (d.type || d.title || d.fileName || d.name || '').toLowerCase().includes(k),
+          ),
+        )
+      : undefined;
+
+    const resolvedAvatar =
+      dto.avatar ||
+      inputPersonal.avatar ||
+      inputPersonal.avatar_url ||
+      inputPersonal.profilePhotoUri ||
+      inputPersonal.profile_photo_uri ||
+      inputAppData.avatar ||
+      inputAppData.avatar_url ||
+      photoDoc?.uri ||
+      photoDoc?.url ||
+      null;
+
     let targetUserId: string;
 
     if (actingUserId && !isAdmin) {
@@ -114,6 +137,9 @@ export class MembershipsService {
           const passwordHash = await bcrypt.hash(dto.password.trim(), 10);
           await this.usersService.updatePassword(actingUser, passwordHash);
         }
+      }
+      if (resolvedAvatar) {
+        await this.dataSource.getRepository(UserEntity).update(actingUserId, { avatar: resolvedAvatar });
       }
     } else if (dto.mobile_number) {
       // Validate mobile number and optional email for applicant
@@ -132,6 +158,9 @@ export class MembershipsService {
         if (dto.password && dto.password.trim().length >= 6) {
           const passwordHash = await bcrypt.hash(dto.password.trim(), 10);
           await this.usersService.updatePassword(existingUser, passwordHash);
+        }
+        if (resolvedAvatar) {
+          await this.dataSource.getRepository(UserEntity).update(existingUser.id, { avatar: resolvedAvatar });
         }
         targetUserId = existingUser.id;
       } else {
@@ -157,6 +186,8 @@ export class MembershipsService {
           password_hash: passwordHash,
           roleName: 'MEMBER',
           dob: rawDob,
+          gender: inputPersonal.gender ?? null,
+          avatar: resolvedAvatar,
         });
         targetUserId = newUser.id;
       }

@@ -115,6 +115,7 @@ export class AuthService {
       // defaults to USER when unspecified or when seeker application is pending admin approval.
       roleName: dto.role_id ? undefined : initialRoleName,
       dob: rawDob,
+      avatar: dto.avatar ?? null,
     });
 
     if (isDonationSeekerRequest) {
@@ -417,20 +418,7 @@ export class AuthService {
       return genericResponse;
     }
 
-    // Cooldown check: if an unused, unexpired reset token was created within the last 60s,
-    // avoid flooding SMTP and keep the existing valid token active
-    const recentToken = await this.resetTokens.findOne({
-      where: { user_id: user.id, used_at: IsNull() },
-      order: { created_at: 'DESC' },
-    });
-    if (
-      recentToken &&
-      recentToken.expires_at.getTime() > Date.now() &&
-      Date.now() - recentToken.created_at.getTime() < 60 * 1000
-    ) {
-      this.logger.log(`[AuthService] Password reset requested within 60s cooldown for user ${user.id}; avoiding conflicting tokens.`);
-      return genericResponse;
-    }
+
 
     const rawToken = randomBytes(32).toString('hex');
     await this.resetTokens.insert(
@@ -516,11 +504,7 @@ async resetPassword(
     userAgent: string | null,
   ): Promise<void> {
     const rawToken = dto.token ? dto.token.trim() : '';
-    const stored = await this.resetTokens.findOne({
-      where: { token_hash: sha256(rawToken) },
-    });
-
-    if (!stored) {
+    if (!rawToken) {
       throw new BadRequestException({
         message: 'This password reset link is invalid. Please request a new link from the mobile application.',
         code: 'RESET_TOKEN_INVALID',
@@ -528,32 +512,56 @@ async resetPassword(
       });
     }
 
-    if (stored.used_at) {
-      throw new BadRequestException({
-        message: 'This reset link has already been used. If you requested multiple links, please check your inbox for the most recent email.',
-        code: 'RESET_TOKEN_ALREADY_USED',
-        details: null,
-      });
-    }
-
-    if (stored.expires_at.getTime() < Date.now()) {
-      throw new BadRequestException({
-        message: 'This password reset link has expired (15-minute limit exceeded). Please request a fresh reset link from the mobile application.',
-        code: 'RESET_TOKEN_EXPIRED',
-        details: null,
-      });
-    }
-
+    const tokenHash = sha256(rawToken);
     const password_hash = await bcrypt.hash(dto.password, BCRYPT_ROUNDS);
+    let userId: string | null = null;
 
     try {
       await this.dataSource.transaction(async (manager) => {
-        const user = await manager
-          .getRepository(UserEntity)
-          .findOne({ where: { id: stored.user_id } });
+        const tokenRepo = manager.getRepository(PasswordResetTokenEntity);
+        // Look up token within transaction with pessimistic write lock to prevent race conditions
+        let stored: PasswordResetTokenEntity | null = null;
+        try {
+          stored = await tokenRepo.findOne({
+            where: { token_hash: tokenHash },
+            lock: { mode: 'pessimistic_write' },
+          });
+        } catch {
+          // Fallback if driver does not support row lock in current mode
+          stored = await tokenRepo.findOne({
+            where: { token_hash: tokenHash },
+          });
+        }
+
+        if (!stored) {
+          throw new BadRequestException({
+            message: 'This password reset link is invalid. Please request a new link from the mobile application.',
+            code: 'RESET_TOKEN_INVALID',
+            details: null,
+          });
+        }
+
+        if (stored.used_at) {
+          throw new BadRequestException({
+            message: 'This reset link has already been used. If you requested multiple links, please check your inbox for the most recent email.',
+            code: 'RESET_TOKEN_ALREADY_USED',
+            details: null,
+          });
+        }
+
+        if (stored.expires_at.getTime() < Date.now()) {
+          throw new BadRequestException({
+            message: 'This password reset link has expired (15-minute limit exceeded). Please request a fresh reset link from the mobile application.',
+            code: 'RESET_TOKEN_EXPIRED',
+            details: null,
+          });
+        }
+
+        const userRepo = manager.getRepository(UserEntity);
+        const user = await userRepo.findOne({ where: { id: stored.user_id } });
         if (!user) {
           throw new BadRequestException({
-            message: 'Invalid or expired reset token',
+            message: 'User account associated with this reset link could not be found.',
             code: 'RESET_TOKEN_INVALID',
             details: null,
           });
@@ -561,76 +569,67 @@ async resetPassword(
 
         user.password_hash = password_hash;
         user.updated_by = user.id;
-        await manager.getRepository(UserEntity).save(user);
+        await userRepo.save(user);
 
+        // Mark this token used
         stored.used_at = new Date();
-        await manager.getRepository(PasswordResetTokenEntity).save(stored);
+        await tokenRepo.save(stored);
 
-        // Invalidate all other active reset tokens for this user once password is changed
-        await manager
-          .getRepository(PasswordResetTokenEntity)
-          .update(
-            { user_id: user.id, used_at: IsNull() },
-            { used_at: new Date() },
-          );
+        // Invalidate any other active/pending reset tokens for this user once password is changed
+        await tokenRepo.update(
+          { user_id: user.id, used_at: IsNull() },
+          { used_at: new Date() },
+        );
+
+        userId = user.id;
 
         // Revoke every still-active refresh token of the user (TC-AUTH-031).
-        if (typeof (manager as any).createQueryBuilder === 'function') {
-          await (manager as any)
-            .createQueryBuilder()
-            .update(RefreshTokenEntity)
-            .set({ revoked_at: new Date() })
-            .where('user_id = :userId AND revoked_at IS NULL', { userId: user.id })
-            .execute();
-        } else {
-          await manager
-            .getRepository(RefreshTokenEntity)
-            .update(
-              { user_id: user.id, revoked_at: IsNull() },
-              { revoked_at: new Date() },
-            );
-        }
+        await manager
+          .getRepository(RefreshTokenEntity)
+          .update(
+            { user_id: user.id, revoked_at: IsNull() },
+            { revoked_at: new Date() },
+          );
       });
     } catch (err) {
       if (err instanceof BadRequestException) {
         throw err;
       }
-      this.logger.error(
-        `[AuthService] Password reset transaction failed: ${err.message}`,
-        err.stack,
-      );
+      this.logger.error(`Failed to reset password: ${err.message}`, err.stack);
       throw new InternalServerErrorException({
-        message: 'Unable to update password at this time. Please try again.',
-        code: 'PASSWORD_RESET_FAILED',
+        message: 'Unable to reset password at this time. Please try again.',
+        code: 'RESET_PASSWORD_FAILED',
         details: null,
       });
     }
 
-    await this.auditService.record({
-      event: 'AUTH_PASSWORD_RESET',
-      actorId: stored.user_id,
-      entityType: 'user',
-      entityId: stored.user_id,
-      ip,
-      userAgent,
-    });
+    if (userId) {
+      await this.auditService.record({
+        event: 'AUTH_PASSWORD_RESET',
+        actorId: userId,
+        entityType: 'user',
+        entityId: userId,
+        ip,
+        userAgent,
+      });
 
-    // Dispatch security email notification
-    try {
-      const user = await this.usersService.findById(stored.user_id);
-      if (user?.email && user.email.includes('@')) {
-        this.mailService
-          .sendPasswordChangedNoticeEmail({
-            recipientName: user.full_name,
-            recipientEmail: user.email,
-            changedAt: new Date(),
-          })
-          .catch((mailErr) => {
-            this.logger.error(`[AuthService] Failed to send password changed alert: ${mailErr.message}`);
-          });
+      // Dispatch security email notification
+      try {
+        const user = await this.usersService.findById(userId);
+        if (user?.email && user.email.includes('@')) {
+          this.mailService
+            .sendPasswordChangedNoticeEmail({
+              recipientName: user.full_name,
+              recipientEmail: user.email,
+              changedAt: new Date(),
+            })
+            .catch((mailErr) => {
+              this.logger.error(`[AuthService] Failed to send password changed alert: ${mailErr.message}`);
+            });
+        }
+      } catch (mailErr) {
+        this.logger.warn('Error initiating password changed security email:', mailErr);
       }
-    } catch (mailErr) {
-      this.logger.warn('Error initiating password changed security email:', mailErr);
     }
   }
 

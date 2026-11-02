@@ -49,6 +49,11 @@ export class CreateMembershipDto {
   @IsString()
   police_station?: string;
 
+  @ApiPropertyOptional({ description: 'Applicant profile photo / avatar URL or URI' })
+  @IsOptional()
+  @IsString()
+  avatar?: string;
+
   @ApiPropertyOptional({
     description: 'Personal details (dob, gender, address)',
     example: { dob: '1990-01-01', gender: 'MALE', address: '123 Main St, New Delhi' },

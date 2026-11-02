@@ -624,11 +624,11 @@ export function getResetPasswordPageHtml(prefillToken = ''): string {
         const data = await response.json().catch(() => ({}));
 
         if (!response.ok) {
-          let msg = data.message || 'Invalid or expired reset token. Please request a new link from the mobile app.';
-          if (msg === 'Internal server error') {
-            msg = 'Unable to update password at this time. Please request a new reset link or try again.';
+          let msg = (data && (data.message || (data.error && data.error.message))) || 'Invalid or expired reset token. Please request a fresh reset link.';
+          if (Array.isArray(msg)) {
+            msg = msg.join(', ');
           }
-          showAlert(Array.isArray(msg) ? msg.join(', ') : msg, 'danger');
+          showAlert(msg, 'danger');
           submitBtn.disabled = false;
           btnText.textContent = 'Update Password';
           btnSpinner.style.display = 'none';

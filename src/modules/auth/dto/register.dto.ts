@@ -70,4 +70,8 @@ export class RegisterDto {
   @IsOptional()
   @IsString()
   date_of_birth?: string;
+
+  @IsOptional()
+  @IsString()
+  avatar?: string;
 }
