@@ -417,11 +417,20 @@ export class AuthService {
       return genericResponse;
     }
 
-    // Invalidate any previously issued, unused reset tokens for this user
-    await this.resetTokens.update(
-      { user_id: user.id, used_at: IsNull() },
-      { used_at: new Date() },
-    );
+    // Cooldown check: if an unused, unexpired reset token was created within the last 60s,
+    // avoid flooding SMTP and keep the existing valid token active
+    const recentToken = await this.resetTokens.findOne({
+      where: { user_id: user.id, used_at: IsNull() },
+      order: { created_at: 'DESC' },
+    });
+    if (
+      recentToken &&
+      recentToken.expires_at.getTime() > Date.now() &&
+      Date.now() - recentToken.created_at.getTime() < 60 * 1000
+    ) {
+      this.logger.log(`[AuthService] Password reset requested within 60s cooldown for user ${user.id}; avoiding conflicting tokens.`);
+      return genericResponse;
+    }
 
     const rawToken = randomBytes(32).toString('hex');
     await this.resetTokens.insert(
@@ -469,10 +478,24 @@ export class AuthService {
       where: { token_hash: sha256(token.trim()) },
     });
 
-    if (!stored || stored.used_at || stored.expires_at.getTime() < Date.now()) {
+    if (!stored) {
       throw new BadRequestException({
-        message: 'Invalid or expired reset token',
+        message: 'This password reset link is invalid. Please request a new link from the mobile application.',
         code: 'RESET_TOKEN_INVALID',
+      });
+    }
+
+    if (stored.used_at) {
+      throw new BadRequestException({
+        message: 'This reset link has already been used or superseded by a newer request. Please check your inbox for the most recent link.',
+        code: 'RESET_TOKEN_ALREADY_USED',
+      });
+    }
+
+    if (stored.expires_at.getTime() < Date.now()) {
+      throw new BadRequestException({
+        message: 'This reset link has expired (15-minute validity exceeded). Please request a new link from the mobile application.',
+        code: 'RESET_TOKEN_EXPIRED',
       });
     }
 
@@ -497,10 +520,26 @@ async resetPassword(
       where: { token_hash: sha256(rawToken) },
     });
 
-    if (!stored || stored.used_at || stored.expires_at.getTime() < Date.now()) {
+    if (!stored) {
       throw new BadRequestException({
-        message: 'Invalid or expired reset token',
+        message: 'This password reset link is invalid. Please request a new link from the mobile application.',
         code: 'RESET_TOKEN_INVALID',
+        details: null,
+      });
+    }
+
+    if (stored.used_at) {
+      throw new BadRequestException({
+        message: 'This reset link has already been used. If you requested multiple links, please check your inbox for the most recent email.',
+        code: 'RESET_TOKEN_ALREADY_USED',
+        details: null,
+      });
+    }
+
+    if (stored.expires_at.getTime() < Date.now()) {
+      throw new BadRequestException({
+        message: 'This password reset link has expired (15-minute limit exceeded). Please request a fresh reset link from the mobile application.',
+        code: 'RESET_TOKEN_EXPIRED',
         details: null,
       });
     }
@@ -526,6 +565,14 @@ async resetPassword(
 
         stored.used_at = new Date();
         await manager.getRepository(PasswordResetTokenEntity).save(stored);
+
+        // Invalidate all other active reset tokens for this user once password is changed
+        await manager
+          .getRepository(PasswordResetTokenEntity)
+          .update(
+            { user_id: user.id, used_at: IsNull() },
+            { used_at: new Date() },
+          );
 
         // Revoke every still-active refresh token of the user (TC-AUTH-031).
         if (typeof (manager as any).createQueryBuilder === 'function') {
