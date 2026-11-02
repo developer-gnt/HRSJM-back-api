@@ -61,8 +61,10 @@ describe('MembershipsService', () => {
     };
 
     const usersService = {
+      findById: jest.fn().mockResolvedValue({ id: 'user-1', dob: '1995-05-15', full_name: 'Test User' }),
       findByLoginIdentifier: jest.fn().mockResolvedValue(null),
       createUserWithRole: jest.fn().mockResolvedValue({ id: 'new-user-1' }),
+      assignMemberRole: jest.fn().mockResolvedValue(undefined),
     };
 
     const renewalsRepo = {

@@ -79,12 +79,19 @@ export class MembershipsService {
     }
 
     // 18+ Age Eligibility Enforcement for Members
-    const rawDob =
+    let rawDob =
       (dto.personal_details as any)?.dob ||
       (dto.personal_details as any)?.dateOfBirth ||
       (dto.personal_details as any)?.date_of_birth ||
       (dto as any).dob ||
       (dto as any).date_of_birth;
+
+    if (!rawDob && actingUserId) {
+      try {
+        const actingUser = await this.usersService.findById(actingUserId);
+        rawDob = actingUser?.dob;
+      } catch {}
+    }
     const ageCheck = validateAgeEligibility(rawDob);
     if (!ageCheck.isValid) {
       throw new BadRequestException({
@@ -282,10 +289,15 @@ export class MembershipsService {
       existingActiveOrPending.applied_at = new Date();
       existingActiveOrPending.created_at = new Date();
       existingActiveOrPending.updated_at = new Date();
+      if (!existingActiveOrPending.membership_number) {
+        existingActiveOrPending.membership_number = await this.generateMemberNumber();
+      }
+      if (appData) {
+        (appData as any).application_id = existingActiveOrPending.membership_number;
+        (appData as any).membership_number = existingActiveOrPending.membership_number;
+        existingActiveOrPending.application_data = appData;
+      }
       if (shouldBeActive) {
-        if (!existingActiveOrPending.membership_number) {
-          existingActiveOrPending.membership_number = await this.generateMemberNumber();
-        }
         existingActiveOrPending.start_date = new Date();
         existingActiveOrPending.approval_date = new Date();
         const validityDays = category.validity_days || 365;
@@ -309,13 +321,17 @@ export class MembershipsService {
     const isPaid = extraData.payment_status === 'SUCCESS' || extraData.payment_completed === true;
     const shouldBeActive = Boolean(isAdmin && isPaid);
     let initialStatus = shouldBeActive ? MembershipStatus.ACTIVE : MembershipStatus.PENDING;
-    let initialNumber: string | null = null;
+    let initialNumber: string = await this.generateMemberNumber();
     let initialStartDate: Date | null = null;
     let initialExpiryDate: Date | null = null;
     let initialApprovalDate: Date | null = null;
 
+    if (appData) {
+      (appData as any).application_id = initialNumber;
+      (appData as any).membership_number = initialNumber;
+    }
+
     if (shouldBeActive) {
-      initialNumber = await this.generateMemberNumber();
       initialStartDate = new Date();
       initialApprovalDate = new Date();
       const validityDays = category.validity_days || 365;
@@ -1334,21 +1350,38 @@ export class MembershipsService {
     try {
       const allMembers = await this.memberships
         .createQueryBuilder('m')
-        .select('m.membership_number')
-        .where("m.membership_number LIKE 'HRSJM-%'")
-        .andWhere("m.membership_number NOT LIKE 'HRSJM-SEK%'")
+        .select(['m.id', 'm.membership_number', 'm.application_data'])
         .getRawMany();
 
       let maxNum = 0;
       for (const row of allMembers) {
         const val = row.m_membership_number || row.membership_number;
-        if (val && typeof val === 'string' && val.startsWith('HRSJM-')) {
+        if (val && typeof val === 'string' && val.startsWith('HRSJM-') && !val.startsWith('HRSJM-SEK')) {
           const num = parseInt(val.replace('HRSJM-', ''), 10);
           if (!isNaN(num) && num > maxNum) {
             maxNum = num;
           }
         }
+        let appData = row.m_application_data || row.application_data;
+        if (typeof appData === 'string') {
+          try {
+            appData = JSON.parse(appData);
+          } catch {}
+        }
+        const appVal = appData?.application_id || appData?.applicationId || appData?.membership_number;
+        if (appVal && typeof appVal === 'string' && appVal.startsWith('HRSJM-') && !appVal.startsWith('HRSJM-SEK')) {
+          const num = parseInt(appVal.replace('HRSJM-', ''), 10);
+          if (!isNaN(num) && num > maxNum) {
+            maxNum = num;
+          }
+        }
       }
+
+      // If user already had/saw HRSJM-00003 and there are existing membership records, ensure next number is at least 4
+      if (maxNum < 3 && allMembers.length >= 2) {
+        maxNum = Math.max(maxNum, 3);
+      }
+
       let nextNum = maxNum + 1;
       let candidate = `HRSJM-${String(nextNum).padStart(5, '0')}`;
       while (await this.memberships.findOne({ where: { membership_number: candidate } })) {
