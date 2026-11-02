@@ -149,12 +149,19 @@ export class UsersService {
     let accountType: 'general' | 'member' | 'seeker' | 'admin' = 'general';
     if (roleNames.some((r) => ['ADMIN', 'SUPER_ADMIN'].includes(r))) {
       accountType = 'admin';
-    } else if (roleNames.includes('MEMBER') || membershipStatus) {
+    } else if (
+      (roleNames.includes('MEMBER') && membershipStatus !== 'PENDING' && membershipStatus !== 'UNDER_REVIEW') ||
+      membershipStatus === 'ACTIVE' ||
+      membershipStatus === 'APPROVED'
+    ) {
       accountType = 'member';
       if (!membershipStatus && user.status === 'ACTIVE') {
         membershipStatus = 'ACTIVE';
       }
-    } else if (roleNames.some((r) => ['SEEKER', 'DONATION_SEEKER'].includes(r)) || assistanceStatus) {
+    } else if (
+      (roleNames.some((r) => ['SEEKER', 'DONATION_SEEKER'].includes(r)) && assistanceStatus !== 'PENDING' && assistanceStatus !== 'UNDER_REVIEW') ||
+      assistanceStatus === 'APPROVED'
+    ) {
       accountType = 'seeker';
     }
 

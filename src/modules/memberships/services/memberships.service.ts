@@ -113,6 +113,8 @@ export class MembershipsService {
 
     const inputPersonal = (dto.personal_details as any) || {};
     const inputAppData = (dto.application_data as any) || {};
+    const isPaidInitial = inputAppData.payment_status === 'SUCCESS' || inputAppData.payment_completed === true;
+    let shouldBeActive = Boolean(isAdmin && isPaidInitial);
     const rawDocs = (inputAppData.documents as any[]) || [];
     const photoDoc = Array.isArray(rawDocs)
       ? rawDocs.find((d: any) =>
@@ -191,7 +193,7 @@ export class MembershipsService {
           mobile_number: dto.mobile_number,
           email: dto.email ? dto.email.toLowerCase() : null,
           password_hash: passwordHash,
-          roleName: 'MEMBER',
+          roleName: shouldBeActive ? 'MEMBER' : 'USER',
           dob: rawDob,
           gender: inputPersonal.gender ?? null,
           avatar: resolvedAvatar,
@@ -281,7 +283,7 @@ export class MembershipsService {
       }
 
       const isPaid = extraData.payment_status === 'SUCCESS' || extraData.payment_completed === true;
-      const shouldBeActive = Boolean(isAdmin && isPaid);
+      // shouldBeActive resolved above
 
       existingActiveOrPending.application_data = Object.keys(appData).length > 0 ? appData : null;
       existingActiveOrPending.category_id = category.id;
@@ -319,7 +321,7 @@ export class MembershipsService {
 
     // reuse extraData from above
     const isPaid = extraData.payment_status === 'SUCCESS' || extraData.payment_completed === true;
-    const shouldBeActive = Boolean(isAdmin && isPaid);
+    shouldBeActive = Boolean(isAdmin && isPaid);
     let initialStatus = shouldBeActive ? MembershipStatus.ACTIVE : MembershipStatus.PENDING;
     let initialNumber: string = await this.generateMemberNumber();
     let initialStartDate: Date | null = null;
