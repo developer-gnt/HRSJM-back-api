@@ -46,7 +46,9 @@ export class DonationsService {
     dto: CreateDonationDto,
     actingUserId?: string,
   ): Promise<DonationEntity> {
-    const resolvedUserId = actingUserId || dto.user_id || null;
+    const rawUserId = actingUserId || dto.user_id || null;
+    const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+    const resolvedUserId = rawUserId && UUID_REGEX.test(rawUserId) ? rawUserId : null;
     let dbUserMobile = '';
     let dbUserName = '';
     let dbUserEmail = '';
