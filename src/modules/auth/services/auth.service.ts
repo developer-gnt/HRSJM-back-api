@@ -118,10 +118,11 @@ export class AuthService {
       avatar: dto.avatar ?? null,
     });
 
+    let initialRequest: AssistanceRequestEntity | null = null;
     if (isDonationSeekerRequest) {
       try {
         const assistanceRepo = this.dataSource.getRepository(AssistanceRequestEntity);
-        const initialRequest = assistanceRepo.create({
+        initialRequest = assistanceRepo.create({
           user_id: user.id,
           full_name: dto.full_name.trim(),
           mobile: dto.mobile_number.trim(),
@@ -187,7 +188,15 @@ export class AuthService {
       }
     }
 
-    return { user: await this.profileOrThrow(user.id), ...tokens };
+    const profile = await this.profileOrThrow(user.id);
+    const assistanceAppNumber = initialRequest
+      ? ("HRSJM-SEK-" + initialRequest.id.replace(/-/g, "").slice(0, 6).toUpperCase())
+      : undefined;
+    if (assistanceAppNumber) {
+      (profile as any).assistance_application_number = assistanceAppNumber;
+      (profile as any).assistance_request_id = initialRequest?.id;
+    }
+    return { user: profile, assistance_application_number: assistanceAppNumber, assistance_request_id: initialRequest?.id, ...tokens } as any;
   }
 
   async login(
