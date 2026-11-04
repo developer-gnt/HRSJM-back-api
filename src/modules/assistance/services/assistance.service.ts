@@ -316,6 +316,19 @@ export class AssistanceService {
 
     const enrichedItems = await this.attachRaisedAmounts(items);
 
+    if (enrichedItems.length > 0) {
+      try {
+        const requestIds = enrichedItems.map((r) => r.id);
+        const docs = await this.documentsService.findForRelatedEntities(
+          RelatedEntityType.ASSISTANCE_REQUEST,
+          requestIds,
+        );
+        enrichedItems.forEach((r) => {
+          r.documents = docs.filter((d) => d.related_entity_id === r.id);
+        });
+      } catch {}
+    }
+
     return {
       items: enrichedItems,
       meta: {
@@ -468,7 +481,33 @@ export class AssistanceService {
     }
 
     const [enriched] = await this.attachRaisedAmounts([request]);
+    try {
+      const docs = await this.documentsService.findByRelatedEntity(
+        RelatedEntityType.ASSISTANCE_REQUEST,
+        id,
+      );
+      if (request.user_id) {
+        const userDocs = await this.documentsService.findByUser(request.user_id);
+        const map = new Map<string, any>();
+        docs.forEach((d) => map.set(d.id, d));
+        userDocs.forEach((d) => map.set(d.id, d));
+        (enriched as any).documents = Array.from(map.values());
+      } else {
+        (enriched as any).documents = docs;
+      }
+    } catch {
+      (enriched as any).documents = [];
+    }
     return enriched;
+  }
+
+  async getDocuments(
+    id: string,
+    actingUserId: string,
+    isAdmin = false,
+  ): Promise<any[]> {
+    const request = await this.getById(id, actingUserId, isAdmin);
+    return (request as any).documents || [];
   }
 
   async updateStatus(

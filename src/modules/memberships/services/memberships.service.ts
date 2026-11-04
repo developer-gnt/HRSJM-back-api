@@ -26,7 +26,7 @@ import { CommonStatus } from '../../../common/enums/common-status.enum';
 import { MembershipStatus } from '../../../common/enums/membership-status.enum';
 import { AuditService } from '../../audit/services/audit.service';
 import { DocumentsService } from '../../documents/services/documents.service';
-import { RelatedEntityType } from '../../documents/entities/document.entity';
+import { DocumentType, RelatedEntityType } from '../../documents/entities/document.entity';
 
 import { RenewalRequestEntity } from '../../renewals/entities/renewal-request.entity';
 import { NotificationsService } from '../../notifications/services/notifications.service';
@@ -357,6 +357,63 @@ export class MembershipsService {
     });
 
     const saved = await this.memberships.save(membership);
+
+    // Save all application documents and avatar into the dedicated application folder
+    const userNumber = 'USER' + (targetUserId.replace(/\D/g, '').slice(-4) || targetUserId.slice(0, 8).toUpperCase());
+    const appNumber = saved.membership_number || initialNumber;
+
+    const avatarCandidate = dto.avatar || (dto.personal_details as any)?.avatar;
+    if (avatarCandidate && typeof avatarCandidate === 'string' && avatarCandidate.startsWith('data:')) {
+      try {
+        const savedAvatar = await this.documentsService.saveDocumentToApplicationFolder({
+          userId: targetUserId,
+          applicationNumber: appNumber,
+          userNumber,
+          documentName: 'Applicant Photograph (Profile Photo)',
+          documentType: DocumentType.MEMBERSHIP_DOCUMENT,
+          relatedEntityType: RelatedEntityType.MEMBERSHIP,
+          relatedEntityId: saved.id,
+          fileName: 'applicant_photograph.jpg',
+          dataUriOrBuffer: avatarCandidate,
+          actingUserId: actingUserId || targetUserId,
+        });
+        if (savedAvatar) {
+          if (saved.application_data) { (saved.application_data as any).avatar = `/${savedAvatar.storage_path.replace(/\\/g, '/')}`; }
+        }
+      } catch (avErr: any) {
+        console.warn(`[MembershipsService] Could not save avatar file: ${avErr?.message}`);
+      }
+    }
+
+    if (Array.isArray((appData as any)?.documents)) {
+      for (const doc of (appData as any).documents) {
+        const docUri = doc.uri || doc.fileUri;
+        if (docUri && typeof docUri === 'string' && docUri.startsWith('data:')) {
+          try {
+            const savedDoc = await this.documentsService.saveDocumentToApplicationFolder({
+              userId: targetUserId,
+              applicationNumber: appNumber,
+              userNumber,
+              documentName: doc.title || doc.name || 'Membership Document',
+              documentType: DocumentType.MEMBERSHIP_DOCUMENT,
+              relatedEntityType: RelatedEntityType.MEMBERSHIP,
+              relatedEntityId: saved.id,
+              fileName: doc.fileName || `${doc.id || 'doc'}.jpg`,
+              dataUriOrBuffer: docUri,
+              actingUserId: actingUserId || targetUserId,
+            });
+            if (savedDoc) {
+              doc.uri = `/${savedDoc.storage_path.replace(/\\/g, '/')}`;
+              doc.storage_path = savedDoc.storage_path;
+            }
+          } catch (docErr: any) {
+            console.warn(`[MembershipsService] Could not save document ${doc.title}: ${docErr?.message}`);
+          }
+        }
+      }
+      saved.application_data = appData;
+      await this.memberships.save(saved);
+    }
 
     if (shouldBeActive) {
       try {
@@ -788,7 +845,25 @@ export class MembershipsService {
         })
       : null;
 
-    return this.enrichMembershipPaymentDetails(membership, payment);
+    const enriched = this.enrichMembershipPaymentDetails(membership, payment);
+    try {
+      const docs = await this.documentsService.findByRelatedEntity(
+        RelatedEntityType.MEMBERSHIP,
+        id,
+      );
+      if (membership.user_id) {
+        const userDocs = await this.documentsService.findByUser(membership.user_id);
+        const map = new Map<string, any>();
+        docs.forEach((d) => map.set(d.id, d));
+        userDocs.forEach((d) => map.set(d.id, d));
+        (enriched as any).documents = Array.from(map.values());
+      } else {
+        (enriched as any).documents = docs;
+      }
+    } catch {
+      (enriched as any).documents = [];
+    }
+    return enriched;
   }
 
   async getMyMembership(userId: string): Promise<MembershipEntity | null> {

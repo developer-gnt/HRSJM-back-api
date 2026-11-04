@@ -81,8 +81,25 @@ export class DocumentsService {
     const ownerId = isAdmin && dto.owner_id ? dto.owner_id : actingUserId;
     const fileName = `${randomUUID()}${extension}`;
 
-    await mkdir(STORAGE_DIR, { recursive: true });
-    const storagePath = path.join('uploads', fileName);
+    let storagePath: string;
+    if (dto.related_entity_id) {
+      let cleanAppId: string;
+      if (dto.related_entity_type === RelatedEntityType.ASSISTANCE_REQUEST) {
+        cleanAppId = `HRSJM-SEK-${dto.related_entity_id.replace(/-/g, '').slice(0, 6).toUpperCase()}`;
+      } else if (dto.related_entity_type === RelatedEntityType.MEMBERSHIP) {
+        cleanAppId = `HRSJM-${dto.related_entity_id.replace(/-/g, '').slice(0, 5).toUpperCase()}`;
+      } else {
+        cleanAppId = `APP_${dto.related_entity_id.replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 8).toUpperCase()}`;
+      }
+      const cleanUserId = `USER${ownerId.replace(/\D/g, '').slice(-4) || ownerId.slice(0, 8).toUpperCase()}`;
+      const folderName = `${cleanAppId}_${cleanUserId}`;
+      const targetDir = path.join(STORAGE_DIR, 'applications', folderName);
+      await mkdir(targetDir, { recursive: true });
+      storagePath = path.join('uploads', 'applications', folderName, fileName).replace(/\\/g, '/');
+    } else {
+      await mkdir(STORAGE_DIR, { recursive: true });
+      storagePath = path.join('uploads', fileName).replace(/\\/g, '/');
+    }
     await writeFile(path.join(process.cwd(), storagePath), file.buffer);
 
     const document = this.documents.create({
@@ -218,6 +235,104 @@ export class DocumentsService {
     return document;
   }
 
+  /**
+   * Saves a base64 Data URI or binary Buffer directly into a structured application folder:
+   * uploads/applications/<applicationNumber>_<userNumber>/<fileName>
+   * and creates an entry in the documents table.
+   */
+  async saveDocumentToApplicationFolder(params: {
+    userId: string;
+    applicationNumber: string;
+    userNumber?: string;
+    documentName: string;
+    documentType?: DocumentType;
+    relatedEntityType?: RelatedEntityType;
+    relatedEntityId?: string;
+    fileName?: string;
+    dataUriOrBuffer: string | Buffer;
+    actingUserId?: string;
+  }): Promise<DocumentEntity | null> {
+    try {
+      const cleanAppNo = (params.applicationNumber || 'APP_UNKNOWN').replace(/[^a-zA-Z0-9_-]/g, '_');
+      const cleanUserNo = (params.userNumber || `USER${params.userId.replace(/\D/g, '').slice(-4) || params.userId.slice(0, 8).toUpperCase()}`).replace(/[^a-zA-Z0-9_-]/g, '_');
+      const folderName = `${cleanAppNo}_${cleanUserNo}`;
+      const appDir = path.join(STORAGE_DIR, 'applications', folderName);
+
+      await mkdir(appDir, { recursive: true });
+
+      let buffer: Buffer;
+      let mimeType = 'application/octet-stream';
+      let extension = '.jpg';
+
+      if (Buffer.isBuffer(params.dataUriOrBuffer)) {
+        buffer = params.dataUriOrBuffer;
+        if (params.fileName) {
+          extension = path.extname(params.fileName) || '.jpg';
+        }
+      } else if (typeof params.dataUriOrBuffer === 'string') {
+        const raw = params.dataUriOrBuffer.trim();
+        if (raw.startsWith('data:')) {
+          const matches = raw.match(/^data:([a-zA-Z0-9]+\/[a-zA-Z0-9-.+]+);base64,(.+)$/);
+          if (matches) {
+            mimeType = matches[1];
+            buffer = Buffer.from(matches[2], 'base64');
+            const extMap: Record<string, string> = {
+              'image/jpeg': '.jpg',
+              'image/jpg': '.jpg',
+              'image/png': '.png',
+              'image/webp': '.webp',
+              'application/pdf': '.pdf',
+              'application/msword': '.doc',
+              'application/vnd.openxmlformats-officedocument.wordprocessingml.document': '.docx',
+            };
+            extension = extMap[mimeType] || '.jpg';
+          } else {
+            return null;
+          }
+        } else {
+          return null;
+        }
+      } else {
+        return null;
+      }
+
+      let safeFileName = params.fileName
+        ? path.basename(params.fileName).replace(/[^a-zA-Z0-9._-]/g, '_')
+        : `${randomUUID()}${extension}`;
+
+      if (!path.extname(safeFileName)) {
+        safeFileName = `${safeFileName}${extension}`;
+      }
+
+      const filePath = path.join(appDir, safeFileName);
+      await writeFile(filePath, buffer);
+
+      const storagePath = path.join('uploads', 'applications', folderName, safeFileName).replace(/\\/g, '/');
+
+      const doc = this.documents.create({
+        user_id: params.userId,
+        created_by: params.actingUserId || params.userId,
+        updated_by: params.actingUserId || params.userId,
+        document_name: params.documentName.trim(),
+        document_type: params.documentType || DocumentType.MEMBERSHIP_DOCUMENT,
+        file_name: safeFileName,
+        original_file_name: params.fileName || safeFileName,
+        mime_type: mimeType,
+        file_size: buffer.length,
+        storage_path: storagePath,
+        related_entity_type: params.relatedEntityType || RelatedEntityType.MEMBERSHIP,
+        related_entity_id: params.relatedEntityId ?? null,
+        description: `Saved in application folder ${folderName}`,
+        is_archived: false,
+      });
+
+      return await this.documents.save(doc);
+    } catch (err: any) {
+      this.logger.warn(`Could not save document to application folder: ${err?.message}`);
+      return null;
+    }
+  }
+
   async createAttachmentRecord(
     payload: {
       document_name: string;
@@ -275,6 +390,29 @@ export class DocumentsService {
       where: {
         related_entity_type: relatedEntityType,
         related_entity_id: relatedEntityId,
+        is_archived: false,
+      },
+      order: { created_at: 'DESC' },
+    });
+  }
+
+  async findByUser(userId: string): Promise<DocumentEntity[]> {
+    if (!userId) return [];
+    return this.documents.find({
+      where: { user_id: userId, is_archived: false },
+      order: { created_at: 'DESC' },
+    });
+  }
+
+  async findForRelatedEntities(
+    relatedEntityType: RelatedEntityType,
+    relatedEntityIds: string[],
+  ): Promise<DocumentEntity[]> {
+    if (!relatedEntityIds || relatedEntityIds.length === 0) return [];
+    return this.documents.find({
+      where: {
+        related_entity_type: relatedEntityType,
+        related_entity_id: In(relatedEntityIds),
         is_archived: false,
       },
       order: { created_at: 'DESC' },

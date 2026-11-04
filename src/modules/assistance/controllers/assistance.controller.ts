@@ -102,6 +102,19 @@ export class AssistanceController {
     return this.assistanceService.updateStatus(id, dto, user.sub);
   }
 
+  @Get(':id/documents')
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard)
+  @ApiOperation({ summary: 'List supporting documents for assistance request' })
+  getDocuments(
+    @Param('id', new ParseUUIDPipe()) id: string,
+    @AuthenticatedUser() user: { sub: string },
+    @Req() req: AuthenticatedRequest,
+  ) {
+    const isAdmin = req.user?.roles?.includes('ADMIN') ?? false;
+    return this.assistanceService.getDocuments(id, user.sub, isAdmin);
+  }
+
   @Post(':id/documents')
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard)

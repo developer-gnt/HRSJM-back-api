@@ -1,3 +1,4 @@
+import * as path from 'path';
 import { ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
@@ -26,6 +27,9 @@ async function bootstrap() {
 
   const expressApp = app.getHttpAdapter().getInstance();
   expressApp.set('trust proxy', 1);
+  // Statically serve uploads folder for application documents & profile photos
+  const expressStatic = require('express');
+  expressApp.use('/uploads', expressStatic.static(path.join(process.cwd(), 'uploads')));
   // Dedicated responsive Reset Password webpage served at root path
   expressApp.get('/reset-password', (req: any, res: any) => {
     const token = (req.query.token as string) || '';
