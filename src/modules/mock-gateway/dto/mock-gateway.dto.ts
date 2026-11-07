@@ -61,7 +61,7 @@ export class CreateGatewayOrderDto {
 }
 
 export class ProcessGatewayChargeDto {
-  @ApiProperty({ example: 'order_mock_987654321', description: 'Gateway order ID' })
+  @ApiProperty({ example: 'order_mock_7021057853', description: 'Gateway order ID' })
   @IsNotEmpty()
   @IsString()
   order_id: string;

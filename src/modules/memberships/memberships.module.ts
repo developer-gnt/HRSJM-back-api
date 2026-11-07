@@ -1,10 +1,12 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { MembershipEntity } from './entities/membership.entity';
+import { MembershipReferralEntity } from './entities/membership-referral.entity';
 import { MembershipsController } from './controllers/memberships.controller';
 import { MembershipsService } from './services/memberships.service';
 import { MembershipCategoryEntity } from '../membership-categories/entities/membership-category.entity';
 import { MembershipPaymentEntity } from '../membership-payments/entities/membership-payment.entity';
+import { ReceiptEntity } from '../membership-payments/entities/receipt.entity';
 import { DocumentsModule } from '../documents/documents.module';
 import { AuditModule } from '../audit/audit.module';
 import { UsersModule } from '../users/users.module';
@@ -18,9 +20,11 @@ import { NotificationsModule } from '../notifications/notifications.module';
   imports: [
     TypeOrmModule.forFeature([
       MembershipEntity,
+      MembershipReferralEntity,
       MembershipCategoryEntity,
       MembershipPaymentEntity,
       RenewalRequestEntity,
+      ReceiptEntity,
     ]),
     DocumentsModule,
     AuditModule,

@@ -24,6 +24,17 @@ export class MembershipEntity extends BaseEntity {
   @Column({ type: 'varchar', length: 50, nullable: true })
   membership_number: string | null;
 
+  @Index('uq_memberships_referral_code', { unique: true })
+  @Column({ type: 'varchar', length: 10, nullable: true })
+  referral_code: string | null;
+
+  @Index('idx_memberships_referred_by_id')
+  @Column({ type: 'uuid', nullable: true })
+  referred_by_id: string | null;
+
+  @Column({ type: 'varchar', length: 10, nullable: true })
+  referred_by_code: string | null;
+
   @Column({
     type: 'varchar',
     length: 30,

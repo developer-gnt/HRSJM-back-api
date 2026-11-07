@@ -28,7 +28,15 @@ import { AuditService } from '../../audit/services/audit.service';
 import { DocumentsService } from '../../documents/services/documents.service';
 import { DocumentType, RelatedEntityType } from '../../documents/entities/document.entity';
 
-import { RenewalRequestEntity } from '../../renewals/entities/renewal-request.entity';
+import {
+  RenewalPaymentStatus,
+  RenewalRequestEntity,
+  RenewalStatus,
+} from '../../renewals/entities/renewal-request.entity';
+import { MembershipReferralEntity, ReferralStatus } from '../entities/membership-referral.entity';
+import { ReceiptEntity } from '../../membership-payments/entities/receipt.entity';
+import { addYearsSafe } from '../../renewals/services/renewal-calculation.service';
+import { getReferralRewardYears, OFFICIAL_REFERRAL_TIERS } from '../utils/referral-reward.util';
 import { NotificationsService } from '../../notifications/services/notifications.service';
 import { MailService } from '../../mail/mail.service';
 import { validateAgeEligibility } from '../../../common/utils/age.util';
@@ -39,12 +47,16 @@ export class MembershipsService {
   constructor(
     @InjectRepository(MembershipEntity)
     private readonly memberships: Repository<MembershipEntity>,
+    @InjectRepository(MembershipReferralEntity)
+    private readonly referralsRepo: Repository<MembershipReferralEntity>,
     @InjectRepository(MembershipCategoryEntity)
     private readonly categories: Repository<MembershipCategoryEntity>,
     @InjectRepository(MembershipPaymentEntity)
     private readonly payments: Repository<MembershipPaymentEntity>,
     @InjectRepository(RenewalRequestEntity)
     private readonly renewals: Repository<RenewalRequestEntity>,
+    @InjectRepository(ReceiptEntity)
+    private readonly receiptsRepo: Repository<ReceiptEntity>,
     private readonly audit: AuditService,
     private readonly documentsService: DocumentsService,
     private readonly usersService: UsersService,
@@ -249,6 +261,46 @@ export class MembershipsService {
     };
     const extraData = appData as Record<string, any>;
 
+    // Validate optional referral code from introducing member
+    let referrerMembership: MembershipEntity | null = null;
+    let cleanedReferralCode: string | null = null;
+    const rawRefCode = dto.referral_code || (appData as any).referral_code;
+
+    if (rawRefCode) {
+      cleanedReferralCode = String(rawRefCode).trim().toUpperCase();
+      referrerMembership = await this.memberships.findOne({
+        where: [
+          { referral_code: cleanedReferralCode },
+          { membership_number: cleanedReferralCode },
+        ],
+        relations: ['user', 'category'],
+      });
+
+      if (!referrerMembership) {
+        throw new BadRequestException({
+          message: `Referral code "${rawRefCode}" is invalid or does not exist.`,
+          code: 'INVALID_REFERRAL_CODE',
+          details: { referral_code: rawRefCode },
+        });
+      }
+
+      if (referrerMembership.user_id === targetUserId) {
+        throw new BadRequestException({
+          message: 'You cannot use your own referral code.',
+          code: 'SELF_REFERRAL_NOT_ALLOWED',
+        });
+      }
+
+      const activeStatuses: MembershipStatus[] = [MembershipStatus.ACTIVE, MembershipStatus.APPROVED];
+      if (!activeStatuses.includes(referrerMembership.status)) {
+        throw new BadRequestException({
+          message: 'The referring member is not currently active or approved.',
+          code: 'REFERRER_NOT_ACTIVE',
+          details: { status: referrerMembership.status },
+        });
+      }
+    }
+
     if (existingActiveOrPending) {
       if (!isAdmin) {
         if (
@@ -312,9 +364,40 @@ export class MembershipsService {
       } else {
         existingActiveOrPending.approval_date = null;
       }
+      if (referrerMembership && !existingActiveOrPending.referred_by_id) {
+        existingActiveOrPending.referred_by_id = referrerMembership.id;
+        existingActiveOrPending.referred_by_code = referrerMembership.referral_code || cleanedReferralCode;
+      }
+      if (shouldBeActive && !existingActiveOrPending.referral_code) {
+        existingActiveOrPending.referral_code = await this.generateUniqueReferralCode();
+      }
       existingActiveOrPending.rejection_reason = null;
       existingActiveOrPending.updated_by = actingUserId || targetUserId;
       const saved = await this.memberships.save(existingActiveOrPending);
+
+      if (referrerMembership) {
+        try {
+          const rewardInfo = getReferralRewardYears(category.name, category.code);
+          const referral = this.referralsRepo.create({
+            referrer_membership_id: referrerMembership.id,
+            referrer_user_id: referrerMembership.user_id,
+            referred_membership_id: saved.id,
+            referral_code: referrerMembership.referral_code || cleanedReferralCode!,
+            category_name: category.name,
+            reward_years: rewardInfo.rewardYears,
+            status: shouldBeActive ? ReferralStatus.APPROVED : ReferralStatus.PENDING,
+            free_renewal_applied: false,
+          });
+          await this.referralsRepo.save(referral);
+
+          if (shouldBeActive) {
+            await this.applyFreeRenewalForReferral(saved, actingUserId || targetUserId);
+          }
+        } catch (rErr) {
+          console.warn('[MembershipsService] Could not process referral tracking on existing application:', rErr);
+        }
+      }
+
       this.dispatchMembershipApplicationEmail(saved, category, dto, appData);
       return saved;
     }
@@ -347,6 +430,9 @@ export class MembershipsService {
       category_id: category.id,
       status: initialStatus,
       membership_number: initialNumber,
+      referral_code: shouldBeActive ? await this.generateUniqueReferralCode() : null,
+      referred_by_id: referrerMembership ? referrerMembership.id : null,
+      referred_by_code: referrerMembership ? (referrerMembership.referral_code || cleanedReferralCode) : null,
       start_date: initialStartDate,
       expiry_date: initialExpiryDate,
       approval_date: initialApprovalDate,
@@ -483,6 +569,37 @@ export class MembershipsService {
       `New membership application submitted by ${dto.full_name || 'Applicant'} (${dto.mobile_number || targetUserId}) for ${category.name}.`,
       actingUserId || targetUserId,
     );
+
+    // Record referral link and reward tracking
+    if (referrerMembership) {
+      try {
+        const rewardInfo = getReferralRewardYears(category.name, category.code);
+        const referral = this.referralsRepo.create({
+          referrer_membership_id: referrerMembership.id,
+          referrer_user_id: referrerMembership.user_id,
+          referred_membership_id: saved.id,
+          referral_code: referrerMembership.referral_code || cleanedReferralCode!,
+          category_name: category.name,
+          reward_years: rewardInfo.rewardYears,
+          status: shouldBeActive ? ReferralStatus.APPROVED : ReferralStatus.PENDING,
+          free_renewal_applied: false,
+        });
+        await this.referralsRepo.save(referral);
+
+        if (shouldBeActive) {
+          await this.applyFreeRenewalForReferral(saved, actingUserId || targetUserId);
+        } else {
+          await this.notifications.sendToUser(
+            referrerMembership.user_id,
+            'New Referral Registered! 🤝',
+            `${dto.full_name || 'A new applicant'} has applied for ${category.name} using your referral code (${referral.referral_code}). Your free renewal (${rewardInfo.rewardYears} year(s)) will be activated once their application is approved!`,
+            actingUserId || targetUserId,
+          );
+        }
+      } catch (refErr) {
+        console.warn('[MembershipsService] Could not process referral tracking:', refErr);
+      }
+    }
 
     // Send confirmation email with payment and reference details
     this.dispatchMembershipApplicationEmail(saved, category, dto, appData);
@@ -877,6 +994,19 @@ export class MembershipsService {
       delete (membership.user as { password_hash?: string }).password_hash;
     }
 
+    if (
+      membership &&
+      (membership.status === MembershipStatus.ACTIVE || membership.status === MembershipStatus.APPROVED) &&
+      !membership.referral_code
+    ) {
+      try {
+        membership.referral_code = await this.generateUniqueReferralCode();
+        await this.memberships.save(membership);
+      } catch (refErr) {
+        console.warn('Could not lazily generate referral code in getMyMembership:', refErr);
+      }
+    }
+
     if (membership) {
       const payment = await this.payments.findOne({
         where: { membership_id: membership.id },
@@ -1078,6 +1208,9 @@ export class MembershipsService {
       if (!membership.membership_number) {
         membership.membership_number = await this.generateMemberNumber();
       }
+      if (!membership.referral_code) {
+        membership.referral_code = await this.generateUniqueReferralCode();
+      }
       membership.rejection_reason = null;
 
       // Reactivate user in users table if previously deactivated
@@ -1130,6 +1263,17 @@ export class MembershipsService {
       }
     } else if (dto.status === MembershipStatus.REJECTED) {
       membership.rejection_reason = dto.rejection_reason ?? 'Application rejected by admin';
+      try {
+        const pendingRef = await this.referralsRepo.findOne({
+          where: { referred_membership_id: membership.id, status: ReferralStatus.PENDING },
+        });
+        if (pendingRef) {
+          pendingRef.status = ReferralStatus.REJECTED;
+          await this.referralsRepo.save(pendingRef);
+        }
+      } catch (rErr) {
+        console.warn('Could not update referral rejection status:', rErr);
+      }
       // Deactivate user in users table and revoke active refresh tokens so applicant cannot login
       if (membership.user_id) {
         try {
@@ -1148,6 +1292,11 @@ export class MembershipsService {
     }
 
     const saved = await this.memberships.save(membership);
+
+    // Apply free renewal if this membership was referred by another member
+    if (saved.status === MembershipStatus.APPROVED || saved.status === MembershipStatus.ACTIVE) {
+      await this.applyFreeRenewalForReferral(saved, actingUserId);
+    }
 
     await this.audit.record({
       event: 'membership.status_updated',
@@ -1564,5 +1713,453 @@ export class MembershipsService {
     }
 
     return { isDuplicate: false };
+  }
+
+  /**
+   * Generates a unique 6-digit numeric referral code (e.g. 100000 to 999999).
+   */
+  async generateUniqueReferralCode(): Promise<string> {
+    for (let i = 0; i < 20; i++) {
+      const code = Math.floor(100000 + Math.random() * 900000).toString();
+      const existing = await this.memberships.findOne({
+        where: { referral_code: code },
+      });
+      if (!existing) {
+        return code;
+      }
+    }
+    return Math.random().toString(36).substring(2, 8).toUpperCase();
+  }
+
+  /**
+   * Returns official referral reward tiers and rules.
+   */
+  getReferralTiers() {
+    return {
+      title: 'Free Renewal by Referral Scheme',
+      description: 'Introduce new members into official units and council posts to earn up to 5 years of free membership renewal.',
+      tiers: OFFICIAL_REFERRAL_TIERS,
+      rules: [
+        'There is no need to wait for the renewal period to arrive. Renewal can be processed anytime.',
+        'When you introduce a new member, your unique 6-digit Referral Code is submitted with their application.',
+        'Once their application is approved by HRSJM administration, your membership validity is extended automatically.',
+        'If you introduce new members multiple times within a year, you receive a free renewal each time, and an updated ID card will be issued every time.',
+      ],
+    };
+  }
+
+  /**
+   * Verifies a 6-digit referral code or membership number before application submission.
+   */
+  async verifyReferralCode(code: string): Promise<{
+    valid: boolean;
+    referral_code: string;
+    referrer_name?: string;
+    membership_number?: string;
+    message: string;
+  }> {
+    if (!code || !code.trim()) {
+      return {
+        valid: false,
+        referral_code: code,
+        message: 'Referral code cannot be empty.',
+      };
+    }
+
+    const cleanCode = code.trim().toUpperCase();
+    const referrer = await this.memberships.findOne({
+      where: [
+        { referral_code: cleanCode },
+        { membership_number: cleanCode },
+      ],
+      relations: ['user', 'category'],
+    });
+
+    if (!referrer) {
+      return {
+        valid: false,
+        referral_code: cleanCode,
+        message: 'Invalid referral code. Member not found.',
+      };
+    }
+
+    const activeStatuses: MembershipStatus[] = [MembershipStatus.ACTIVE, MembershipStatus.APPROVED];
+    if (!activeStatuses.includes(referrer.status)) {
+      return {
+        valid: false,
+        referral_code: cleanCode,
+        message: 'Referral code belongs to an inactive or unapproved membership.',
+      };
+    }
+
+    const memberName = referrer.user?.full_name || 'Registered Member';
+    return {
+      valid: true,
+      referral_code: referrer.referral_code || cleanCode,
+      referrer_name: memberName,
+      membership_number: referrer.membership_number || undefined,
+      message: `Verified: Referred by ${memberName} (${referrer.membership_number || cleanCode})`,
+    };
+  }
+
+  /**
+   * Public status lookup for member renewal verification (by membership number, registered phone, or referral code).
+   */
+  async verifyMemberStatusForRenewal(query: string): Promise<{
+    found: boolean;
+    membership_id?: string;
+    membership_number?: string | null;
+    member_name?: string;
+    category_name?: string;
+    status?: string;
+    start_date?: string | null;
+    expiry_date?: string | null;
+    is_valid?: boolean;
+    is_expired?: boolean;
+    days_remaining?: number;
+    days_overdue?: number;
+    referral_code?: string | null;
+    renewal_fee?: number;
+    renewal_sequence?: number;
+    eligible_for_free_renewal?: boolean;
+    message: string;
+  }> {
+    if (!query || !query.trim()) {
+      return {
+        found: false,
+        message: 'Please enter a valid Membership ID or registered mobile number.',
+      };
+    }
+
+    const clean = query.trim();
+    const cleanUpper = clean.toUpperCase();
+    const digitsOnly = clean.replace(/\D/g, '');
+
+    const qb = this.memberships
+      .createQueryBuilder('m')
+      .leftJoinAndSelect('m.user', 'u')
+      .leftJoinAndSelect('m.category', 'c')
+      .where('m.membership_number ILIKE :q', { q: cleanUpper })
+      .orWhere('m.referral_code = :qExact', { qExact: cleanUpper });
+
+    if (digitsOnly.length >= 10) {
+      qb.orWhere('u.mobile_number LIKE :phone', { phone: `%${digitsOnly.slice(-10)}%` });
+    }
+    if (/^\d{1,6}$/.test(clean)) {
+      qb.orWhere('m.membership_number ILIKE :padded', {
+        padded: `HRSJM-${clean.padStart(5, '0')}`,
+      });
+    }
+
+    const membership = await qb.orderBy('m.created_at', 'DESC').getOne();
+
+    if (!membership) {
+      return {
+        found: false,
+        message: `No active or registered membership found matching "${query}". Please check your ID/phone number or contact the administration desk.`,
+      };
+    }
+
+    const now = new Date();
+    const expiry = membership.expiry_date ? new Date(membership.expiry_date) : null;
+    const isExpired = expiry ? expiry.getTime() < now.getTime() : false;
+    const isValid = membership.status === MembershipStatus.ACTIVE && !isExpired;
+
+    const daysRemaining =
+      expiry && !isExpired ? Math.ceil((expiry.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)) : 0;
+    const daysOverdue =
+      expiry && isExpired ? Math.ceil((now.getTime() - expiry.getTime()) / (1000 * 60 * 60 * 24)) : 0;
+
+    let pastRenewalsCount = 0;
+    try {
+      pastRenewalsCount = await this.renewals.count({
+        where: {
+          membership_id: membership.id,
+          payment_status: RenewalPaymentStatus.SUCCESS,
+        },
+      });
+    } catch {}
+
+    const renewalSequence = pastRenewalsCount + 1;
+    const renewalFee = renewalSequence === 1 ? 500 : renewalSequence === 2 ? 400 : 300;
+
+    if (
+      !membership.referral_code &&
+      (membership.status === MembershipStatus.ACTIVE || membership.status === MembershipStatus.APPROVED)
+    ) {
+      try {
+        membership.referral_code = await this.generateUniqueReferralCode();
+        await this.memberships.save(membership);
+      } catch {}
+    }
+
+    const memberName = membership.user?.full_name || 'Registered Member';
+    const catName = membership.category?.name || 'General Membership';
+
+    let statusMsg = '';
+    if (membership.status === MembershipStatus.ACTIVE) {
+      statusMsg = isExpired
+        ? `Membership expired on ${expiry?.toLocaleDateString('en-IN')}. Renewal is due.`
+        : `Active membership. Valid until ${expiry?.toLocaleDateString('en-IN')} (${daysRemaining} days remaining).`;
+    } else if (
+      membership.status === MembershipStatus.PENDING ||
+      membership.status === MembershipStatus.UNDER_REVIEW
+    ) {
+      statusMsg = 'Application is currently under review by HRSJM administration.';
+    } else {
+      statusMsg = `Current status: ${membership.status}.`;
+    }
+
+    return {
+      found: true,
+      membership_id: membership.id,
+      membership_number: membership.membership_number,
+      member_name: memberName,
+      category_name: catName,
+      status: membership.status,
+      start_date: membership.start_date ? new Date(membership.start_date).toISOString() : null,
+      expiry_date: expiry ? expiry.toISOString() : null,
+      is_valid: isValid,
+      is_expired: isExpired,
+      days_remaining: daysRemaining,
+      days_overdue: daysOverdue,
+      referral_code: membership.referral_code,
+      renewal_fee: renewalFee,
+      renewal_sequence: renewalSequence,
+      eligible_for_free_renewal: true,
+      message: statusMsg,
+    };
+  }
+
+  /**
+   * Gets referral stats and list of referred applicants for the logged-in member.
+   */
+  async getMyReferralStats(userId: string): Promise<{
+    referral_code: string | null;
+    membership_number: string | null;
+    current_expiry: Date | null;
+    total_referrals: number;
+    approved_referrals: number;
+    pending_referrals: number;
+    total_free_years_earned: number;
+    referrals: any[];
+  }> {
+    const membership = await this.memberships.findOne({
+      where: { user_id: userId },
+      relations: ['user', 'category'],
+      order: { created_at: 'DESC' },
+    });
+
+    if (!membership) {
+      throw new NotFoundException({
+        message: 'No membership record found for this user.',
+        code: 'MEMBERSHIP_NOT_FOUND',
+      });
+    }
+
+    // Ensure 6-digit referral code exists for active/approved member
+    if (
+      !membership.referral_code &&
+      (membership.status === MembershipStatus.ACTIVE || membership.status === MembershipStatus.APPROVED)
+    ) {
+      membership.referral_code = await this.generateUniqueReferralCode();
+      await this.memberships.save(membership);
+    }
+
+    const referrals = await this.referralsRepo.find({
+      where: { referrer_membership_id: membership.id },
+      relations: ['referred_membership', 'referred_membership.user', 'renewal'],
+      order: { created_at: 'DESC' },
+    });
+
+    let approvedCount = 0;
+    let pendingCount = 0;
+    let freeYearsEarned = 0;
+
+    const formattedReferrals = referrals.map((r) => {
+      if (r.status === ReferralStatus.APPROVED) {
+        approvedCount++;
+        freeYearsEarned += r.reward_years || 0;
+      } else if (r.status === ReferralStatus.PENDING) {
+        pendingCount++;
+      }
+
+      return {
+        id: r.id,
+        referred_name: r.referred_membership?.user?.full_name || 'Applicant',
+        category_name: r.category_name,
+        reward_years: r.reward_years,
+        status: r.status,
+        free_renewal_applied: r.free_renewal_applied,
+        applied_at: r.created_at,
+        reward_applied_at: r.reward_applied_at,
+      };
+    });
+
+    return {
+      referral_code: membership.referral_code,
+      membership_number: membership.membership_number,
+      current_expiry: membership.expiry_date,
+      total_referrals: referrals.length,
+      approved_referrals: approvedCount,
+      pending_referrals: pendingCount,
+      total_free_years_earned: freeYearsEarned,
+      referrals: formattedReferrals,
+    };
+  }
+
+  /**
+   * Applies the free renewal benefit to the referring member when the referred applicant's membership is approved.
+   */
+  private async applyFreeRenewalForReferral(
+    membership: MembershipEntity,
+    actingUserId: string,
+  ): Promise<void> {
+    try {
+      const pendingReferral = await this.referralsRepo.findOne({
+        where: {
+          referred_membership_id: membership.id,
+          status: ReferralStatus.PENDING,
+        },
+        relations: ['referrer_membership', 'referrer_membership.user'],
+      });
+
+      if (!pendingReferral) {
+        return;
+      }
+
+      let referrer: MembershipEntity | null = pendingReferral.referrer_membership || null;
+      if (!referrer) {
+        referrer = await this.memberships.findOne({
+          where: { id: pendingReferral.referrer_membership_id },
+          relations: ['user', 'category'],
+        });
+      }
+
+      if (!referrer) {
+        return;
+      }
+
+      let cat: MembershipCategoryEntity | null = membership.category || null;
+      if (!cat && membership.category_id) {
+        cat = await this.categories.findOne({ where: { id: membership.category_id } });
+      }
+      const categoryName = cat?.name || pendingReferral.category_name;
+      const categoryCode = cat?.code;
+      const rewardInfo = getReferralRewardYears(categoryName, categoryCode);
+      const rewardYears = rewardInfo.rewardYears || pendingReferral.reward_years || 1;
+
+      const now = new Date();
+      const currentExpiry = referrer.expiry_date ? new Date(referrer.expiry_date) : now;
+      const baseDate = currentExpiry > now ? currentExpiry : now;
+      const newExpiry = addYearsSafe(baseDate, rewardYears);
+
+      referrer.expiry_date = newExpiry;
+      if (referrer.status === MembershipStatus.EXPIRED) {
+        referrer.status = MembershipStatus.ACTIVE;
+      }
+      referrer.updated_by = actingUserId;
+      await this.memberships.save(referrer);
+
+      const year = now.getFullYear();
+      const rand = Math.floor(10000 + Math.random() * 90000);
+      const receiptNumber = `HRSJM-REF-REC-${year}-${rand}`;
+
+      const renewal = this.renewals.create({
+        membership_id: referrer.id,
+        requested_by: referrer.user_id,
+        user_id: referrer.user_id,
+        period_years: rewardYears,
+        amount: 0,
+        payment_method: 'REFERRAL_FREE_RENEWAL',
+        payment_status: RenewalPaymentStatus.SUCCESS,
+        status: RenewalStatus.ACTIVE,
+        receipt_number: receiptNumber,
+        previous_expiry: currentExpiry,
+        new_expiry: newExpiry,
+        admin_remark: `Free renewal policy awarded for introducing member #${membership.membership_number || 'new'} into ${categoryName} (${rewardInfo.tierName}).`,
+        member_note: `Earned ${rewardYears} Year(s) Free Renewal via Referral Scheme.`,
+        reviewed_by: actingUserId,
+        reviewed_at: now,
+        created_by: actingUserId,
+        updated_by: actingUserId,
+      });
+      const savedRenewal = await this.renewals.save(renewal);
+
+      try {
+        const receipt = this.receiptsRepo.create({
+          receipt_number: receiptNumber,
+          receipt_date: now,
+          user_id: referrer.user_id,
+          amount: 0,
+          payment_method: 'REFERRAL_REWARD',
+          receipt_type: 'RENEWAL',
+          issued_to: referrer.user?.full_name ?? 'Member',
+          notes: `Free Membership Renewal (${rewardYears} Year Extension) via Referral Reward Scheme`,
+          created_by: actingUserId,
+        });
+        await this.receiptsRepo.save(receipt);
+      } catch (recErr) {
+        console.warn('Could not persist receipt for free referral renewal:', recErr);
+      }
+
+      pendingReferral.status = ReferralStatus.APPROVED;
+      pendingReferral.free_renewal_applied = true;
+      pendingReferral.reward_years = rewardYears;
+      pendingReferral.renewal_id = savedRenewal.id;
+      pendingReferral.reward_applied_at = now;
+      await this.referralsRepo.save(pendingReferral);
+
+      try {
+        const referredUserName =
+          (membership.user as any)?.full_name ||
+          (membership.application_data as any)?.full_name ||
+          'Member';
+        await this.notifications.sendToUser(
+          referrer.user_id,
+          'Free Renewal Activated! 🎉',
+          `Congratulations! Your referral for ${referredUserName} (${categoryName}) was approved. You received ${rewardYears} year(s) of free membership renewal! Your new validity is until ${newExpiry.toISOString().slice(0, 10)}.`,
+          actingUserId,
+        );
+      } catch (nErr) {
+        console.warn('Could not send referral approval notification:', nErr);
+      }
+
+      try {
+        if (referrer.user?.email && referrer.user.email.includes('@')) {
+          this.mailService
+            .sendMembershipStatusUpdateEmail({
+              memberName: referrer.user.full_name || 'Member',
+              memberEmail: referrer.user.email,
+              membershipNumber: referrer.membership_number || '',
+              categoryName: referrer.category?.name || 'Member',
+              status: 'ACTIVE' as any,
+              validFrom: referrer.start_date || undefined,
+              validUntil: newExpiry,
+              notes: `Free Renewal Benefit Applied: +${rewardYears} Year(s) for introducing approved member.`,
+            })
+            .catch((mailErr) => {
+              console.warn('Could not send referral free renewal email:', mailErr.message);
+            });
+        }
+      } catch (mErr) {
+        console.warn('Error initiating free renewal email:', mErr);
+      }
+
+      await this.audit.record({
+        event: 'referral.free_renewal_awarded',
+        actorId: actingUserId,
+        entityType: 'membership_referrals',
+        entityId: pendingReferral.id,
+        metadata: {
+          referrerMembershipId: referrer.id,
+          referredMembershipId: membership.id,
+          rewardYears,
+          newExpiry,
+        },
+      });
+    } catch (err) {
+      console.error('Failed to apply free renewal for referral:', err);
+    }
   }
 }
