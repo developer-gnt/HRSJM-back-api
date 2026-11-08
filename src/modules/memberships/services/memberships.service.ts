@@ -692,7 +692,7 @@ export class MembershipsService {
               MembershipStatus.REJECTED,
               MembershipStatus.SUSPENDED,
             ],
-            userInactiveStatuses: ['INACTIVE', 'SUSPENDED'],
+            userInactiveStatuses: [CommonStatus.INACTIVE],
           },
         );
       } else {
@@ -903,7 +903,7 @@ export class MembershipsService {
           MembershipStatus.REJECTED,
           MembershipStatus.SUSPENDED,
         ],
-        userInactiveStatuses: ['INACTIVE', 'SUSPENDED'],
+        userInactiveStatuses: [CommonStatus.INACTIVE],
       },
     );
     const inactive = await inactiveQb.getCount();

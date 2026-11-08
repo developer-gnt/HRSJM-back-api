@@ -59,6 +59,10 @@ jobs:
             echo "📦 Installing dependencies..."
             npm install --legacy-peer-deps
             
+            # Run database migrations
+            echo "🗄️ Running database migrations..."
+            npm run migration:run || true
+            
             # Build NestJS production bundle
             echo "🔨 Building application..."
             npm run build
