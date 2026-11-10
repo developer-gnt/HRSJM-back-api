@@ -42,7 +42,7 @@ export function resolveMembershipValidityDays(
     }
   }
 
-  // 2. 10 Years Posts: State Director & National Council Cells
+  // 2. 10 Years Posts: State Director & National Level Posts
   if (
     combined.includes('10 year') ||
     combined.includes('director') ||

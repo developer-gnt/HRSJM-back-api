@@ -96,7 +96,7 @@ export class UpdateOfficialMembershipCategoryFees1790770000000 implements Migrat
       {
         name: 'National Legal Council Cell',
         code: 'NATIONAL_LEGAL_COUNCIL_CELL',
-        description: 'Qualification: Advocate / Retd. Judge · 10 Years Validity',
+        description: 'Qualification: National Legal Council Cell · 10 Years Validity',
         fee: 10000.00,
         validity_days: 3650,
       },
