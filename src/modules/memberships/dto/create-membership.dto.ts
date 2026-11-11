@@ -26,7 +26,7 @@ export class CreateMembershipDto {
   @MaxLength(255)
   full_name?: string;
 
-  @ApiPropertyOptional({ description: 'Applicant mobile number', example: '9876543210' })
+  @ApiPropertyOptional({ description: 'Applicant mobile number', example: '7021057853' })
   @IsOptional()
   @IsString()
   @MaxLength(20)

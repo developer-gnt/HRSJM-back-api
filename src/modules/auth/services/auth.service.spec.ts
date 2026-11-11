@@ -131,7 +131,7 @@ describe('AuthService', () => {
     await service.register(
       {
         full_name: 'Donation Seeker Applicant',
-        mobile_number: '9876543210',
+        mobile_number: '7021057853',
         email: 'applicant@example.com',
         password: 'password123',
         confirm_password: 'password123',
@@ -245,7 +245,7 @@ describe('AuthService', () => {
     usersService.findByLoginIdentifier = jest.fn().mockResolvedValue({
       id: 'u1',
       email: 'member@hrsjm.org',
-      mobile_number: '9876543210',
+      mobile_number: '7021057853',
     });
 
     const result = await service.forgotPassword('member@hrsjm.org', '127.0.0.1', 'jest-agent');
@@ -326,7 +326,7 @@ describe('AuthService', () => {
       usersService.findByLoginIdentifier = jest.fn().mockResolvedValue(null);
 
       const res = await service.checkDuplicates({
-        mobile_number: '9876543210',
+        mobile_number: '7021057853',
         email: 'fresh@hrsjm.org',
       });
 
@@ -337,12 +337,12 @@ describe('AuthService', () => {
 
     it('returns mobile_taken: true when mobile number is already registered in database', async () => {
       usersService.findByLoginIdentifier = jest.fn((id: string) => {
-        if (id === '9876543210') return Promise.resolve({ id: 'u-existing' });
+        if (id === '7021057853') return Promise.resolve({ id: 'u-existing' });
         return Promise.resolve(null);
       });
 
       const res = await service.checkDuplicates({
-        mobile_number: '9876543210',
+        mobile_number: '7021057853',
         email: 'fresh@hrsjm.org',
       });
 
