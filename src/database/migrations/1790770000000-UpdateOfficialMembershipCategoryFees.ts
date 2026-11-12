@@ -73,7 +73,7 @@ export class UpdateOfficialMembershipCategoryFees1790770000000 implements Migrat
         validity_days: 1825,
       },
       {
-        name: 'Counsellor of State',
+        name: 'Counselor of State',
         code: 'COUNSELLOR_OF_STATE',
         description: 'Qualification: Minimum 12th Pass · 5 Years Validity',
         fee: 5000.00,
