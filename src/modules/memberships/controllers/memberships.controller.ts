@@ -81,6 +81,31 @@ export class MembershipsController {
     return this.membershipsService.checkDuplicate(email, phone);
   }
 
+  @Get('memberships/status-lookup')
+  @ApiOperation({ summary: 'Public membership status and renewal verification lookup' })
+  verifyStatus(@Query('query') query: string) {
+    return this.membershipsService.verifyMemberStatusForRenewal(query);
+  }
+
+  @Get('memberships/referral/tiers')
+  @ApiOperation({ summary: 'Get official referral reward tiers and policies' })
+  getReferralTiers() {
+    return this.membershipsService.getReferralTiers();
+  }
+
+  @Get('memberships/referral/verify/:code')
+  @ApiOperation({ summary: 'Verify a 6-digit referral code before applying' })
+  verifyReferralCode(@Param('code') code: string) {
+    return this.membershipsService.verifyReferralCode(code);
+  }
+
+  @Get('memberships/referral/my-referrals')
+  @UseGuards(JwtAuthGuard)
+  @ApiOperation({ summary: 'Get my referral code, reward balance, and referred members list' })
+  getMyReferrals(@AuthenticatedUser() user: { sub: string }) {
+    return this.membershipsService.getMyReferralStats(user.sub);
+  }
+
   @Get('memberships/:id')
   @UseGuards(JwtAuthGuard)
   @ApiOperation({ summary: 'View single membership details (owner or admin)' })

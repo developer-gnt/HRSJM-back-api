@@ -13,7 +13,7 @@ export class CreateContactInquiryDto {
   @IsNotEmpty()
   email: string;
 
-  @ApiPropertyOptional({ example: '9876543210', description: 'Citizen 10-digit phone number' })
+  @ApiPropertyOptional({ example: '70210578530', description: 'Citizen 10-digit phone number' })
   @IsOptional()
   @IsString()
   phone?: string;

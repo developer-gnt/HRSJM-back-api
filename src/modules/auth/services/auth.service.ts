@@ -893,12 +893,18 @@ async resetPassword(
       return;
     }
 
-    const latestMembership = await this.dataSource
-      .getRepository(MembershipEntity)
-      .findOne({
-        where: { user_id: userId },
-        order: { created_at: 'DESC' },
-      });
+    let latestMembership: MembershipEntity | null = null;
+    try {
+      latestMembership = await this.dataSource
+        .getRepository(MembershipEntity)
+        .findOne({
+          where: { user_id: userId },
+          order: { created_at: 'DESC' },
+        });
+    } catch (err: any) {
+      this.logger.warn(`Could not verify membership status for ${userId}: ${err?.message}`);
+      return;
+    }
 
     if (!latestMembership) {
       return;

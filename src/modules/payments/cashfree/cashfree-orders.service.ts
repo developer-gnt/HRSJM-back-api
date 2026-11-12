@@ -233,7 +233,7 @@ export class CashfreeOrdersService {
     // Prioritize mobile number fetched from current user's database record
     const rawPhone = dbUser?.mobile_number || dto.customer_phone || payment.donation?.donor_mobile || '';
     const cleanPhone = rawPhone.replace(/\D/g, '').slice(-10);
-    const customerPhone = cleanPhone.length === 10 ? cleanPhone : '9876543210';
+    const customerPhone = cleanPhone.length === 10 ? cleanPhone : '70210578530';
 
     const customerId = (payment.user_id || safeActingUuid || payment.id).replace(/-/g, '').slice(0, 45);
     const rawName = dbUser?.full_name || dto.customer_name || payment.donation?.donor_name || 'HRSJM Donor';
@@ -433,7 +433,7 @@ export class CashfreeOrdersService {
       // Prioritize mobile number fetched from current user's database record
       const rawPhone = dbUser?.mobile_number || dto.customer_phone || payment.user?.mobile_number || '';
       const cleanPhone = rawPhone.replace(/\D/g, '').slice(-10);
-      const customerPhone = cleanPhone.length === 10 ? cleanPhone : '9876543210';
+      const customerPhone = cleanPhone.length === 10 ? cleanPhone : '70210578530';
 
       const customerId = (payment.user_id || safeActingUuid || validActingUserId || 'applicant').replace(/-/g, '').slice(0, 45);
       const rawName = dbUser?.full_name || dto.customer_name || payment.user?.full_name || 'HRSJM Member';
@@ -506,7 +506,7 @@ export class CashfreeOrdersService {
 
     const rawPhone = dto.customer_phone || '';
     const cleanPhone = rawPhone.replace(/\D/g, '').slice(-10);
-    const customerPhone = cleanPhone.length === 10 ? cleanPhone : '9876543210';
+    const customerPhone = cleanPhone.length === 10 ? cleanPhone : '70210578530';
 
     const customerId = (validActingUserId || `cust_${Date.now()}`).replace(/-/g, '').slice(0, 45);
     const customerName = (dto.customer_name || 'HRSJM Member Applicant').replace(/[^a-zA-Z0-9 ]/g, ' ').slice(0, 50).trim() || 'HRSJM Member Applicant';

@@ -91,11 +91,25 @@ describe('MembershipsService', () => {
       sendMembershipPaymentSuccess: jest.fn().mockResolvedValue(undefined),
     };
 
+    const referralsRepo = {
+      find: jest.fn().mockResolvedValue([]),
+      findOne: jest.fn().mockResolvedValue(null),
+      create: jest.fn((x: any) => x),
+      save: jest.fn(async (x: any) => ({ id: 'ref-1', ...x })),
+    };
+
+    const receiptsRepo = {
+      create: jest.fn((x: any) => x),
+      save: jest.fn(async (x: any) => ({ id: 'rec-1', ...x })),
+    };
+
     service = new MembershipsService(
       membershipsRepo as never,
+      referralsRepo as never,
       categoriesRepo as never,
       paymentsRepo as never,
       renewalsRepo as never,
+      receiptsRepo as never,
       audit as never,
       documentsService as never,
       usersService as never,
@@ -411,6 +425,49 @@ describe('MembershipsService', () => {
       await expect(
         service.adminResetPassword('invalid-id', {}, 'admin-1'),
       ).rejects.toThrow(NotFoundException);
+    });
+  });
+
+  describe('Referral System & Free Renewal', () => {
+    it('generates a 6-digit numeric referral code', async () => {
+      membershipsRepo.findOne.mockResolvedValue(null);
+      const code = await service.generateUniqueReferralCode();
+      expect(code).toBeDefined();
+      expect(code.length).toBe(6);
+      expect(/^\d{6}$/.test(code)).toBe(true);
+    });
+
+    it('verifies a valid referral code for active member', async () => {
+      membershipsRepo.findOne.mockResolvedValue({
+        id: 'mem-ref',
+        referral_code: '582910',
+        membership_number: 'HRSJM-00001',
+        status: MembershipStatus.ACTIVE,
+        user: { full_name: 'Rahul Sharma' },
+      });
+
+      const res = await service.verifyReferralCode('582910');
+      expect(res.valid).toBe(true);
+      expect(res.referral_code).toBe('582910');
+      expect(res.referrer_name).toBe('Rahul Sharma');
+      expect(res.message).toContain('Verified');
+    });
+
+    it('rejects invalid referral code', async () => {
+      membershipsRepo.findOne.mockResolvedValue(null);
+      const res = await service.verifyReferralCode('999999');
+      expect(res.valid).toBe(false);
+      expect(res.message).toContain('not found');
+    });
+
+    it('returns official referral tiers with 1 to 5 years mapping', () => {
+      const data = service.getReferralTiers();
+      expect(data.tiers).toHaveLength(5);
+      expect(data.tiers[0].freeRenewalPeriod).toBe('1 Year');
+      expect(data.tiers[1].freeRenewalPeriod).toBe('2 Years');
+      expect(data.tiers[2].freeRenewalPeriod).toBe('3 Years');
+      expect(data.tiers[3].freeRenewalPeriod).toBe('4 Years');
+      expect(data.tiers[4].freeRenewalPeriod).toBe('5 Years');
     });
   });
 });

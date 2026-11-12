@@ -26,7 +26,7 @@ export class CreateMembershipDto {
   @MaxLength(255)
   full_name?: string;
 
-  @ApiPropertyOptional({ description: 'Applicant mobile number', example: '9876543210' })
+  @ApiPropertyOptional({ description: 'Applicant mobile number', example: '70210578530' })
   @IsOptional()
   @IsString()
   @MaxLength(20)
@@ -66,6 +66,12 @@ export class CreateMembershipDto {
   @IsOptional()
   @IsObject()
   application_data?: Record<string, unknown>;
+
+  @ApiPropertyOptional({ description: '6-digit Referral code of introducing active member', example: '582914' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(20)
+  referral_code?: string;
 
   @ApiPropertyOptional({ description: 'Admin notes' })
   @IsOptional()

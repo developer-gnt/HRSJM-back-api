@@ -48,7 +48,7 @@ export class UpdateOfficialMembershipCategoryFees1790770000000 implements Migrat
         name: 'State Active Member',
         code: 'STATE_ACTIVE_MEMBER',
         description: 'Qualification: Minimum 8th Class · 1 Year Validity',
-        fee: 800.00,
+        fee: 900.00,
         validity_days: 365,
       },
       {
