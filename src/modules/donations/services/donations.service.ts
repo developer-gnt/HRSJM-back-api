@@ -23,6 +23,7 @@ import { AuditService } from '../../audit/services/audit.service';
 import { ReceiptEntryEntity } from '../../receipt-entries/entities/receipt-entry.entity';
 import { ReceiptStatus } from '../../receipt-entries/enums/receipt-entry.enums';
 import { UserEntity } from '../../users/entities/user.entity';
+import { EventEntity } from '../../events/entities/event.entity';
 import { NotificationsService } from '../../notifications/services/notifications.service';
 import { Optional } from '@nestjs/common';
 
@@ -62,6 +63,21 @@ export class DonationsService {
           dbUserEmail = user.email || '';
         }
       } catch {}
+    }
+
+    const targetEventId = dto.event_id || dto.eventId;
+    if (targetEventId && this.dataSource) {
+      try {
+        const eventsRepo = this.dataSource.getRepository(EventEntity);
+        const event = await eventsRepo.findOne({ where: { id: targetEventId } });
+        if (event && !event.is_donation_enabled) {
+          throw new BadRequestException(
+            `Donations are currently disabled for event "${event.title}".`,
+          );
+        }
+      } catch (err) {
+        if (err instanceof BadRequestException) throw err;
+      }
     }
 
     const mobile = dbUserMobile || dto.donor_mobile || dto.mobile_number || '';

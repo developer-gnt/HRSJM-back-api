@@ -81,4 +81,14 @@ export class CreateDonationDto {
   @IsOptional()
   @IsString()
   user_id?: string;
+
+  @ApiPropertyOptional({ description: 'Event ID if donation is for a specific event' })
+  @IsOptional()
+  @IsString()
+  event_id?: string;
+
+  @ApiPropertyOptional({ description: 'Alias for event_id (camelCase)' })
+  @IsOptional()
+  @IsString()
+  eventId?: string;
 }

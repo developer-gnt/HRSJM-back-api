@@ -23,6 +23,7 @@ import { CreateCashfreeOrderDto } from './dto/create-cashfree-order.dto';
 import { RenewalRequestEntity } from '../../renewals/entities/renewal-request.entity';
 import { RenewalCalculationService } from '../../renewals/services/renewal-calculation.service';
 import { UserEntity } from '../../users/entities/user.entity';
+import { EventEntity } from '../../events/entities/event.entity';
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 function toValidUuid(val?: string | null): string | undefined {
@@ -182,6 +183,20 @@ export class CashfreeOrdersService {
 
       const donationsRepo = this.getDonationsRepo();
       if (donationsRepo) {
+        if (dto.event_id && this.dataSource) {
+          try {
+            const eventsRepo = this.dataSource.getRepository(EventEntity);
+            const ev = await eventsRepo.findOne({ where: { id: dto.event_id } });
+            if (ev && !ev.is_donation_enabled) {
+              throw new BadRequestException(
+                `Donations are currently disabled for event "${ev.title}".`,
+              );
+            }
+          } catch (err: any) {
+            if (err instanceof BadRequestException) throw err;
+          }
+        }
+
         const dbUser = await this.getDbUser(validActingUserId);
         const remarkParts: string[] = [];
         if (dto.event_id) remarkParts.push(`Event ID: ${dto.event_id}`);

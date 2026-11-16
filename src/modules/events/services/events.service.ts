@@ -223,6 +223,9 @@ export class EventsService {
 
     Object.assign(event, {
       ...dto,
+      is_enabled: event.is_enabled,
+      is_donation_enabled: event.is_donation_enabled,
+      donation_message: event.donation_message,
       updated_by: userId ?? null,
       start_at: dto.start_at ? new Date(dto.start_at) : event.start_at,
       end_at: dto.end_at !== undefined ? (dto.end_at ? new Date(dto.end_at) : null) : event.end_at,
