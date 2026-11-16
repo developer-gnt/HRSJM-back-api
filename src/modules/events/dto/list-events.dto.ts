@@ -1,7 +1,6 @@
-import { IsEnum, IsInt, IsOptional, IsString, Min } from 'class-validator';
+import { IsInt, IsOptional, IsString, Min } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { EventStatus } from '../entities/event.entity';
 
 export class ListEventsDto {
   @ApiPropertyOptional({ enum: ['ALL', 'UPCOMING', 'COMPLETED', 'CANCELLED', 'DRAFT'] })
@@ -18,6 +17,16 @@ export class ListEventsDto {
   @IsOptional()
   @IsString()
   search?: string;
+
+  @ApiPropertyOptional({ description: 'Filter by is_enabled (true/false/ALL)' })
+  @IsOptional()
+  @IsString()
+  is_enabled?: string;
+
+  @ApiPropertyOptional({ description: 'Alias for is_enabled (camelCase)' })
+  @IsOptional()
+  @IsString()
+  isEnabled?: string;
 
   @ApiPropertyOptional({ default: 1 })
   @IsInt()

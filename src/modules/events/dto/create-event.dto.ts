@@ -122,6 +122,16 @@ export class CreateEventDto {
   @IsOptional()
   status?: EventStatus;
 
+  @ApiPropertyOptional({ description: 'Whether the event is enabled/active in the system', default: true })
+  @IsBoolean()
+  @IsOptional()
+  is_enabled?: boolean;
+
+  @ApiPropertyOptional({ description: 'Alias for is_enabled (camelCase)', default: true })
+  @IsBoolean()
+  @IsOptional()
+  isEnabled?: boolean;
+
   @ApiPropertyOptional({ description: 'Whether donations/payments are enabled for this event', default: false })
   @IsBoolean()
   @IsOptional()

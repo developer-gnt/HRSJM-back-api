@@ -88,6 +88,12 @@ export class EventsService {
       );
     }
 
+    const isEnabledFilter = dto.is_enabled ?? dto.isEnabled;
+    if (isEnabledFilter && isEnabledFilter.toLowerCase() !== 'all') {
+      const boolVal = isEnabledFilter.toLowerCase() === 'true';
+      qb.andWhere('e.is_enabled = :isEnabled', { isEnabled: boolVal });
+    }
+
     if (dto.status === EventStatus.UPCOMING) {
       // Upcoming events ordered chronologically ascending (nearest first)
       qb.orderBy('e.start_at', 'ASC');
@@ -132,6 +138,13 @@ export class EventsService {
   }
 
   async create(dto: CreateEventDto, userId?: string): Promise<EventEntity> {
+    const isEnabled =
+      dto.is_enabled !== undefined
+        ? dto.is_enabled
+        : dto.isEnabled !== undefined
+        ? dto.isEnabled
+        : true;
+
     const isDonationEnabled =
       dto.is_donation_enabled !== undefined
         ? dto.is_donation_enabled
@@ -148,6 +161,7 @@ export class EventsService {
 
     const event = this.eventRepo.create({
       ...dto,
+      is_enabled: Boolean(isEnabled),
       is_donation_enabled: Boolean(isDonationEnabled),
       donation_message: isDonationEnabled && donationMessage ? donationMessage.trim() : null,
       created_by: userId ?? null,
@@ -191,6 +205,11 @@ export class EventsService {
     }
     if (dto.end_at !== undefined) {
       event.end_at = dto.end_at ? new Date(dto.end_at) : null;
+    }
+    if (dto.is_enabled !== undefined || dto.isEnabled !== undefined) {
+      event.is_enabled = Boolean(
+        dto.is_enabled !== undefined ? dto.is_enabled : dto.isEnabled,
+      );
     }
     if (dto.is_donation_enabled !== undefined || dto.isDonationEnabled !== undefined) {
       event.is_donation_enabled = Boolean(

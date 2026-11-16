@@ -81,6 +81,9 @@ export class EventEntity extends BaseEntity {
   })
   status: EventStatus;
 
+  @Column({ type: 'boolean', default: true, name: 'is_enabled' })
+  is_enabled: boolean;
+
   @Column({ type: 'boolean', default: false, name: 'is_donation_enabled' })
   is_donation_enabled: boolean;
 
