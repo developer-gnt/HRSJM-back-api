@@ -15,3 +15,4 @@ export class AddIsEnabledToEvents1790830000000 implements MigrationInterface {
     );
   }
 }
+

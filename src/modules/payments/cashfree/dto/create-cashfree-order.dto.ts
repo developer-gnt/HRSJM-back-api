@@ -48,4 +48,14 @@ export class CreateCashfreeOrderDto {
   @IsOptional()
   @IsString()
   user_id?: string;
+
+  @ApiPropertyOptional({ description: 'Event ID if donation is made for an event' })
+  @IsOptional()
+  @IsString()
+  event_id?: string;
+
+  @ApiPropertyOptional({ description: 'PAN number for 80G tax receipt' })
+  @IsOptional()
+  @IsString()
+  pan_number?: string;
 }

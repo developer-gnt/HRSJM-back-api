@@ -183,14 +183,21 @@ export class CashfreeOrdersService {
       const donationsRepo = this.getDonationsRepo();
       if (donationsRepo) {
         const dbUser = await this.getDbUser(validActingUserId);
+        const remarkParts: string[] = [];
+        if (dto.event_id) remarkParts.push(`Event ID: ${dto.event_id}`);
+        if (dto.pan_number) remarkParts.push(`80G PAN: ${dto.pan_number}`);
+        const finalRemark = remarkParts.length > 0 ? remarkParts.join(' | ') : 'Donation from Website';
+
         const newDonation = donationsRepo.create({
+          user_id: validActingUserId,
           donor_name: dbUser?.full_name || dto.customer_name || 'Kind Citizen',
           donor_mobile: dbUser?.mobile_number || dto.customer_phone || '',
           donor_email: dbUser?.email || dto.customer_email || null,
-          cause: dto.order_note || 'General Support & Human Rights Protection',
+          cause: dto.order_note || (dto.event_id ? `Event Donation: ${dto.event_id}` : 'General Support & Human Rights Protection'),
           amount: donationAmount,
           status: 'PENDING',
-          remark: 'Donation from Website',
+          remark: finalRemark,
+          source: dto.event_id ? 'Event' : 'Website',
           created_by: validActingUserId,
           updated_by: validActingUserId,
         });
