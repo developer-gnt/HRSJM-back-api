@@ -80,4 +80,10 @@ export class EventEntity extends BaseEntity {
     default: EventStatus.UPCOMING,
   })
   status: EventStatus;
+
+  @Column({ type: 'boolean', default: false, name: 'is_donation_enabled' })
+  is_donation_enabled: boolean;
+
+  @Column({ type: 'varchar', length: 500, nullable: true, name: 'donation_message' })
+  donation_message: string | null;
 }

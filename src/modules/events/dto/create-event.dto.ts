@@ -121,4 +121,26 @@ export class CreateEventDto {
   @IsEnum(EventStatus)
   @IsOptional()
   status?: EventStatus;
+
+  @ApiPropertyOptional({ description: 'Whether donations/payments are enabled for this event', default: false })
+  @IsBoolean()
+  @IsOptional()
+  is_donation_enabled?: boolean;
+
+  @ApiPropertyOptional({ description: 'Alias for is_donation_enabled (camelCase)', default: false })
+  @IsBoolean()
+  @IsOptional()
+  isDonationEnabled?: boolean;
+
+  @ApiPropertyOptional({ description: 'Custom donation message or payment appeal for this event' })
+  @IsString()
+  @IsOptional()
+  @MaxLength(500)
+  donation_message?: string;
+
+  @ApiPropertyOptional({ description: 'Alias for donation_message (camelCase)' })
+  @IsString()
+  @IsOptional()
+  @MaxLength(500)
+  donationMessage?: string;
 }

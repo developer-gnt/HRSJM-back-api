@@ -132,8 +132,24 @@ export class EventsService {
   }
 
   async create(dto: CreateEventDto, userId?: string): Promise<EventEntity> {
+    const isDonationEnabled =
+      dto.is_donation_enabled !== undefined
+        ? dto.is_donation_enabled
+        : dto.isDonationEnabled !== undefined
+        ? dto.isDonationEnabled
+        : false;
+
+    const donationMessage =
+      dto.donation_message !== undefined
+        ? dto.donation_message
+        : dto.donationMessage !== undefined
+        ? dto.donationMessage
+        : null;
+
     const event = this.eventRepo.create({
       ...dto,
+      is_donation_enabled: Boolean(isDonationEnabled),
+      donation_message: isDonationEnabled && donationMessage ? donationMessage.trim() : null,
       created_by: userId ?? null,
       updated_by: userId ?? null,
       start_at: new Date(dto.start_at),
@@ -175,6 +191,15 @@ export class EventsService {
     }
     if (dto.end_at !== undefined) {
       event.end_at = dto.end_at ? new Date(dto.end_at) : null;
+    }
+    if (dto.is_donation_enabled !== undefined || dto.isDonationEnabled !== undefined) {
+      event.is_donation_enabled = Boolean(
+        dto.is_donation_enabled !== undefined ? dto.is_donation_enabled : dto.isDonationEnabled,
+      );
+    }
+    if (dto.donation_message !== undefined || dto.donationMessage !== undefined) {
+      const msg = dto.donation_message !== undefined ? dto.donation_message : dto.donationMessage;
+      event.donation_message = msg ? msg.trim() : null;
     }
 
     Object.assign(event, {
