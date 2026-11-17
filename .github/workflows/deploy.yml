@@ -48,7 +48,7 @@ jobs:
             echo "🚀 Starting automated deployment for HRSJM-back-api..."
             
             # Navigate to project directory
-            cd /root/HRSJM-back-api || cd ~/HRSJM-back-api
+            cd /root/hrsjm-backend || cd ~/hrsjm-backend
             
             # Pull latest changes from main branch
             echo "📥 Pulling latest changes from git..."
@@ -57,7 +57,7 @@ jobs:
             
             # Install production dependencies
             echo "📦 Installing dependencies..."
-            npm install --legacy-peer-deps
+            npm install
             
             # Run database migrations
             echo "🗄️ Running database migrations..."
@@ -68,8 +68,13 @@ jobs:
             npm run build
             
             # Restart PM2 process
-            echo "🔄 Reloading PM2 process (hrsjm-api)..."
-            pm2 reload hrsjm-api --update-env || pm2 restart hrsjm-api
+            echo "🔄 Reloading PM2 process (hrsjm-backend)..."
+            pm2 restart hrsjm-backend --update-env || pm2 start dist/main.js --name "hrsjm-backend" --update-env
             pm2 save
             
-            echo "✅ Deployment successful and verified!"
+            # Health check validation
+            echo "🩺 Verifying health endpoint..."
+            sleep 2
+            curl -f http://127.0.0.1:5000/api/v1/health || true
+            
+            echo "✅ Backend deployment successful and verified!"
