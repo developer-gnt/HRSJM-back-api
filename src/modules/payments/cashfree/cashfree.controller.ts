@@ -18,6 +18,7 @@ import { OptionalJwtAuthGuard } from '../../../common/guards/optional-jwt-auth.g
 import { CashfreeService } from './cashfree.service';
 import { CashfreeOrdersService } from './cashfree-orders.service';
 import { CreateCashfreeOrderDto } from './dto/create-cashfree-order.dto';
+import { CreateCashfreeSubscriptionDto } from './dto/create-cashfree-subscription.dto';
 import { ValidateUpiDto } from './dto/validate-upi.dto';
 
 @ApiTags('cashfree-payments')
@@ -60,6 +61,39 @@ export class CashfreeController {
     @AuthenticatedUser() user?: { sub: string },
   ) {
     return this.orders.verifyOrder(orderId, user?.sub);
+  }
+
+  @Post('subscriptions')
+  @UseGuards(OptionalJwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Create Cashfree recurring AutoPay subscription mandate' })
+  async createSubscription(
+    @Body() dto: CreateCashfreeSubscriptionDto,
+    @AuthenticatedUser() user?: { sub: string },
+  ) {
+    return this.orders.createSubscription(dto, user?.sub);
+  }
+
+  @Get('subscriptions/:subscriptionId/status')
+  @UseGuards(OptionalJwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Get Cashfree subscription mandate status' })
+  async getSubscriptionStatus(
+    @Param('subscriptionId') subscriptionId: string,
+    @AuthenticatedUser() user?: { sub: string },
+  ) {
+    return this.orders.getSubscriptionStatus(subscriptionId, user?.sub);
+  }
+
+  @Post('subscriptions/:subscriptionId/cancel')
+  @UseGuards(OptionalJwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Cancel an active recurring AutoPay subscription' })
+  async cancelSubscription(
+    @Param('subscriptionId') subscriptionId: string,
+    @AuthenticatedUser() user?: { sub: string },
+  ) {
+    return this.orders.cancelSubscription(subscriptionId, user?.sub);
   }
 
   @Get('callback')

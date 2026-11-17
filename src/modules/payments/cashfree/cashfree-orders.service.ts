@@ -20,6 +20,8 @@ import { ReceiptEntity } from '../../membership-payments/entities/receipt.entity
 import { MembershipPaymentsService } from '../../membership-payments/services/membership-payments.service';
 import { CashfreeService } from './cashfree.service';
 import { CreateCashfreeOrderDto } from './dto/create-cashfree-order.dto';
+import { CreateCashfreeSubscriptionDto } from './dto/create-cashfree-subscription.dto';
+import { SubscriptionEntity } from './entities/subscription.entity';
 import { RenewalRequestEntity } from '../../renewals/entities/renewal-request.entity';
 import { RenewalCalculationService } from '../../renewals/services/renewal-calculation.service';
 import { UserEntity } from '../../users/entities/user.entity';
@@ -56,6 +58,8 @@ export class CashfreeOrdersService {
     private readonly membershipPaymentsRepo: Repository<MembershipPaymentEntity>,
     @InjectRepository(PaymentTransactionEntity)
     private readonly transactionsRepo: Repository<PaymentTransactionEntity>,
+    @InjectRepository(SubscriptionEntity)
+    private readonly subscriptionsRepo: Repository<SubscriptionEntity>,
     private readonly dataSource: DataSource,
     @Optional()
     @InjectRepository(DonationEntity)
@@ -939,13 +943,208 @@ export class CashfreeOrdersService {
       (dataObj.order_id as string) ||
       (payload.order_id as string);
 
+    // Check if this is a subscription webhook
+    const subObj =
+      (dataObj?.subscription as Record<string, unknown>) ||
+      (payload?.subscription as Record<string, unknown>) ||
+      {};
+    const subscriptionId =
+      (subObj.subscription_id as string) ||
+      (dataObj.subscription_id as string) ||
+      (payload.subscription_id as string) ||
+      (payload.sub_id as string);
+
+    if (subscriptionId && !orderId) {
+      this.logger.log(`Processing Cashfree webhook for subscription_id: ${subscriptionId}`);
+      try {
+        const subResult = await this.getSubscriptionStatus(subscriptionId);
+        return { received: true, subscription: subResult };
+      } catch (err: any) {
+        this.logger.warn(`Failed to process subscription webhook: ${err?.message}`);
+        return { received: true, error: err?.message };
+      }
+    }
+
     if (!orderId) {
-      this.logger.warn(`Cashfree webhook received with no detectable order_id: ${JSON.stringify(payload)}`);
-      return { received: true, ignored: true, reason: 'missing_order_id' };
+      this.logger.warn(`Cashfree webhook received with no detectable order_id or subscription_id: ${JSON.stringify(payload)}`);
+      return { received: true, ignored: true, reason: 'missing_id' };
     }
 
     this.logger.log(`Processing Cashfree webhook for order_id: ${orderId}`);
     const result = await this.verifyOrder(orderId);
     return { received: true, ...result };
+  }
+
+  /**
+   * Create a recurring AutoPay subscription in Cashfree
+   */
+  async createSubscription(
+    dto: CreateCashfreeSubscriptionDto,
+    actingUserId?: string,
+  ) {
+    const validActingUserId = this.toValidUuidOrNull(actingUserId) || this.toValidUuidOrNull(dto.user_id);
+    const dbUser = await this.getDbUser(validActingUserId);
+
+    const amount = Number(dto.amount);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      throw new BadRequestException('Subscription requires a valid positive recurring amount');
+    }
+
+    const frequency = dto.frequency || 'MONTHLY';
+    const purpose = (dto.purpose || 'donation').toUpperCase() as 'DONATION' | 'MEMBERSHIP';
+
+    const customerName = (dbUser?.full_name || dto.customer_name || 'HRSJM Supporter')
+      .replace(/[^a-zA-Z0-9 ]/g, ' ')
+      .slice(0, 100)
+      .trim();
+    const rawPhone = dbUser?.mobile_number || dto.customer_phone || '';
+    const cleanPhone = rawPhone.replace(/\D/g, '').slice(-10);
+    const customerPhone = cleanPhone.length === 10 ? cleanPhone : '9876543210';
+    const customerEmail = (dbUser?.email || dto.customer_email || 'donor@hrsjm.org').toLowerCase().trim();
+    const customerId = (validActingUserId || `cust_${Date.now()}`).replace(/-/g, '').slice(0, 45);
+
+    // Subscription ID (Cashfree requires <= 45 chars alphanumeric/underscore/hyphen)
+    const subPrefix = purpose === 'MEMBERSHIP' ? 'sub_mem' : 'sub_don';
+    const subscriptionId = `${subPrefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
+
+    const maxAmount = Number(dto.max_amount || Math.max(amount * 2, 5000));
+    const planName = `HRSJM_${frequency}_${Math.round(amount)}`;
+
+    const cfSub = await this.cashfreeService.createSubscription({
+      subscriptionId,
+      amount,
+      maxAmount,
+      customerId,
+      customerName,
+      customerPhone,
+      customerEmail,
+      frequency,
+      planName,
+      planNote: dto.plan_note || `${frequency} Recurring ${purpose === 'DONATION' ? 'Donation' : 'Membership'} - HRSJM`,
+      authAmount: 1,
+      returnUrl: dto.return_url,
+    });
+
+    const subscription = this.subscriptionsRepo.create({
+      user_id: validActingUserId,
+      subscription_id: subscriptionId,
+      subscription_session_id: cfSub.subscription_session_id || null,
+      purpose,
+      reference_id: dto.reference_id || null,
+      customer_name: customerName,
+      customer_email: customerEmail,
+      customer_phone: customerPhone,
+      plan_name: planName,
+      plan_type: 'PERIODIC',
+      frequency,
+      currency: 'INR',
+      amount,
+      max_amount: maxAmount,
+      auth_amount: 1,
+      status: 'INITIALIZED',
+      payment_methods: ['upi', 'card', 'enach'],
+      raw_details: cfSub as any,
+      metadata: {
+        event_id: dto.event_id || null,
+        pan_number: dto.pan_number || null,
+        plan_note: dto.plan_note || null,
+        sandbox_profile_inactive: (cfSub as any)?.sandbox_profile_inactive || false,
+      },
+    });
+
+    const saved = await this.subscriptionsRepo.save(subscription);
+
+    return {
+      success: true,
+      subscription_id: saved.subscription_id,
+      subscription_session_id: saved.subscription_session_id,
+      amount: saved.amount,
+      currency: saved.currency,
+      frequency: saved.frequency,
+      purpose: saved.purpose,
+      status: saved.status,
+      sandbox_profile_inactive: (cfSub as any)?.sandbox_profile_inactive || false,
+    };
+  }
+
+  /**
+   * Get subscription status and synchronize with Cashfree
+   */
+  async getSubscriptionStatus(subscriptionId: string, actingUserId?: string) {
+    const sub = await this.subscriptionsRepo.findOne({
+      where: { subscription_id: subscriptionId },
+    });
+
+    if (!sub) {
+      throw new NotFoundException(`Subscription ${subscriptionId} not found`);
+    }
+
+    const safeActingUuid = this.toValidUuidOrNull(actingUserId);
+    if (sub.user_id && safeActingUuid && sub.user_id !== safeActingUuid) {
+      throw new ForbiddenException('You do not own this subscription');
+    }
+
+    try {
+      const cfSub = await this.cashfreeService.getSubscription(subscriptionId);
+      const cfStatus = (cfSub.subscription_status || '').toUpperCase();
+      if (cfStatus && cfStatus !== sub.status) {
+        if (
+          ['ACTIVE', 'INITIALIZED', 'BANK_APPROVAL_PENDING', 'ON_HOLD', 'CANCELLED', 'COMPLETED'].includes(
+            cfStatus,
+          )
+        ) {
+          sub.status = cfStatus as any;
+          sub.raw_details = cfSub as any;
+          await this.subscriptionsRepo.save(sub);
+        }
+      }
+    } catch (err: any) {
+      this.logger.warn(`Could not sync subscription ${subscriptionId} from Cashfree: ${err?.message}`);
+    }
+
+    return {
+      success: true,
+      subscription_id: sub.subscription_id,
+      status: sub.status,
+      amount: sub.amount,
+      frequency: sub.frequency,
+      purpose: sub.purpose,
+      customer_name: sub.customer_name,
+      customer_email: sub.customer_email,
+      created_at: sub.created_at,
+    };
+  }
+
+  /**
+   * Cancel an active AutoPay subscription
+   */
+  async cancelSubscription(subscriptionId: string, actingUserId?: string) {
+    const sub = await this.subscriptionsRepo.findOne({
+      where: { subscription_id: subscriptionId },
+    });
+
+    if (!sub) {
+      throw new NotFoundException(`Subscription ${subscriptionId} not found`);
+    }
+
+    const safeActingUuid = this.toValidUuidOrNull(actingUserId);
+    if (sub.user_id && safeActingUuid && sub.user_id !== safeActingUuid) {
+      throw new ForbiddenException('You do not have permission to cancel this subscription');
+    }
+
+    try {
+      await this.cashfreeService.cancelSubscription(subscriptionId);
+    } catch (err: any) {
+      this.logger.warn(`Cashfree cancel subscription notice: ${err?.message}`);
+    }
+    sub.status = 'CANCELLED';
+    await this.subscriptionsRepo.save(sub);
+
+    return {
+      success: true,
+      message: 'Subscription cancelled successfully',
+      subscription_id: subscriptionId,
+      status: 'CANCELLED',
+    };
   }
 }
