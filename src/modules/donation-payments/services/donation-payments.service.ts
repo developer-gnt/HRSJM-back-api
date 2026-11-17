@@ -385,6 +385,28 @@ export class DonationPaymentsService implements OnModuleInit {
         });
         if (anyUser) {
           receiptUserId = anyUser.id;
+        } else {
+          // If database has no users, create a default System Donor User so Foreign Key constraint succeeds
+          let systemUser = await manager.findOne(UserEntity, {
+            where: [{ id: '6b481b29-d4ec-4bad-8bde-4e21d8bb2d26' }, { mobile_number: '9999999999' }],
+          });
+          if (!systemUser) {
+            systemUser = manager.create(UserEntity, {
+              id: '6b481b29-d4ec-4bad-8bde-4e21d8bb2d26',
+              full_name: savedPayment.donation?.donor_name || 'HRSJM Website Donor',
+              mobile_number: savedPayment.donation?.donor_mobile || '9999999999',
+              email: savedPayment.donation?.donor_email || 'donations@hrsjm.org',
+              password_hash: '$2a$10$SYSTEMAUTOMATEDDONORACCOUNTDUMMYHASHFORRECEIPTS',
+              status: CommonStatus.ACTIVE,
+            });
+            try {
+              systemUser = await manager.save(UserEntity, systemUser);
+            } catch {
+              const fallback = await manager.findOne(UserEntity, { select: ['id'] });
+              if (fallback) systemUser = fallback;
+            }
+          }
+          receiptUserId = systemUser ? systemUser.id : '6b481b29-d4ec-4bad-8bde-4e21d8bb2d26';
         }
       }
 
