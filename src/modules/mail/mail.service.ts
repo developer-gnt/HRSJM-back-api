@@ -31,7 +31,8 @@ export class MailService implements OnModuleInit {
     const host = this.configService.get<string>('mail.host') || process.env.SMTP_HOST;
     const port = Number(this.configService.get<number>('mail.port') || process.env.SMTP_PORT || 587);
     const user = this.configService.get<string>('mail.user') || process.env.SMTP_USER;
-    const pass = (this.configService.get<string>('mail.pass') || process.env.SMTP_PASS || '').trim();
+    const rawPass = (this.configService.get<string>('mail.pass') || process.env.SMTP_PASS || '').trim();
+    const pass = rawPass.replace(/\s+/g, '');
     const secure =
       this.configService.get<boolean>('mail.secure') ||
       process.env.SMTP_SECURE === 'true' ||
