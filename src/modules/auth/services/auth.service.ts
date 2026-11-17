@@ -66,7 +66,7 @@ export class AuthService {
     private readonly mailService: MailService,
     @Optional()
     private readonly notificationsService?: NotificationsService,
-  ) {}
+  ) { }
 
   async register(
     dto: RegisterDto,
@@ -165,7 +165,7 @@ export class AuthService {
           `Welcome, ${dto.full_name}! Your account has been registered successfully. Explore our initiatives, rights awareness, or file a complaint.`,
           user.id,
         )
-        .catch(() => {});
+        .catch(() => { });
 
       // 2. Alert administrators of new account
       this.notificationsService
@@ -174,7 +174,7 @@ export class AuthService {
           `${dto.full_name} (${dto.mobile_number}) registered with role ${initialRoleName}.`,
           user.id,
         )
-        .catch(() => {});
+        .catch(() => { });
 
       // 3. If donation seeker, alert admins of pending verification
       if (isDonationSeekerRequest) {
@@ -184,7 +184,7 @@ export class AuthService {
             `Donation Seeker application received for ${dto.full_name} (${dto.mobile_number}). Awaiting verification and review.`,
             user.id,
           )
-          .catch(() => {});
+          .catch(() => { });
       }
     }
 
@@ -401,7 +401,7 @@ export class AuthService {
     };
   }
 
-    async forgotPassword(
+  async forgotPassword(
     identifier: string,
     ip: string | null,
     userAgent: string | null,
@@ -443,7 +443,7 @@ export class AuthService {
       process.env.PASSWORD_RESET_BASE_URL ||
       process.env.FRONTEND_URL ||
       process.env.APP_URL ||
-      'http://194.164.151.17:3000'
+      'http://187.126.121.157/:3000'
     ).replace(/\/+$/, '');
     const resetUrl = `${baseUrl}/reset-password?token=${rawToken}`;
 
@@ -507,7 +507,7 @@ export class AuthService {
     };
   }
 
-async resetPassword(
+  async resetPassword(
     dto: ResetPasswordDto,
     ip: string | null,
     userAgent: string | null,
@@ -819,9 +819,9 @@ async resetPassword(
   private refreshTokenExpiry(): Date {
     return new Date(
       Date.now() +
-        parseDurationToMs(
-          this.configService.get('auth')?.jwtRefreshExpiresIn ?? '7d',
-        ),
+      parseDurationToMs(
+        this.configService.get('auth')?.jwtRefreshExpiresIn ?? '7d',
+      ),
     );
   }
 
