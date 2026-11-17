@@ -21,6 +21,7 @@ import { VerifyDonationPaymentDto } from '../dto/verify-donation-payment.dto';
 import { UpdateDonationPaymentStatusDto } from '../dto/update-donation-payment-status.dto';
 import { ListDonationPaymentsDto } from '../dto/list-donation-payments.dto';
 import { PaymentStatus } from '../../../common/enums/payment-status.enum';
+import { CommonStatus } from '../../../common/enums/common-status.enum';
 import { AccountingPostingService } from '../../accounting/services/accounting-posting.service';
 import { ACCOUNT_CODES } from '../../accounting/accounting.constants';
 import { AccountType, ReferenceType } from '../../accounting/enums/accounting.enums';
