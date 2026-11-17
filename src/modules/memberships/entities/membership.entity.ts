@@ -35,6 +35,9 @@ export class MembershipEntity extends BaseEntity {
   @Column({ type: 'varchar', length: 10, nullable: true })
   referred_by_code: string | null;
 
+  @Column({ type: 'varchar', length: 100, nullable: true, default: null })
+  membership_position: string | null;
+
   @Column({
     type: 'varchar',
     length: 30,
