@@ -27,6 +27,12 @@ import { MembershipStatus } from '../../../common/enums/membership-status.enum';
 import { AuditService } from '../../audit/services/audit.service';
 import { DocumentsService } from '../../documents/services/documents.service';
 import { DocumentType, RelatedEntityType } from '../../documents/entities/document.entity';
+import {
+  MEMBERSHIP_POSITIONS,
+  MEMBERSHIP_POSITIONS_DATA,
+  isValidMembershipPosition,
+  normalizeMembershipPosition,
+} from '../constants/membership-positions.constant';
 
 import {
   RenewalPaymentStatus,
@@ -1086,6 +1092,28 @@ export class MembershipsService {
       membership.admin_notes = dto.admin_notes;
     }
 
+    if (dto.membership_position !== undefined) {
+      if (!isAdmin) {
+        throw new ForbiddenException({
+          message: 'Only authorized admins can assign or update membership positions',
+          code: 'FORBIDDEN_POSITION_ASSIGNMENT',
+        });
+      }
+      if (dto.membership_position && dto.membership_position.trim()) {
+        const normalized = normalizeMembershipPosition(dto.membership_position);
+        if (!normalized) {
+          throw new BadRequestException({
+            message: `Invalid membership position '${dto.membership_position}'. Must be one of the 25 official HRSJM positions.`,
+            code: 'INVALID_MEMBERSHIP_POSITION',
+            details: { position: dto.membership_position, allowed: MEMBERSHIP_POSITIONS },
+          });
+        }
+        membership.membership_position = normalized;
+      } else {
+        membership.membership_position = null;
+      }
+    }
+
     if (dto.kit_fulfillment !== undefined) {
       const appData = (membership.application_data || {}) as Record<string, any>;
       membership.application_data = {
@@ -1162,6 +1190,61 @@ export class MembershipsService {
     return this.enrichMembershipPaymentDetails(saved, saved.payment);
   }
 
+  getPositions() {
+    return MEMBERSHIP_POSITIONS_DATA;
+  }
+
+  async assignPosition(
+    id: string,
+    rawPosition: string,
+    actingUserId: string,
+    isAdmin = false,
+  ): Promise<MembershipEntity> {
+    if (!isAdmin) {
+      throw new ForbiddenException({
+        message: 'Only authorized admins can assign or update membership positions',
+        code: 'FORBIDDEN_POSITION_ASSIGNMENT',
+      });
+    }
+
+    const membership = await this.memberships.findOne({
+      where: { id },
+      relations: ['category', 'user'],
+    });
+
+    if (!membership) {
+      throw new NotFoundException({
+        message: 'Membership not found',
+        code: 'MEMBERSHIP_NOT_FOUND',
+        details: { id },
+      });
+    }
+
+    const normalized = normalizeMembershipPosition(rawPosition);
+    if (!normalized) {
+      throw new BadRequestException({
+        message: `Invalid membership position '${rawPosition}'. Must be one of the 25 official HRSJM positions.`,
+        code: 'INVALID_MEMBERSHIP_POSITION',
+        details: { position: rawPosition, allowed: MEMBERSHIP_POSITIONS },
+      });
+    }
+
+    membership.membership_position = normalized;
+    membership.updated_by = actingUserId;
+
+    const saved = await this.memberships.save(membership);
+
+    await this.audit.record({
+      event: 'membership.position_assigned',
+      actorId: actingUserId,
+      entityType: 'memberships',
+      entityId: saved.id,
+      metadata: { membership_position: normalized },
+    });
+
+    return this.enrichMembershipPaymentDetails(saved, saved.payment);
+  }
+
   async updateStatus(
     id: string,
     dto: UpdateMembershipStatusDto,
@@ -1187,7 +1270,44 @@ export class MembershipsService {
       membership.admin_notes = dto.admin_notes;
     }
 
+    if (dto.membership_position !== undefined) {
+      if (dto.membership_position && dto.membership_position.trim()) {
+        const normalized = normalizeMembershipPosition(dto.membership_position);
+        if (!normalized) {
+          throw new BadRequestException({
+            message: `Invalid membership position '${dto.membership_position}'. Must be one of the 25 official HRSJM positions.`,
+            code: 'INVALID_MEMBERSHIP_POSITION',
+            details: { position: dto.membership_position, allowed: MEMBERSHIP_POSITIONS },
+          });
+        }
+        membership.membership_position = normalized;
+      } else {
+        membership.membership_position = null;
+      }
+    }
+
     if (dto.status === MembershipStatus.APPROVED || dto.status === MembershipStatus.ACTIVE) {
+      const isSeekerApp =
+        membership.membership_number?.startsWith('HRSJM-SEK') ||
+        (membership.application_data as any)?.type === 'DONATION_SEEKER' ||
+        (membership.application_data as any)?.membership_type === 'Donation Seeker';
+
+      if (!isSeekerApp) {
+        const assignedPos = membership.membership_position;
+        if (!assignedPos) {
+          throw new BadRequestException({
+            message: 'Position assignment is required before approving a membership application',
+            code: 'MEMBERSHIP_POSITION_REQUIRED',
+          });
+        }
+        if (!isValidMembershipPosition(assignedPos)) {
+          throw new BadRequestException({
+            message: `Invalid membership position '${assignedPos}'. Must be one of the 25 official HRSJM positions.`,
+            code: 'INVALID_MEMBERSHIP_POSITION',
+            details: { position: assignedPos, allowed: MEMBERSHIP_POSITIONS },
+          });
+        }
+      }
       const now = new Date();
       membership.approval_date = now;
       if (!membership.start_date) {

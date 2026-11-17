@@ -29,4 +29,8 @@ export class UpdateMembershipDto {
   @IsOptional()
   @IsObject()
   kit_fulfillment?: Record<string, unknown>;
+
+  @IsOptional()
+  @IsString()
+  membership_position?: string;
 }

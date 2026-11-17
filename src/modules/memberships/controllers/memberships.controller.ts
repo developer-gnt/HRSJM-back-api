@@ -24,6 +24,7 @@ import { CreateMembershipDto } from '../dto/create-membership.dto';
 import { UpdateMembershipDto } from '../dto/update-membership.dto';
 import { ListMembershipsDto } from '../dto/list-memberships.dto';
 import { UpdateMembershipStatusDto } from '../dto/update-membership-status.dto';
+import { AssignMembershipPositionDto } from '../dto/assign-membership-position.dto';
 import { AdminResetPasswordDto } from '../dto/admin-reset-password.dto';
 import { KitFulfillmentDto } from '../dto/kit-fulfillment.dto';
 import { OptionalJwtAuthGuard } from '../../../common/guards/optional-jwt-auth.guard';
@@ -106,6 +107,12 @@ export class MembershipsController {
     return this.membershipsService.getMyReferralStats(user.sub);
   }
 
+  @Get('memberships/positions')
+  @ApiOperation({ summary: 'Get list of official 25 membership positions' })
+  getPositions() {
+    return this.membershipsService.getPositions();
+  }
+
   @Get('memberships/:id')
   @UseGuards(JwtAuthGuard)
   @ApiOperation({ summary: 'View single membership details (owner or admin)' })
@@ -129,6 +136,20 @@ export class MembershipsController {
   ) {
     const isAdmin = req.user?.roles?.includes('ADMIN') ?? false;
     return this.membershipsService.update(id, dto, user.sub, isAdmin);
+  }
+
+  @Patch('memberships/:id/position')
+  @UseGuards(JwtAuthGuard, PermissionsGuard)
+  @RequirePermissions('membership.manage_status')
+  @ApiOperation({ summary: 'Assign or update membership position (admin)' })
+  assignPosition(
+    @Param('id') id: string,
+    @Body() dto: AssignMembershipPositionDto,
+    @AuthenticatedUser() user: { sub: string },
+    @Req() req: AuthenticatedRequest,
+  ) {
+    const isAdmin = req.user?.roles?.includes('ADMIN') ?? false;
+    return this.membershipsService.assignPosition(id, dto.membership_position, user.sub, isAdmin);
   }
 
   @Patch('memberships/:id/status')

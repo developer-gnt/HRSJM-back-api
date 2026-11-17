@@ -12,4 +12,8 @@ export class UpdateMembershipStatusDto {
   @IsOptional()
   @IsString()
   admin_notes?: string;
+
+  @IsOptional()
+  @IsString()
+  membership_position?: string;
 }
