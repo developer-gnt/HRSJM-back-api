@@ -279,11 +279,12 @@ describe('MembershipsService', () => {
   });
 
   describe('updateStatus', () => {
-    it('approves membership: generates membership number and validity dates', async () => {
+    it('approves membership: generates membership number and validity dates when position is assigned', async () => {
       const mockMembership = {
         id: 'mem-1',
         user_id: 'user-1',
         status: MembershipStatus.PENDING,
+        membership_position: 'President',
         category: activeCategory,
       };
       membershipsRepo.findOne.mockResolvedValue(mockMembership);
@@ -297,6 +298,7 @@ describe('MembershipsService', () => {
       expect(membershipsRepo.save).toHaveBeenCalledWith(
         expect.objectContaining({
           status: MembershipStatus.APPROVED,
+          membership_position: 'President',
           membership_number: expect.stringMatching(/^HRSJM-(\d{5}|MEM-\d{4}-\d{5})$/),
           approval_date: expect.any(Date),
           start_date: expect.any(Date),
@@ -308,6 +310,69 @@ describe('MembershipsService', () => {
       expect(audit.record).toHaveBeenCalledWith(
         expect.objectContaining({ event: 'membership.status_updated' }),
       );
+    });
+
+    it('blocks approval if no membership position is assigned', async () => {
+      const mockMembership = {
+        id: 'mem-1',
+        user_id: 'user-1',
+        status: MembershipStatus.PENDING,
+        membership_position: null,
+        category: activeCategory,
+      };
+      membershipsRepo.findOne.mockResolvedValue(mockMembership);
+
+      await expect(
+        service.updateStatus(
+          'mem-1',
+          { status: MembershipStatus.APPROVED },
+          'admin-1',
+        ),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('blocks approval if an invalid membership position is passed', async () => {
+      const mockMembership = {
+        id: 'mem-1',
+        user_id: 'user-1',
+        status: MembershipStatus.PENDING,
+        membership_position: null,
+        category: activeCategory,
+      };
+      membershipsRepo.findOne.mockResolvedValue(mockMembership);
+
+      await expect(
+        service.updateStatus(
+          'mem-1',
+          { status: MembershipStatus.APPROVED, membership_position: 'Invalid Role' },
+          'admin-1',
+        ),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('allows approval when valid position is supplied directly in updateStatus DTO', async () => {
+      const mockMembership = {
+        id: 'mem-1',
+        user_id: 'user-1',
+        status: MembershipStatus.PENDING,
+        membership_position: null,
+        category: activeCategory,
+      };
+      membershipsRepo.findOne.mockResolvedValue(mockMembership);
+
+      const result = await service.updateStatus(
+        'mem-1',
+        { status: MembershipStatus.APPROVED, membership_position: 'Organising Secretary' },
+        'admin-1',
+      );
+
+      expect(membershipsRepo.save).toHaveBeenCalledWith(
+        expect.objectContaining({
+          status: MembershipStatus.APPROVED,
+          membership_position: 'Organising Secretary',
+        }),
+      );
+      expect(result.id).toBe('mem-1');
     });
 
     it('rejects membership and records rejection reason', async () => {
@@ -468,6 +533,67 @@ describe('MembershipsService', () => {
       expect(data.tiers[2].freeRenewalPeriod).toBe('3 Years');
       expect(data.tiers[3].freeRenewalPeriod).toBe('4 Years');
       expect(data.tiers[4].freeRenewalPeriod).toBe('5 Years');
+    });
+  });
+
+  describe('Membership Positions', () => {
+    it('returns all 25 official membership positions', () => {
+      const positions = service.getPositions();
+      expect(positions).toHaveLength(25);
+      expect(positions[0].name).toBe('President');
+      expect(positions[24].name).toBe('Deputy Legal Advisor');
+      expect(positions.find((p) => p.name === 'Minority Welfare Secretary')?.note).toBe(
+        'Reserved for a minority-community representative',
+      );
+      expect(positions.find((p) => p.name === 'Women Empowerment Secretary')?.note).toBe(
+        'Reserved for a female candidate',
+      );
+      expect(positions.find((p) => p.name === 'Legal Advisor')?.note).toBe(
+        'Reserved for a qualified Advocate',
+      );
+    });
+
+    it('assignPosition sets position when user is admin', async () => {
+      const mockMembership = {
+        id: 'mem-1',
+        user_id: 'user-1',
+        status: MembershipStatus.PENDING,
+        membership_position: null,
+      };
+      membershipsRepo.findOne.mockResolvedValue(mockMembership);
+
+      const result = await service.assignPosition(
+        'mem-1',
+        'Vice President',
+        'admin-1',
+        true,
+      );
+
+      expect(membershipsRepo.save).toHaveBeenCalledWith(
+        expect.objectContaining({
+          membership_position: 'Vice President',
+          updated_by: 'admin-1',
+        }),
+      );
+    });
+
+    it('assignPosition throws ForbiddenException when user is not admin', async () => {
+      await expect(
+        service.assignPosition('mem-1', 'Vice President', 'user-1', false),
+      ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('assignPosition throws BadRequestException for invalid position', async () => {
+      const mockMembership = {
+        id: 'mem-1',
+        user_id: 'user-1',
+        status: MembershipStatus.PENDING,
+      };
+      membershipsRepo.findOne.mockResolvedValue(mockMembership);
+
+      await expect(
+        service.assignPosition('mem-1', 'Arbitrary Nonexistent Position', 'admin-1', true),
+      ).rejects.toThrow(BadRequestException);
     });
   });
 });
