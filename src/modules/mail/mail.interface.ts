@@ -8,6 +8,7 @@ export interface SendMailOptions {
   cc?: string | string[];
   bcc?: string | string[];
   attachments?: any[];
+  noLogoAttachment?: boolean;
 }
 
 export interface DonationThankYouMailPayload {
@@ -118,6 +119,7 @@ export interface PasswordChangedNoticeMailPayload {
 }
 
 export interface ContactInquiryMailPayload {
+  formName?: string;
   senderName: string;
   senderEmail: string;
   senderPhone?: string;
@@ -125,6 +127,19 @@ export interface ContactInquiryMailPayload {
   message: string;
   inquiryRef?: string;
   submittedAt?: Date | string;
+  metadata?: Record<string, any>;
+}
+
+export interface CentralizedWebsiteNotificationPayload {
+  formName: string;
+  submitterName: string;
+  submitterEmail: string;
+  submitterPhone?: string;
+  subject?: string;
+  message: string;
+  referenceId?: string;
+  submittedAt?: Date | string;
+  metadata?: Record<string, any>;
 }
 
 

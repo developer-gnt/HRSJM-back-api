@@ -376,15 +376,17 @@ ${dto.details.trim()}`;
       targetUserId = newUser.id;
     }
 
-    const category = dto.subject?.trim() || 'General Inquiry';
-    const subject = `[Contact Inquiry: ${category}] ${dto.name.trim()}`;
-    const description = `Contact Inquiry Information:
+    const formName = dto.formName?.trim() || 'Contact Us';
+    const category = dto.subject?.trim() || formName;
+    const subject = `[${formName}: ${category}] ${dto.name.trim()}`;
+    const description = `Website Form Submission:
+- Form / Module: ${formName}
 - Full Name: ${dto.name.trim()}
 - Email: ${cleanEmail}
 - Phone: ${cleanPhone || 'Not Provided'}
 - Subject: ${category}
 - Source: Website
-
+${dto.metadata ? `- Metadata: ${JSON.stringify(dto.metadata)}\n` : ''}
 Message:
 ${dto.message.trim()}`;
 

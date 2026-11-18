@@ -8,7 +8,7 @@ export class CleanupUnnecessaryMembershipCategories1790695000000 implements Migr
     const officialCodes = [
       'DISTRICT_UNIT',
       'STATE_UNIT',
-      'LION_COUNSELOR_AMBASSADOR',
+      'LION_Counselor  _AMBASSADOR',
       'STATE_DIRECTOR',
       'NATIONAL_COUNCIL_CELL',
     ];
@@ -34,7 +34,7 @@ export class CleanupUnnecessaryMembershipCategories1790695000000 implements Migr
       `DELETE FROM "membership_categories" WHERE "code" NOT IN (
         'DISTRICT_UNIT',
         'STATE_UNIT',
-        'LION_COUNSELOR_AMBASSADOR',
+        'LION_Counselor  _AMBASSADOR',
         'STATE_DIRECTOR',
         'NATIONAL_COUNCIL_CELL'
       ) OR "code" IS NULL`,
@@ -57,8 +57,8 @@ export class CleanupUnnecessaryMembershipCategories1790695000000 implements Migr
         validity_days: 365,
       },
       {
-        name: 'Lion, Counselor or Ambassador of State',
-        code: 'LION_COUNSELOR_AMBASSADOR',
+        name: 'Lion, Counselor   or Ambassador of State',
+        code: 'LION_Counselor  _AMBASSADOR',
         description: 'Qualification: 12th Pass (12 TH) · 3 Years Free Renewal',
         fee: 3000.0,
         validity_days: 365,
