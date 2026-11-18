@@ -48,7 +48,15 @@ jobs:
             echo "🚀 Starting automated deployment for HRSJM-back-api..."
             
             # Navigate to project directory
-            cd /root/hrsjm-backend || cd ~/hrsjm-backend
+            if [ -d "/root/hrsjm-backend" ]; then
+              cd /root/hrsjm-backend
+            elif [ -d "/root/HRSJM-back-api" ]; then
+              cd /root/HRSJM-back-api
+            elif [ -d "$HOME/hrsjm-backend" ]; then
+              cd "$HOME/hrsjm-backend"
+            elif [ -d "$HOME/HRSJM-back-api" ]; then
+              cd "$HOME/HRSJM-back-api"
+            fi
             
             # Pull latest changes from main branch
             echo "📥 Pulling latest changes from git..."
@@ -67,9 +75,11 @@ jobs:
             echo "🔨 Building application..."
             npm run build
             
-            # Restart PM2 process
+            # Restart PM2 process cleanly and ensure port 5000 is clean
             echo "🔄 Reloading PM2 process (hrsjm-backend)..."
-            pm2 restart hrsjm-backend --update-env || pm2 start dist/main.js --name "hrsjm-backend" --update-env
+            fuser -k 5000/tcp || true
+            pm2 delete hrsjm-backend || true
+            pm2 start dist/main.js --name "hrsjm-backend" --update-env
             pm2 save
             
             # Health check validation
