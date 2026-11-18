@@ -56,13 +56,23 @@ async function bootstrap() {
 
   const defaultDevOrigins = [
     'http://localhost:3000',
+    'http://localhost:4000',
+    'http://localhost:5173',
     'http://localhost:8081',
     'http://localhost:8082',
     'http://localhost:8089',
     'http://127.0.0.1:3000',
+    'http://127.0.0.1:4000',
+    'http://127.0.0.1:5173',
     'http://127.0.0.1:8081',
     'http://127.0.0.1:8082',
     'http://127.0.0.1:8089',
+  ];
+
+  const defaultProductionOrigins = [
+    'https://hrsjm.org',
+    'https://www.hrsjm.org',
+    'https://webapp.hrsjm.org',
   ];
 
   const configuredOrigins = process.env.CORS_ORIGINS
@@ -75,7 +85,7 @@ async function bootstrap() {
     configuredOrigins.length > 0
       ? configuredOrigins
       : isProduction
-        ? [] // In production, require explicit CORS_ORIGINS
+        ? defaultProductionOrigins
         : defaultDevOrigins;
 
   app.enableCors({
@@ -86,7 +96,12 @@ async function bootstrap() {
       }
 
       // Allow requests from localhost, 127.0.0.1, or VPS IP on any port
-      if (/^https?:\/\/(localhost|127\.0\.0\.1|194\.164\.151\.17)(:\d+)?$/.test(origin)) {
+      if (/^https?:\/\/(localhost|127\.0\.0\.1|194\.164\.151\.17|187\.126\.121\.157)(:\d+)?$/.test(origin)) {
+        return callback(null, true);
+      }
+
+      // Allow hrsjm.org and all subdomains (webapp.hrsjm.org, www.hrsjm.org, etc.)
+      if (/^https?:\/\/([a-z0-9-]+\.)*hrsjm\.org(:\d+)?$/i.test(origin)) {
         return callback(null, true);
       }
 
@@ -106,10 +121,13 @@ async function bootstrap() {
       }
     },
     credentials: true,
-    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS', 'HEAD'],
     allowedHeaders: [
       'Content-Type',
       'Authorization',
+      'Accept',
+      'Origin',
+      'X-Requested-With',
       'x-idempotency-key',
       'x-webhook-timestamp',
       'x-webhook-signature',
