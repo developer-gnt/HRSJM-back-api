@@ -112,11 +112,14 @@ export class AdminService {
       this.eventsRepo.count({ where: { status: EventStatus.UPCOMING, deleted_at: IsNull() } }),
     ]);
 
-    const donationSumRow = await this.donationsRepo
-      .createQueryBuilder('d')
-      .select('SUM(d.amount)', 'total')
-      .where('d.status = :status', { status: 'RECEIVED' })
-      .getRawOne();
+    const [donationSumRow, successfulDonationsCount] = await Promise.all([
+      this.donationsRepo
+        .createQueryBuilder('d')
+        .select('SUM(d.amount)', 'total')
+        .where('d.status = :status', { status: 'SUCCESS' })
+        .getRawOne(),
+      this.donationsRepo.count({ where: { status: 'SUCCESS' } }),
+    ]);
 
     const renewalSumRow = await this.renewalsRepo
       .createQueryBuilder('r')
@@ -296,6 +299,7 @@ export class AdminService {
       },
       donations: {
         total: totalDonations,
+        successful: successfulDonationsCount,
         receivedAmount: parseFloat(donationSumRow?.total || '0'),
         thisMonth: donationsThisMonth,
         prevMonth: donationsPrevMonth,

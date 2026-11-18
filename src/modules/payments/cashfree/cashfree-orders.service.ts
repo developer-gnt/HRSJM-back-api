@@ -579,10 +579,51 @@ export class CashfreeOrdersService {
     const validActingUserId = this.toValidUuidOrNull(actingUserId);
 
     // 1. Identify which payment belongs to this orderId
-    const donationPayment = await this.donationPaymentsRepo.findOne({
+    let donationPayment = await this.donationPaymentsRepo.findOne({
       where: { gateway_order_id: orderId },
       relations: ['donation'],
     });
+
+    // Fallback: If donation payment not found by gateway_order_id, resolve by orderId prefix/reference
+    if (!donationPayment && orderId.startsWith('hrsjm_don_')) {
+      const parts = orderId.split('_');
+      const cleanRef = parts[2] || '';
+      if (cleanRef.length >= 8) {
+        donationPayment = await this.donationPaymentsRepo
+          .createQueryBuilder('dp')
+          .leftJoinAndSelect('dp.donation', 'donation')
+          .where('REPLACE(dp.id, "-", "") LIKE :ref', { ref: `${cleanRef}%` })
+          .orWhere('REPLACE(dp.donation_id, "-", "") LIKE :ref', { ref: `${cleanRef}%` })
+          .orderBy('dp.created_at', 'DESC')
+          .getOne();
+
+        if (donationPayment) {
+          donationPayment.gateway_order_id = orderId;
+          await this.donationPaymentsRepo.save(donationPayment);
+        } else {
+          const donationsRepo = this.getDonationsRepo();
+          if (donationsRepo) {
+            const donation = await donationsRepo
+              .createQueryBuilder('d')
+              .where('REPLACE(d.id, "-", "") LIKE :ref', { ref: `${cleanRef}%` })
+              .getOne();
+
+            if (donation) {
+              donationPayment = this.donationPaymentsRepo.create({
+                donation_id: donation.id,
+                user_id: donation.user_id,
+                amount: donation.amount,
+                payment_method: 'CASHFREE',
+                payment_status: PaymentStatus.PENDING,
+                gateway_order_id: orderId,
+              });
+              donationPayment = await this.donationPaymentsRepo.save(donationPayment);
+              donationPayment.donation = donation;
+            }
+          }
+        }
+      }
+    }
 
     const membershipPayment = !donationPayment
       ? await this.membershipPaymentsRepo.findOne({
@@ -617,7 +658,40 @@ export class CashfreeOrdersService {
                 } as any)
               : null);
 
-          if (successfulAttempt) {
+          if (successfulAttempt && (orderId.startsWith('hrsjm_don_') || String(cfOrder.order_note || '').toLowerCase().includes('donation'))) {
+            const donationsRepo = this.getDonationsRepo();
+            const donorName = (cfOrder.customer_details as any)?.customer_name || 'Website Donor';
+            const donorPhone = (cfOrder.customer_details as any)?.customer_phone || '';
+            const donorEmail = (cfOrder.customer_details as any)?.customer_email || null;
+            const amount = Number(successfulAttempt.payment_amount || cfOrder.order_amount || 0);
+
+            let donation: DonationEntity | null = null;
+            if (donationsRepo) {
+              donation = donationsRepo.create({
+                donor_name: donorName,
+                donor_mobile: donorPhone,
+                donor_email: donorEmail,
+                cause: String(cfOrder.order_note || 'General Support & Human Rights Protection'),
+                amount,
+                status: 'PENDING',
+                remark: 'Donation verified via Cashfree direct order',
+                source: 'Website',
+              });
+              donation = await donationsRepo.save(donation);
+            }
+
+            donationPayment = this.donationPaymentsRepo.create({
+              donation_id: donation?.id,
+              amount,
+              payment_method: 'CASHFREE',
+              payment_status: PaymentStatus.PENDING,
+              gateway_order_id: orderId,
+            });
+            donationPayment = await this.donationPaymentsRepo.save(donationPayment);
+            if (donation) {
+              donationPayment.donation = donation;
+            }
+          } else if (successfulAttempt) {
             const newTx = this.transactionsRepo.create({
               gateway_name: 'CASHFREE',
               gateway_order_id: orderId,
