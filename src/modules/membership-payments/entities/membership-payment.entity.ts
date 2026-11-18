@@ -26,7 +26,7 @@ export class MembershipPaymentEntity extends BaseEntity {
   @JoinColumn({ name: 'membership_id' })
   membership?: MembershipEntity;
 
-  @Column({ type: 'uuid' })
+  @Column({ type: 'uuid' }) 
   user_id: string;
 
   @ManyToOne(() => UserEntity, { onDelete: 'RESTRICT' })

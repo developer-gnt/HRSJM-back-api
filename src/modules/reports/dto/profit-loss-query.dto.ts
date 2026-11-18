@@ -1,14 +1,22 @@
 import { Transform } from 'class-transformer';
-import { IsBoolean, IsDateString, IsNotEmpty, IsOptional } from 'class-validator';
+import { IsBoolean, IsDateString, IsOptional } from 'class-validator';
 
 export class ProfitLossQueryDto {
-  @IsNotEmpty()
+  @IsOptional()
   @IsDateString()
-  from_date: string;
+  from_date?: string;
 
-  @IsNotEmpty()
+  @IsOptional()
   @IsDateString()
-  to_date: string;
+  to_date?: string;
+
+  @IsOptional()
+  @IsDateString()
+  start_date?: string;
+
+  @IsOptional()
+  @IsDateString()
+  end_date?: string;
 
   @IsOptional()
   @Transform(({ value }) => {
@@ -19,3 +27,4 @@ export class ProfitLossQueryDto {
   @IsBoolean()
   include_zero_balances?: boolean = false;
 }
+

@@ -87,7 +87,7 @@ describe('CashfreeOrdersService', () => {
         user_id: 'user-1',
         payment_status: PaymentStatus.PENDING,
         amount: 500,
-        donation: { cause: 'Education', donor_name: 'John Doe', donor_email: 'john@example.com', donor_mobile: '9876543210' },
+        donation: { cause: 'Education', donor_name: 'John Doe', donor_email: 'john@example.com', donor_mobile: '70210578530' },
       });
       mockCashfreeService.createOrder.mockResolvedValue({
         order_id: 'hrsjm_don_test_1',

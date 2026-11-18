@@ -23,6 +23,9 @@ import { AuditService } from '../../audit/services/audit.service';
 import { ReceiptEntryEntity } from '../../receipt-entries/entities/receipt-entry.entity';
 import { ReceiptStatus } from '../../receipt-entries/enums/receipt-entry.enums';
 import { UserEntity } from '../../users/entities/user.entity';
+import { EventEntity } from '../../events/entities/event.entity';
+import { NotificationsService } from '../../notifications/services/notifications.service';
+import { Optional } from '@nestjs/common';
 
 @Injectable()
 export class DonationsService {
@@ -36,19 +39,24 @@ export class DonationsService {
     private readonly posting: AccountingPostingService,
     private readonly dataSource: DataSource,
     private readonly audit: AuditService,
+    @Optional()
+    private readonly notifications?: NotificationsService,
   ) {}
 
   async create(
     dto: CreateDonationDto,
     actingUserId?: string,
   ): Promise<DonationEntity> {
+    const rawUserId = actingUserId || dto.user_id || null;
+    const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+    const resolvedUserId = rawUserId && UUID_REGEX.test(rawUserId) ? rawUserId : null;
     let dbUserMobile = '';
     let dbUserName = '';
     let dbUserEmail = '';
-    if (actingUserId && this.dataSource) {
+    if (resolvedUserId && this.dataSource) {
       try {
         const usersRepo = this.dataSource.getRepository(UserEntity);
-        const user = await usersRepo.findOne({ where: { id: actingUserId } });
+        const user = await usersRepo.findOne({ where: { id: resolvedUserId } });
         if (user) {
           dbUserMobile = user.mobile_number || '';
           dbUserName = user.full_name || '';
@@ -57,12 +65,28 @@ export class DonationsService {
       } catch {}
     }
 
+    const targetEventId = dto.event_id || dto.eventId;
+    if (targetEventId && this.dataSource) {
+      try {
+        const eventsRepo = this.dataSource.getRepository(EventEntity);
+        const event = await eventsRepo.findOne({ where: { id: targetEventId } });
+        if (event && !event.is_donation_enabled) {
+          throw new BadRequestException(
+            `Donations are currently disabled for event "${event.title}".`,
+          );
+        }
+      } catch (err) {
+        if (err instanceof BadRequestException) throw err;
+      }
+    }
+
     const mobile = dbUserMobile || dto.donor_mobile || dto.mobile_number || '';
     const email = dbUserEmail || dto.donor_email || dto.email || null;
     const cause = dto.cause || dto.campaign || 'General Donation';
     const donorName = (dbUserName || dto.donor_name || 'HRSJM Donor').trim();
 
     const donation = this.donations.create({
+      user_id: resolvedUserId,
       donor_name: donorName,
       donor_mobile: mobile.trim(),
       donor_email: email ? email.trim().toLowerCase() : null,
@@ -70,23 +94,36 @@ export class DonationsService {
       amount: dto.amount,
       status: 'PENDING',
       remark: dto.remark?.trim() || 'Donation from Website',
-      created_by: actingUserId ?? null,
-      updated_by: actingUserId ?? null,
+      source: dto.source?.trim() || 'Website',
+      created_by: resolvedUserId,
+      updated_by: resolvedUserId,
     });
 
     const saved = await this.donations.save(donation);
 
     await this.audit.record({
       event: 'donation.created',
-      actorId: actingUserId ?? null,
+      actorId: resolvedUserId,
       entityType: 'donations',
       entityId: saved.id,
       metadata: {
+        userId: saved.user_id,
         donor_name: saved.donor_name,
         amount: saved.amount,
         cause: saved.cause,
+        source: saved.source,
       },
     });
+
+    if (this.notifications) {
+      this.notifications
+        .sendToAdmins(
+          'New Donation Initiated 💰',
+          `Donation of ₹${saved.amount} initiated for "${saved.cause}" by ${saved.donor_name}.`,
+          actingUserId || undefined,
+        )
+        .catch(() => {});
+    }
 
     return saved;
   }
@@ -108,10 +145,14 @@ export class DonationsService {
       qb.andWhere('donation.status = :status', { status: dto.status });
     }
 
+    if (dto.source) {
+      qb.andWhere('LOWER(donation.source) = LOWER(:source)', { source: dto.source });
+    }
+
     if (dto.search) {
       const term = `%${dto.search.toLowerCase()}%`;
       qb.andWhere(
-        '(LOWER(donation.donor_name) LIKE :term OR LOWER(donation.donor_mobile) LIKE :term OR LOWER(donation.cause) LIKE :term)',
+        '(LOWER(donation.donor_name) LIKE :term OR LOWER(donation.donor_mobile) LIKE :term OR LOWER(donation.cause) LIKE :term OR LOWER(COALESCE(donation.source, \'\')) LIKE :term)',
         { term },
       );
     }

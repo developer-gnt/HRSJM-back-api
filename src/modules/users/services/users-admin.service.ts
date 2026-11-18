@@ -14,7 +14,14 @@ import {
   AssistanceRequestEntity,
   AssistanceRequestStatus,
 } from '../../assistance/entities/assistance-request.entity';
-import { ListUsersDto, UpdateUserDto, UpdateUserStatusDto } from '../dto/user-admin.dto';
+import * as bcrypt from 'bcryptjs';
+import {
+  AdminResetPasswordDto,
+  ListUsersDto,
+  UpdateUserDto,
+  UpdateUserStatusDto,
+  CreateUserAdminDto,
+} from '../dto/user-admin.dto';
 import { UsersService, UserProfile } from './users.service';
 
 @Injectable()
@@ -79,6 +86,32 @@ export class UsersAdminService {
     return profile;
   }
 
+  async createUser(dto: CreateUserAdminDto, actingUserId: string): Promise<UserProfile> {
+    const cleanMobile = dto.mobile_number.replace(/\D/g, '').slice(-10);
+    await this.usersService.assertNoDuplicates(cleanMobile, dto.email ?? null);
+    const pwd = dto.password || 'Hrsjm@123';
+    const salt = await bcrypt.genSalt(10);
+    const password_hash = await bcrypt.hash(pwd, salt);
+    const user = await this.usersService.createUserWithRole({
+      full_name: dto.full_name.trim(),
+      mobile_number: cleanMobile,
+      email: dto.email ? dto.email.trim().toLowerCase() : null,
+      password_hash,
+      roleName: dto.role_name || 'USER',
+    });
+    if (dto.dob || dto.avatar || dto.gender || dto.address) {
+      await this.usersService.updateProfile(user, {
+        dob: dto.dob,
+        avatar: dto.avatar,
+        gender: dto.gender,
+        address: dto.address,
+      });
+    }
+    void actingUserId;
+    const profile = await this.usersService.getProfile(user.id);
+    return profile || this.usersService.toProfile(user);
+  }
+
   async updateUser(
     id: string,
     patch: UpdateUserDto,
@@ -97,6 +130,10 @@ export class UsersAdminService {
       full_name: patch.full_name,
       email: patch.email,
       mobile_number: patch.mobile_number || patch.phone,
+      dob: patch.dob,
+      avatar: patch.avatar,
+      gender: patch.gender,
+      address: patch.address,
     });
     void actingUserId;
     return updated;
@@ -146,6 +183,37 @@ export class UsersAdminService {
     }
 
     return this.usersService.toProfile(saved);
+  }
+
+  async resetPassword(
+    id: string,
+    dto: AdminResetPasswordDto,
+    actingUserId: string,
+  ): Promise<{ success: boolean; message: string }> {
+    const user = await this.usersService.findById(id);
+    if (!user) {
+      throw new NotFoundException({
+        message: 'User not found',
+        code: 'USER_NOT_FOUND',
+        details: null,
+      });
+    }
+
+    const salt = await bcrypt.genSalt(10);
+    const hash = await bcrypt.hash(dto.new_password, salt);
+    await this.usersService.updatePassword(user, hash);
+
+    // Invalidate active refresh tokens so existing sessions must re-login with the new password
+    await this.dataSource.getRepository(RefreshTokenEntity).update(
+      { user_id: id, revoked_at: IsNull() },
+      { revoked_at: new Date() },
+    );
+
+    void actingUserId;
+    return {
+      success: true,
+      message: 'Password reset successfully',
+    };
   }
 
   async approveSeeker(id: string, actingUserId: string): Promise<UserProfile> {

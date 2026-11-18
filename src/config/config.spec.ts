@@ -76,7 +76,7 @@ describe('Configuration Validation Tests', () => {
         CASHFREE_ENV: 'PRODUCTION',
         CASHFREE_APP_ID: 'CF_PROD_1234567890',
         CASHFREE_SECRET_KEY: 'cf_secret_key_prod_abcdef123456',
-        CASHFREE_WEBHOOK_SECRET: 'cf_wh_sec_prod_987654321',
+        CASHFREE_WEBHOOK_SECRET: 'cf_wh_sec_prod_7021057853',
       });
       expect(config.appId).toBe('CF_PROD_1234567890');
       expect(config.apiBaseUrl).toBe('https://api.cashfree.com/pg');

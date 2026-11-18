@@ -1,3 +1,4 @@
+import * as path from 'path';
 import { ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
@@ -27,6 +28,49 @@ async function bootstrap() {
   const expressApp = app.getHttpAdapter().getInstance();
   expressApp.set('trust proxy', 1);
 
+  // Universal foolproof CORS & OPTIONS preflight handler for webapp and all subdomains
+  expressApp.use((req: any, res: any, next: any) => {
+    const origin = req.headers.origin;
+    if (
+      origin &&
+      (/^https?:\/\/([a-z0-9-]+\.)*hrsjm\.org(:\d+)?$/i.test(origin) ||
+        /^https?:\/\/(localhost|127\.0\.0\.1|187\.126\.121\.157)(:\d+)?$/.test(origin))
+    ) {
+      res.setHeader('Access-Control-Allow-Origin', origin);
+      res.setHeader('Access-Control-Allow-Credentials', 'true');
+      res.setHeader(
+        'Access-Control-Allow-Methods',
+        'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
+      );
+      res.setHeader(
+        'Access-Control-Allow-Headers',
+        'Content-Type, Authorization, Accept, Origin, X-Requested-With, x-idempotency-key, x-webhook-timestamp, x-webhook-signature',
+      );
+    }
+
+    if (req.method === 'OPTIONS') {
+      return res.status(204).end();
+    }
+    next();
+  });
+
+  // Health / verification endpoint for CORS & deployment version
+  expressApp.get('/api/v1/cors-check', (req: any, res: any) => {
+    res.json({ ok: true, version: 'cors-fixed-v2', timestamp: new Date().toISOString() });
+  });
+
+  // Statically serve uploads folder for application documents & profile photos
+  const expressStatic = require('express');
+  expressApp.use('/uploads', expressStatic.static(path.join(process.cwd(), 'uploads')));
+  // Dedicated responsive Reset Password webpage served at root path
+  expressApp.get('/reset-password', (req: any, res: any) => {
+    const token = (req.query.token as string) || '';
+    const { getResetPasswordPageHtml } = require('./modules/auth/services/reset-password-page.template');
+    res.setHeader('Content-Type', 'text/html');
+    return res.send(getResetPasswordPageHtml(token));
+  });
+
+
   app.setGlobalPrefix('api/v1');
 
   // Security headers via Helmet
@@ -44,13 +88,23 @@ async function bootstrap() {
 
   const defaultDevOrigins = [
     'http://localhost:3000',
+    'http://localhost:4000',
+    'http://localhost:5173',
     'http://localhost:8081',
     'http://localhost:8082',
     'http://localhost:8089',
     'http://127.0.0.1:3000',
+    'http://127.0.0.1:4000',
+    'http://127.0.0.1:5173',
     'http://127.0.0.1:8081',
     'http://127.0.0.1:8082',
     'http://127.0.0.1:8089',
+  ];
+
+  const defaultProductionOrigins = [
+    'https://hrsjm.org',
+    'https://www.hrsjm.org',
+    'https://webapp.hrsjm.org',
   ];
 
   const configuredOrigins = process.env.CORS_ORIGINS
@@ -63,7 +117,7 @@ async function bootstrap() {
     configuredOrigins.length > 0
       ? configuredOrigins
       : isProduction
-        ? [] // In production, require explicit CORS_ORIGINS
+        ? defaultProductionOrigins
         : defaultDevOrigins;
 
   app.enableCors({
@@ -73,8 +127,13 @@ async function bootstrap() {
         return callback(null, true);
       }
 
-      // In non-production, allow localhost/127.0.0.1 on any port
-      if (!isProduction && /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) {
+      // Allow requests from localhost, 127.0.0.1, or VPS IP on any port
+      if (/^https?:\/\/(localhost|127\.0\.0\.1|194\.164\.151\.17|187\.126\.121\.157)(:\d+)?$/.test(origin)) {
+        return callback(null, true);
+      }
+
+      // Allow hrsjm.org and all subdomains (webapp.hrsjm.org, www.hrsjm.org, etc.)
+      if (/^https?:\/\/([a-z0-9-]+\.)*hrsjm\.org(:\d+)?$/i.test(origin)) {
         return callback(null, true);
       }
 
@@ -90,14 +149,17 @@ async function bootstrap() {
       if (isAllowed) {
         callback(null, true);
       } else {
-        callback(new Error(`CORS origin '${origin}' not allowed by policy`));
+        callback(null, false);
       }
     },
     credentials: true,
-    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS', 'HEAD'],
     allowedHeaders: [
       'Content-Type',
       'Authorization',
+      'Accept',
+      'Origin',
+      'X-Requested-With',
       'x-idempotency-key',
       'x-webhook-timestamp',
       'x-webhook-signature',

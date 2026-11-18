@@ -70,4 +70,25 @@ export class CreateDonationDto {
   @IsOptional()
   @IsString()
   remark?: string;
+
+  @ApiPropertyOptional({ example: 'Website', description: 'Source platform: Website, Web App, or Application UI' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(50)
+  source?: string;
+
+  @ApiPropertyOptional({ description: 'User ID of authenticated donor' })
+  @IsOptional()
+  @IsString()
+  user_id?: string;
+
+  @ApiPropertyOptional({ description: 'Event ID if donation is for a specific event' })
+  @IsOptional()
+  @IsString()
+  event_id?: string;
+
+  @ApiPropertyOptional({ description: 'Alias for event_id (camelCase)' })
+  @IsOptional()
+  @IsString()
+  eventId?: string;
 }

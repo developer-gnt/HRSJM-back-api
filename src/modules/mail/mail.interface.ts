@@ -7,6 +7,7 @@ export interface SendMailOptions {
   replyTo?: string;
   cc?: string | string[];
   bcc?: string | string[];
+  attachments?: any[];
 }
 
 export interface DonationThankYouMailPayload {
@@ -127,3 +128,10 @@ export interface ContactInquiryMailPayload {
 }
 
 
+
+export interface PasswordResetLinkMailPayload {
+  recipientName: string;
+  recipientEmail: string;
+  resetUrl: string;
+  expiresInMinutes?: number;
+}

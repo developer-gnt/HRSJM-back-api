@@ -53,6 +53,11 @@ export class CreateRenewalDto {
   @IsOptional()
   @IsString()
   member_note?: string;
+
+  @ApiPropertyOptional({ description: 'User ID of requesting member' })
+  @IsOptional()
+  @IsString()
+  user_id?: string;
 }
 
 export class ListRenewalsDto {

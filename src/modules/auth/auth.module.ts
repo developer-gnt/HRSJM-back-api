@@ -13,6 +13,7 @@ import { AuthController } from './controllers/auth.controller';
 import { AuthService } from './services/auth.service';
 import { PasswordResetDeliveryService } from './delivery/password-reset-delivery.service';
 import { MailModule } from '../mail/mail.module';
+import { NotificationsModule } from '../notifications/notifications.module';
 
 @Module({
   imports: [
@@ -34,6 +35,7 @@ import { MailModule } from '../mail/mail.module';
     UsersModule,
     AuditModule,
     MailModule,
+    NotificationsModule,
   ],
   controllers: [AuthController],
   providers: [AuthService, JwtAuthGuard, OptionalJwtAuthGuard, PasswordResetDeliveryService],

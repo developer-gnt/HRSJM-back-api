@@ -13,6 +13,7 @@ import { MailModule } from '../mail/mail.module';
 
 import { ReceiptEntryEntity } from '../receipt-entries/entities/receipt-entry.entity';
 import { AccountEntity } from '../accounting/entities/account.entity';
+import { RenewalRequestEntity } from '../renewals/entities/renewal-request.entity';
 
 @Module({
   imports: [
@@ -23,6 +24,7 @@ import { AccountEntity } from '../accounting/entities/account.entity';
       MembershipEntity,
       ReceiptEntryEntity,
       AccountEntity,
+      RenewalRequestEntity,
     ]),
     AccountingModule,
     AuditModule,

@@ -127,7 +127,7 @@ describe('Step 3: End-to-End Payment & Accounting Validation Suite', () => {
         user_id: 'user-1',
         payment_status: PaymentStatus.PENDING,
         amount: 1000,
-        donation: { cause: 'Emergency Medical Aid', donor_name: 'Rahul V', donor_mobile: '9876543210', donor_email: 'rahul@test.com' },
+        donation: { cause: 'Emergency Medical Aid', donor_name: 'Rahul V', donor_mobile: '70210578530', donor_email: 'rahul@test.com' },
       };
 
       mockDonationPaymentsRepo.findOne.mockResolvedValue(paymentRecord);

@@ -14,6 +14,7 @@ import { MembershipPaymentEntity } from '../membership-payments/entities/members
 import { ReceiptEntity } from '../membership-payments/entities/receipt.entity';
 import { AuditLogEntity } from '../audit/entities/audit-log.entity';
 import { EventEntity } from '../events/entities/event.entity';
+import { SystemSettingEntity } from './entities/system-setting.entity';
 
 @Module({
   imports: [
@@ -30,6 +31,7 @@ import { EventEntity } from '../events/entities/event.entity';
       ReceiptEntity,
       AuditLogEntity,
       EventEntity,
+      SystemSettingEntity,
     ]),
   ],
   controllers: [AdminController],

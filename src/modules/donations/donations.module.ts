@@ -8,6 +8,7 @@ import { DonationsController } from './controllers/donations.controller';
 import { DonationsService } from './services/donations.service';
 import { AccountingModule } from '../accounting/accounting.module';
 import { AuditModule } from '../audit/audit.module';
+import { NotificationsModule } from '../notifications/notifications.module';
 
 /**
  * Scaffold for the donations resource. Phase 9 owns only the refund
@@ -24,6 +25,7 @@ import { AuditModule } from '../audit/audit.module';
     ]),
     AccountingModule,
     AuditModule,
+    NotificationsModule,
   ],
   controllers: [DonationsController],
   providers: [DonationsService],

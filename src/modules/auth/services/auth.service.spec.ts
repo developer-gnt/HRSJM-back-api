@@ -1,8 +1,10 @@
-import { BadRequestException, ConflictException, ForbiddenException, UnauthorizedException } from '@nestjs/common';
+﻿import { BadRequestException, ConflictException, ForbiddenException, UnauthorizedException } from '@nestjs/common';
 import { createHash } from 'crypto';
 import * as bcrypt from 'bcryptjs';
 import { AuthService } from './auth.service';
 import { RefreshTokenEntity } from '../../users/entities/refresh-token.entity';
+import { UserEntity } from '../../users/entities/user.entity';
+import { PasswordResetTokenEntity } from '../../users/entities/password-reset-token.entity';
 
 // @nestjs/jwt ships ESM syntax jest cannot parse from node_modules; the real
 // JwtService is replaced by a mock instance in these tests anyway.
@@ -33,6 +35,8 @@ describe('AuthService', () => {
       dataSource as never,
       refreshTokens as never,
       resetTokens as never,
+      { sendPasswordResetLinkEmail: jest.fn().mockResolvedValue(undefined), sendPasswordChangedNoticeEmail: jest.fn().mockResolvedValue(undefined), sendMail: jest.fn().mockResolvedValue({ success: true, messageId: 'test-mid' }) } as never,
+      { sendToUser: jest.fn().mockResolvedValue(undefined), sendToAdmins: jest.fn().mockResolvedValue(undefined) } as never,
     );
 
   beforeEach(() => {
@@ -131,11 +135,12 @@ describe('AuthService', () => {
     await service.register(
       {
         full_name: 'Donation Seeker Applicant',
-        mobile_number: '9876543210',
+        mobile_number: '70210578530',
         email: 'applicant@example.com',
         password: 'password123',
         confirm_password: 'password123',
         role_name: 'DONATION_SEEKER',
+        dob: '1995-01-01',
       },
       null,
       null,
@@ -192,7 +197,7 @@ describe('AuthService', () => {
     );
   });
 
-  it('TC-AUTH-023/026: refresh rotates — old token revoked, raw new token returned', async () => {
+  it('TC-AUTH-023/026: refresh rotates â€” old token revoked, raw new token returned', async () => {
     const raw = 'raw-refresh-token';
     const oldToken = {
       id: 'rt-old',
@@ -233,24 +238,30 @@ describe('AuthService', () => {
     expect(refreshTokens.save).not.toHaveBeenCalled();
   });
 
-  it('TC-AUTH-030: forgot password for an unknown account returns a generic result', async () => {
+  it('TC-AUTH-030: forgot password for an unknown account returns a generic result without inserting a token', async () => {
     usersService.findByLoginIdentifier = jest.fn().mockResolvedValue(null);
 
     const result = await service.forgotPassword('nobody@example.com', null, null);
-    expect(result).toEqual({ delivered_mechanism: 'TBC' });
+    // Security: generic response that does not reveal whether email exists
+    expect(result.delivered_mechanism).toBe('EMAIL');
+    expect(result.message).toBeDefined();
     expect(resetTokens.insert).not.toHaveBeenCalled();
   });
 
-  it('forgot password for an existing account inserts token into database and returns dev token', async () => {
+  it('forgot password for an existing account inserts a hashed token into the database and returns generic response', async () => {
     usersService.findByLoginIdentifier = jest.fn().mockResolvedValue({
       id: 'u1',
       email: 'member@hrsjm.org',
-      mobile_number: '9876543210',
+      full_name: 'Test Member',
+      mobile_number: '70210578530',
     });
+    resetTokens.update = jest.fn().mockResolvedValue(undefined);
 
     const result = await service.forgotPassword('member@hrsjm.org', '127.0.0.1', 'jest-agent');
-    expect(result.delivered_mechanism).toBe('TBC');
-    expect(result.reset_token).toBeDefined();
+    // Returns generic EMAIL response - raw token never returned in response (security requirement)
+    expect(result.delivered_mechanism).toBe('EMAIL');
+    expect(result.message).toBeDefined();
+    expect((result as any).reset_token).toBeUndefined();
     expect(resetTokens.insert).toHaveBeenCalledWith(
       expect.objectContaining({
         user_id: 'u1',
@@ -261,7 +272,18 @@ describe('AuthService', () => {
   });
 
   it('TC-AUTH-032: reset password with an unknown token throws RESET_TOKEN_INVALID', async () => {
-    resetTokens.findOne = jest.fn().mockResolvedValue(null);
+    const mockTokenRepo = {
+      findOne: jest.fn().mockResolvedValue(null),
+    };
+    dataSource.transaction = jest.fn(async (cb: (manager: unknown) => Promise<unknown>) => {
+      const manager = {
+        getRepository: jest.fn((entity: any) => {
+          if (entity === PasswordResetTokenEntity) return mockTokenRepo;
+          return { findOne: jest.fn().mockResolvedValue(null) };
+        }),
+      };
+      return cb(manager);
+    });
 
     await expect(
       service.resetPassword(
@@ -272,7 +294,77 @@ describe('AuthService', () => {
     ).rejects.toBeInstanceOf(BadRequestException);
   });
 
-  it('reset password with a valid token updates user password in database and revokes sessions', async () => {
+  it('reset password with empty token throws RESET_TOKEN_INVALID', async () => {
+    await expect(
+      service.resetPassword(
+        { token: '   ', password: 'newpassword1', confirm_password: 'newpassword1' },
+        null,
+        null,
+      ),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('reset password with an expired token throws RESET_TOKEN_INVALID', async () => {
+    const expiredToken = {
+      id: 'tok-expired',
+      user_id: 'u1',
+      token_hash: 'hash-expired',
+      expires_at: new Date(Date.now() - 60000), // 1 min ago
+      used_at: null,
+    };
+    const mockTokenRepo = {
+      findOne: jest.fn().mockResolvedValue(expiredToken),
+    };
+    dataSource.transaction = jest.fn(async (cb: (manager: unknown) => Promise<unknown>) => {
+      const manager = {
+        getRepository: jest.fn((entity: any) => {
+          if (entity === PasswordResetTokenEntity) return mockTokenRepo;
+          return { findOne: jest.fn().mockResolvedValue(null) };
+        }),
+      };
+      return cb(manager);
+    });
+
+    await expect(
+      service.resetPassword(
+        { token: 'expired-token', password: 'newpassword1', confirm_password: 'newpassword1' },
+        null,
+        null,
+      ),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('reset password with an already used token throws RESET_TOKEN_INVALID', async () => {
+    const usedToken = {
+      id: 'tok-used',
+      user_id: 'u1',
+      token_hash: 'hash-used',
+      expires_at: new Date(Date.now() + 1800000),
+      used_at: new Date(Date.now() - 30000), // already used 30s ago
+    };
+    const mockTokenRepo = {
+      findOne: jest.fn().mockResolvedValue(usedToken),
+    };
+    dataSource.transaction = jest.fn(async (cb: (manager: unknown) => Promise<unknown>) => {
+      const manager = {
+        getRepository: jest.fn((entity: any) => {
+          if (entity === PasswordResetTokenEntity) return mockTokenRepo;
+          return { findOne: jest.fn().mockResolvedValue(null) };
+        }),
+      };
+      return cb(manager);
+    });
+
+    await expect(
+      service.resetPassword(
+        { token: 'used-token', password: 'newpassword1', confirm_password: 'newpassword1' },
+        null,
+        null,
+      ),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('reset password with a valid token updates user password in database, invalidates tokens, and revokes sessions', async () => {
     const validStoredToken = {
       id: 'tok-1',
       user_id: 'u1',
@@ -280,16 +372,30 @@ describe('AuthService', () => {
       expires_at: new Date(Date.now() + 1800000), // 30 min in future
       used_at: null,
     };
-    resetTokens.findOne = jest.fn().mockResolvedValue(validStoredToken);
 
-    const mockManagerRepo = {
-      findOne: jest.fn().mockResolvedValue({ id: 'u1', password_hash: 'old-hash' }),
+    const mockTokenRepo = {
+      findOne: jest.fn().mockResolvedValue(validStoredToken),
       save: jest.fn().mockResolvedValue(undefined),
       update: jest.fn().mockResolvedValue(undefined),
     };
+
+    const mockUserRepo = {
+      findOne: jest.fn().mockResolvedValue({ id: 'u1', password_hash: 'old-hash', email: 'test@example.com' }),
+      save: jest.fn().mockResolvedValue(undefined),
+    };
+
+    const mockRefreshRepo = {
+      update: jest.fn().mockResolvedValue(undefined),
+    };
+
     dataSource.transaction = jest.fn(async (cb: (manager: unknown) => Promise<unknown>) => {
       const manager = {
-        getRepository: jest.fn().mockReturnValue(mockManagerRepo),
+        getRepository: jest.fn((entity: any) => {
+          if (entity === PasswordResetTokenEntity) return mockTokenRepo;
+          if (entity === UserEntity) return mockUserRepo;
+          if (entity === RefreshTokenEntity) return mockRefreshRepo;
+          return { findOne: jest.fn(), save: jest.fn(), update: jest.fn() };
+        }),
       };
       return cb(manager);
     });
@@ -301,21 +407,26 @@ describe('AuthService', () => {
     );
 
     // Verifies user password hash saved
-    expect(mockManagerRepo.save).toHaveBeenCalledWith(
+    expect(mockUserRepo.save).toHaveBeenCalledWith(
       expect.objectContaining({
         id: 'u1',
         password_hash: expect.any(String),
       }),
     );
     // Verifies token marked used
-    expect(mockManagerRepo.save).toHaveBeenCalledWith(
+    expect(mockTokenRepo.save).toHaveBeenCalledWith(
       expect.objectContaining({
         id: 'tok-1',
         used_at: expect.any(Date),
       }),
     );
+    // Verifies all reset tokens for user invalidated
+    expect(mockTokenRepo.update).toHaveBeenCalledWith(
+      expect.objectContaining({ user_id: 'u1' }),
+      expect.objectContaining({ used_at: expect.any(Date) }),
+    );
     // Verifies refresh tokens revoked
-    expect(mockManagerRepo.update).toHaveBeenCalledWith(
+    expect(mockRefreshRepo.update).toHaveBeenCalledWith(
       expect.objectContaining({ user_id: 'u1' }),
       expect.objectContaining({ revoked_at: expect.any(Date) }),
     );
@@ -326,7 +437,7 @@ describe('AuthService', () => {
       usersService.findByLoginIdentifier = jest.fn().mockResolvedValue(null);
 
       const res = await service.checkDuplicates({
-        mobile_number: '9876543210',
+        mobile_number: '70210578530',
         email: 'fresh@hrsjm.org',
       });
 
@@ -337,12 +448,12 @@ describe('AuthService', () => {
 
     it('returns mobile_taken: true when mobile number is already registered in database', async () => {
       usersService.findByLoginIdentifier = jest.fn((id: string) => {
-        if (id === '9876543210') return Promise.resolve({ id: 'u-existing' });
+        if (id === '70210578530') return Promise.resolve({ id: 'u-existing' });
         return Promise.resolve(null);
       });
 
       const res = await service.checkDuplicates({
-        mobile_number: '9876543210',
+        mobile_number: '70210578530',
         email: 'fresh@hrsjm.org',
       });
 

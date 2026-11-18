@@ -10,6 +10,8 @@ import { AuditModule } from '../audit/audit.module';
 
 import { ReceiptEntity } from '../membership-payments/entities/receipt.entity';
 
+import { RenewalCalculationService } from './services/renewal-calculation.service';
+
 @Module({
   imports: [
     TypeOrmModule.forFeature([
@@ -21,7 +23,7 @@ import { ReceiptEntity } from '../membership-payments/entities/receipt.entity';
     NotificationsModule,
   ],
   controllers: [RenewalsController, AdminRenewalsController],
-  providers: [RenewalsService],
-  exports: [RenewalsService],
+  providers: [RenewalsService, RenewalCalculationService],
+  exports: [RenewalsService, RenewalCalculationService],
 })
 export class RenewalsModule {}

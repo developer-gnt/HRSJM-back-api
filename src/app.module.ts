@@ -38,6 +38,7 @@ import cashfreeConfig from './config/cashfree.config';
 import mailConfig from './config/mail.config';
 import { CashfreeModule } from './modules/payments/cashfree/cashfree.module';
 import { MailModule } from './modules/mail/mail.module';
+import { TransactionsModule } from './modules/transactions/transactions.module';
 
 @Module({
   imports: [
@@ -48,7 +49,7 @@ import { MailModule } from './modules/mail/mail.module';
     ThrottlerModule.forRoot([
       {
         ttl: Number(process.env.THROTTLE_TTL ?? 60000),
-        limit: Number(process.env.THROTTLE_LIMIT ?? 100),
+        limit: Number(process.env.THROTTLE_LIMIT ?? 300),
       },
     ]),
     TypeOrmModule.forRootAsync({
@@ -85,6 +86,7 @@ import { MailModule } from './modules/mail/mail.module';
     MockGatewayModule,
     CashfreeModule,
     MailModule,
+    TransactionsModule,
   ],
   providers: [
     {

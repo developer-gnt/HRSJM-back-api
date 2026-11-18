@@ -62,14 +62,24 @@ export class ProfitLossService {
   async getProfitLoss(
     dto: ProfitLossQueryDto,
   ): Promise<ProfitLossReportResponse> {
-    const fromDate = new Date(dto.from_date);
-    const toDate = toInclusiveEnd(dto.to_date);
+    const rawFrom = dto.from_date || dto.start_date;
+    const rawTo = dto.to_date || dto.end_date;
+
+    if (!rawFrom || !rawTo) {
+      throw new BadRequestException({
+        message: 'from_date and to_date (or start_date and end_date) are required',
+        code: 'MISSING_DATE_RANGE',
+      });
+    }
+
+    const fromDate = new Date(rawFrom);
+    const toDate = toInclusiveEnd(rawTo);
 
     if (fromDate.getTime() > toDate.getTime()) {
       throw new BadRequestException({
         message: 'from_date cannot be after to_date',
         code: 'INVALID_DATE_RANGE',
-        details: { from_date: dto.from_date, to_date: dto.to_date },
+        details: { from_date: rawFrom, to_date: rawTo },
       });
     }
 
@@ -193,8 +203,8 @@ export class ProfitLossService {
     dto: ProfitLossSummaryQueryDto,
   ): Promise<ProfitLossSummaryResponse> {
     const report = await this.getProfitLoss({
-      from_date: dto.from_date,
-      to_date: dto.to_date,
+      from_date: dto.from_date || dto.start_date,
+      to_date: dto.to_date || dto.end_date,
       include_zero_balances: false,
     });
 

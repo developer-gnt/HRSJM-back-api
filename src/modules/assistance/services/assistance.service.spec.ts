@@ -25,6 +25,10 @@ describe('AssistanceService', () => {
       createUserWithRole: jest.fn().mockResolvedValue({ id: 'u1' }),
     };
     const donationsRepo = { find: jest.fn().mockResolvedValue([]) };
+    const mailService = {
+      sendAssistanceRequestConfirmationEmail: jest.fn().mockResolvedValue(true),
+      sendAssistanceStatusUpdateEmail: jest.fn().mockResolvedValue(true),
+    };
     service = new AssistanceService(
       repo as never,
       donationsRepo as never,
@@ -32,6 +36,7 @@ describe('AssistanceService', () => {
       audit as never,
       notifications as never,
       usersService as never,
+      mailService as never,
     );
   });
 

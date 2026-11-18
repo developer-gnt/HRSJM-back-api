@@ -29,7 +29,6 @@ export class ReportsController {
   ) {}
 
   @Get('analytics')
-  @RequirePermissions('trial_balance.read')
   @ApiOperation({
     summary: 'Get platform activities analytics, growth charts and KPIs (admin)',
   })
