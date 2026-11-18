@@ -27,6 +27,38 @@ async function bootstrap() {
 
   const expressApp = app.getHttpAdapter().getInstance();
   expressApp.set('trust proxy', 1);
+
+  // Universal foolproof CORS & OPTIONS preflight handler for webapp and all subdomains
+  expressApp.use((req: any, res: any, next: any) => {
+    const origin = req.headers.origin;
+    if (
+      origin &&
+      (/^https?:\/\/([a-z0-9-]+\.)*hrsjm\.org(:\d+)?$/i.test(origin) ||
+        /^https?:\/\/(localhost|127\.0\.0\.1|187\.126\.121\.157)(:\d+)?$/.test(origin))
+    ) {
+      res.setHeader('Access-Control-Allow-Origin', origin);
+      res.setHeader('Access-Control-Allow-Credentials', 'true');
+      res.setHeader(
+        'Access-Control-Allow-Methods',
+        'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
+      );
+      res.setHeader(
+        'Access-Control-Allow-Headers',
+        'Content-Type, Authorization, Accept, Origin, X-Requested-With, x-idempotency-key, x-webhook-timestamp, x-webhook-signature',
+      );
+    }
+
+    if (req.method === 'OPTIONS') {
+      return res.status(204).end();
+    }
+    next();
+  });
+
+  // Health / verification endpoint for CORS & deployment version
+  expressApp.get('/api/v1/cors-check', (req: any, res: any) => {
+    res.json({ ok: true, version: 'cors-fixed-v2', timestamp: new Date().toISOString() });
+  });
+
   // Statically serve uploads folder for application documents & profile photos
   const expressStatic = require('express');
   expressApp.use('/uploads', expressStatic.static(path.join(process.cwd(), 'uploads')));
