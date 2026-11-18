@@ -25,6 +25,7 @@ import { UpdateMembershipDto } from '../dto/update-membership.dto';
 import { ListMembershipsDto } from '../dto/list-memberships.dto';
 import { UpdateMembershipStatusDto } from '../dto/update-membership-status.dto';
 import { AdminResetPasswordDto } from '../dto/admin-reset-password.dto';
+import { KitFulfillmentDto } from '../dto/kit-fulfillment.dto';
 import { OptionalJwtAuthGuard } from '../../../common/guards/optional-jwt-auth.guard';
 
 @ApiTags('memberships')
@@ -80,6 +81,31 @@ export class MembershipsController {
     return this.membershipsService.checkDuplicate(email, phone);
   }
 
+  @Get('memberships/status-lookup')
+  @ApiOperation({ summary: 'Public membership status and renewal verification lookup' })
+  verifyStatus(@Query('query') query: string) {
+    return this.membershipsService.verifyMemberStatusForRenewal(query);
+  }
+
+  @Get('memberships/referral/tiers')
+  @ApiOperation({ summary: 'Get official referral reward tiers and policies' })
+  getReferralTiers() {
+    return this.membershipsService.getReferralTiers();
+  }
+
+  @Get('memberships/referral/verify/:code')
+  @ApiOperation({ summary: 'Verify a 6-digit referral code before applying' })
+  verifyReferralCode(@Param('code') code: string) {
+    return this.membershipsService.verifyReferralCode(code);
+  }
+
+  @Get('memberships/referral/my-referrals')
+  @UseGuards(JwtAuthGuard)
+  @ApiOperation({ summary: 'Get my referral code, reward balance, and referred members list' })
+  getMyReferrals(@AuthenticatedUser() user: { sub: string }) {
+    return this.membershipsService.getMyReferralStats(user.sub);
+  }
+
   @Get('memberships/:id')
   @UseGuards(JwtAuthGuard)
   @ApiOperation({ summary: 'View single membership details (owner or admin)' })
@@ -127,6 +153,18 @@ export class MembershipsController {
     @AuthenticatedUser() user: { sub: string },
   ) {
     return this.membershipsService.adminResetPassword(id, dto, user.sub);
+  }
+
+  @Patch('memberships/:id/kit-fulfillment')
+  @UseGuards(JwtAuthGuard, PermissionsGuard)
+  @RequirePermissions('membership.manage_status')
+  @ApiOperation({ summary: 'Update physical kit fulfillment / dispatch tracking (admin)' })
+  updateKitFulfillment(
+    @Param('id') id: string,
+    @Body() dto: KitFulfillmentDto,
+    @AuthenticatedUser() user: { sub: string },
+  ) {
+    return this.membershipsService.updateKitFulfillment(id, dto, user.sub);
   }
 
   @Get('memberships/:id/documents')

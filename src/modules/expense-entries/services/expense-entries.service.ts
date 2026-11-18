@@ -18,7 +18,7 @@ import { ListExpenseEntriesDto } from '../dto/list-expense-entries.dto';
 import { UpdateExpenseEntryDto } from '../dto/update-expense-entry.dto';
 import { UpdateExpenseStatusDto } from '../dto/update-expense-status.dto';
 import { ExpenseEntryEntity } from '../entities/expense-entry.entity';
-import { ExpenseStatus } from '../enums/expense-entry.enums';
+import { ExpensePaymentMethod, ExpenseStatus } from '../enums/expense-entry.enums';
 
 function formatVoucherNumber(expenseDate: Date, seq: number): string {
   const y = expenseDate.getUTCFullYear();
@@ -94,22 +94,60 @@ export class ExpenseEntriesService {
         });
       }
 
-      // 2. Validate Paid From (Asset) Account
-      const paidFromAccount = await manager.findOne(AccountEntity, {
-        where: { id: dto.paid_from_account_id },
-      });
-      if (!paidFromAccount) {
-        throw new NotFoundException({
-          message: 'Paid-from payment account not found',
-          code: 'PAID_FROM_ACCOUNT_NOT_FOUND',
-          details: { id: dto.paid_from_account_id },
+      // 2. Resolve & Validate Paid From (Asset) Account
+      let paidFromAccount: AccountEntity | null = null;
+      if (dto.paid_from_account_id) {
+        paidFromAccount = await manager.findOne(AccountEntity, {
+          where: { id: dto.paid_from_account_id },
         });
+        if (!paidFromAccount) {
+          throw new NotFoundException({
+            message: 'Paid-from payment account not found',
+            code: 'PAID_FROM_ACCOUNT_NOT_FOUND',
+            details: { id: dto.paid_from_account_id },
+          });
+        }
+      } else {
+        // Auto-resolve paid-from account based on payment_method
+        const isCash = dto.payment_method === ExpensePaymentMethod.CASH;
+        const targetCode = isCash ? '1002' : '1001';
+        paidFromAccount = await manager.findOne(AccountEntity, {
+          where: {
+            account_code: targetCode,
+            account_type: AccountType.ASSET,
+            is_active: true,
+          },
+        });
+        // Fallback to name pattern match if specific code not found
+        if (!paidFromAccount) {
+          paidFromAccount = await manager
+            .createQueryBuilder(AccountEntity, 'acc')
+            .where('acc.account_type = :type', { type: AccountType.ASSET })
+            .andWhere('acc.is_active = true')
+            .andWhere('acc.account_name ILIKE :kw', {
+              kw: isCash ? '%cash%' : '%bank%',
+            })
+            .getOne();
+        }
+        // Fallback to any active asset account
+        if (!paidFromAccount) {
+          paidFromAccount = await manager.findOne(AccountEntity, {
+            where: { account_type: AccountType.ASSET, is_active: true },
+          });
+        }
+        if (!paidFromAccount) {
+          throw new NotFoundException({
+            message: 'No active asset account (Cash/Bank) found to credit expense',
+            code: 'PAID_FROM_ACCOUNT_NOT_FOUND',
+          });
+        }
       }
+
       if (!paidFromAccount.is_active) {
         throw new BadRequestException({
           message: 'Selected paid-from account is inactive',
           code: 'PAID_FROM_ACCOUNT_INACTIVE',
-          details: { id: dto.paid_from_account_id },
+          details: { id: paidFromAccount.id },
         });
       }
       if (paidFromAccount.account_type !== AccountType.ASSET) {
@@ -118,11 +156,13 @@ export class ExpenseEntriesService {
             'Selected paid-from payment account must have account type ASSET (Bank/Cash)',
           code: 'INVALID_PAID_FROM_ACCOUNT_TYPE',
           details: {
-            id: dto.paid_from_account_id,
+            id: paidFromAccount.id,
             account_type: paidFromAccount.account_type,
           },
         });
       }
+
+      const paidFromAccountId = paidFromAccount.id;
 
       // 3. Generate Voucher Number
       const result: { seq: string }[] = await manager.query(
@@ -137,7 +177,7 @@ export class ExpenseEntriesService {
         expense_date: expenseDate,
         paid_to: dto.paid_to.trim(),
         expense_account_id: dto.expense_account_id,
-        paid_from_account_id: dto.paid_from_account_id,
+        paid_from_account_id: paidFromAccountId,
         amount: dto.amount,
         payment_method: dto.payment_method,
         reference_number: dto.reference_number?.trim() || `REF-${voucherNumber}`,
@@ -165,7 +205,7 @@ export class ExpenseEntriesService {
             line_description: `Expense: ${dto.paid_to.trim()}`,
           },
           {
-            account_id: dto.paid_from_account_id,
+            account_id: paidFromAccountId,
             credit_amount: dto.amount,
             line_description: `Paid via ${dto.payment_method}`,
           },
@@ -191,7 +231,7 @@ export class ExpenseEntriesService {
           amount: dto.amount,
           paid_to: dto.paid_to,
           expense_account_id: dto.expense_account_id,
-          paid_from_account_id: dto.paid_from_account_id,
+          paid_from_account_id: paidFromAccountId,
           accounting_entry_id: postedJournal.id,
         },
       });

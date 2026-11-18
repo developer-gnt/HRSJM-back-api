@@ -23,9 +23,11 @@ import { UsersAdminService } from '../services/users-admin.service';
 import { RolesService } from '../../roles/services/roles.service';
 import { UsersService } from '../services/users.service';
 import {
+  AdminResetPasswordDto,
   ListUsersDto,
   UpdateUserDto,
   UpdateUserStatusDto,
+  CreateUserAdminDto,
   UserRoleDto,
 } from '../dto/user-admin.dto';
 
@@ -59,6 +61,16 @@ export class UsersController {
     return this.usersAdmin.listUsers(dto);
   }
 
+  @Post()
+  @RequirePermissions('user.read')
+  @ApiOperation({ summary: 'Create user account (admin)' })
+  createUser(
+    @Body() dto: CreateUserAdminDto,
+    @AuthenticatedUser() actingUser: { sub: string },
+  ) {
+    return this.usersAdmin.createUser(dto, actingUser.sub);
+  }
+
   @Get(':id')
   @RequirePermissions('user.read')
   @ApiOperation({ summary: 'View a user (admin)' })
@@ -86,6 +98,17 @@ export class UsersController {
     @AuthenticatedUser() actingUser: { sub: string },
   ) {
     return this.usersAdmin.updateUserStatus(id, dto, actingUser.sub);
+  }
+
+  @Post(':id/reset-password')
+  @RequirePermissions('user.manage_status')
+  @ApiOperation({ summary: 'Reset a user password directly (admin)' })
+  resetUserPassword(
+    @Param('id') id: string,
+    @Body() dto: AdminResetPasswordDto,
+    @AuthenticatedUser() actingUser: { sub: string },
+  ) {
+    return this.usersAdmin.resetPassword(id, dto, actingUser.sub);
   }
 
   @Post(':id/approve-seeker')

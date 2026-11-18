@@ -131,6 +131,68 @@ export class NotificationsService {
     }
   }
 
+  async broadcastToAudience(
+    audience: NotificationAudience,
+    title: string,
+    body: string,
+    actingUserId?: string,
+  ): Promise<void> {
+    try {
+      const recipients = await this.resolveAudience(audience);
+      if (recipients.length === 0) {
+        this.logger.warn(`broadcastToAudience: No recipients found for audience ${audience}`);
+        return;
+      }
+
+      const actor = actingUserId || recipients[0].id;
+      const notification = this.notificationsRepo.create({
+        title: title.trim(),
+        body: body.trim(),
+        target_audience: audience,
+        status: NotificationStatus.SENT,
+        scheduled_at: null,
+        sent_at: new Date(),
+        created_by: actor,
+        updated_by: actor,
+      });
+
+      const saved = await this.notificationsRepo.save(notification);
+
+      for (let i = 0; i < recipients.length; i += INSERT_CHUNK_SIZE) {
+        const chunk = recipients.slice(i, i + INSERT_CHUNK_SIZE);
+        const recipientEntities = chunk.map((user) =>
+          this.recipientsRepo.create({
+            notification_id: saved.id,
+            user_id: user.id,
+            delivery_status: DeliveryStatus.SENT,
+            created_by: actor,
+            updated_by: actor,
+          }),
+        );
+        await this.recipientsRepo.save(recipientEntities);
+      }
+
+      this.logger.log(
+        `Broadcast notification "${title}" sent to ${recipients.length} recipients for audience ${audience}`,
+      );
+    } catch (err) {
+      this.logger.error(
+        `Failed to broadcast notification "${title}" to audience ${audience}: ${(err as Error).message}`,
+      );
+    }
+  }
+
+  async getUnreadCount(userId: string): Promise<{ unread_count: number }> {
+    const unreadCount = await this.recipientsRepo.count({
+      where: {
+        user_id: userId,
+        delivery_status: DeliveryStatus.SENT,
+        read_at: IsNull(),
+      },
+    });
+    return { unread_count: unreadCount };
+  }
+
   async create(dto: CreateNotificationDto, actingUserId: string) {
     const scheduledAt = dto.scheduled_at ? new Date(dto.scheduled_at) : null;
     if (scheduledAt && isNaN(scheduledAt.getTime())) {
@@ -396,6 +458,41 @@ export class NotificationsService {
       if (explicitIds.length === 0) return [];
       return this.usersRepo.find({
         where: { id: In(explicitIds), status: CommonStatus.ACTIVE },
+      });
+    }
+
+    if (audience === NotificationAudience.DONORS) {
+      const donorRole = await this.rolesRepo.findOne({ where: { name: 'DONOR' } });
+      const donorUserIds: string[] = [];
+      if (donorRole) {
+        const userRoles = await this.userRolesRepo.find({
+          where: { role_id: donorRole.id },
+          select: ['user_id'],
+        });
+        donorUserIds.push(...userRoles.map((ur) => ur.user_id));
+      }
+
+      try {
+        const donationRecords: Array<{ user_id: string | null }> = await this.usersRepo.query(
+          `SELECT DISTINCT user_id FROM donation_payments WHERE user_id IS NOT NULL
+           UNION
+           SELECT DISTINCT created_by AS user_id FROM donations WHERE created_by IS NOT NULL`,
+        );
+        for (const row of donationRecords) {
+          if (row.user_id && !donorUserIds.includes(row.user_id)) {
+            donorUserIds.push(row.user_id);
+          }
+        }
+      } catch {
+        // Ignore fallback
+      }
+
+      if (donorUserIds.length === 0) {
+        return this.usersRepo.find({ where: { status: CommonStatus.ACTIVE }, take: 200 });
+      }
+
+      return this.usersRepo.find({
+        where: { id: In(donorUserIds), status: CommonStatus.ACTIVE },
       });
     }
 

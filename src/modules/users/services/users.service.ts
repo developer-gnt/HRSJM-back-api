@@ -20,12 +20,19 @@ export interface UserProfile {
   mobile_number: string;
   email: string | null;
   dob?: string | null;
+  gender?: string | null;
+  address?: string | null;
   avatar?: string | null;
   status: string;
   roles: UserRoleInfo[];
   created_at: Date;
   updated_at: Date;
   membership_status?: string | null;
+  membership_expires_at?: string | null;
+  membership_start_date?: string | null;
+  membership_category?: string | null;
+  membership_number?: string | null;
+  membership_days_remaining?: number | null;
   assistance_status?: string | null;
   account_type?: 'general' | 'member' | 'seeker' | 'admin';
 }
@@ -69,19 +76,17 @@ export class UsersService {
     });
     if (!user) return null;
 
-    let membershipStatus: string | null = null;
+    let membership: MembershipEntity | null = null;
     let assistanceStatus: string | null = null;
 
     try {
-      const membership = await this.dataSource
+      membership = await this.dataSource
         .getRepository(MembershipEntity)
         .findOne({
           where: { user_id: id },
           order: { created_at: 'DESC' },
+          relations: ['category'],
         });
-      if (membership) {
-        membershipStatus = membership.status;
-      }
     } catch {
       // Ignore if memberships table or repository unavailable
     }
@@ -100,12 +105,12 @@ export class UsersService {
       // Ignore if assistance_requests table or repository unavailable
     }
 
-    return this.toProfile(user, membershipStatus, assistanceStatus);
+    return this.toProfile(user, membership, assistanceStatus);
   }
 
   toProfile(
     user: UserEntity & { user_roles?: UserRoleEntity[] },
-    membershipStatus?: string | null,
+    membershipOrStatus?: MembershipEntity | string | null,
     assistanceStatus?: string | null,
   ): UserProfile {
     const roles = (user.user_roles ?? [])
@@ -116,13 +121,47 @@ export class UsersService {
         name: role.name,
       }));
 
+    let membershipStatus: string | null = null;
+    let membershipExpiresAt: string | null = null;
+    let membershipStartDate: string | null = null;
+    let membershipCategory: string | null = null;
+    let membershipNumber: string | null = null;
+    let membershipDaysRemaining: number | null = null;
+
+    if (membershipOrStatus && typeof membershipOrStatus === 'object') {
+      const m = membershipOrStatus as MembershipEntity;
+      membershipStatus = m.status;
+      membershipExpiresAt = m.expiry_date ? new Date(m.expiry_date).toISOString() : null;
+      membershipStartDate = m.start_date ? new Date(m.start_date).toISOString() : null;
+      membershipCategory = (m.application_data as any)?.membership_type || m.category?.name || null;
+      membershipNumber = m.membership_number ?? null;
+      if (m.expiry_date) {
+        membershipDaysRemaining = Math.max(
+          0,
+          Math.ceil((new Date(m.expiry_date).getTime() - Date.now()) / (1000 * 60 * 60 * 24)),
+        );
+      }
+    } else if (typeof membershipOrStatus === 'string') {
+      membershipStatus = membershipOrStatus;
+    }
+
     const roleNames = roles.map((r) => r.name.toUpperCase());
     let accountType: 'general' | 'member' | 'seeker' | 'admin' = 'general';
     if (roleNames.some((r) => ['ADMIN', 'SUPER_ADMIN'].includes(r))) {
       accountType = 'admin';
-    } else if (roleNames.includes('MEMBER') || membershipStatus) {
+    } else if (
+      (roleNames.includes('MEMBER') && membershipStatus !== 'PENDING' && membershipStatus !== 'UNDER_REVIEW') ||
+      membershipStatus === 'ACTIVE' ||
+      membershipStatus === 'APPROVED'
+    ) {
       accountType = 'member';
-    } else if (roleNames.some((r) => ['SEEKER', 'DONATION_SEEKER'].includes(r)) || assistanceStatus) {
+      if (!membershipStatus && user.status === 'ACTIVE') {
+        membershipStatus = 'ACTIVE';
+      }
+    } else if (
+      (roleNames.some((r) => ['SEEKER', 'DONATION_SEEKER'].includes(r)) && assistanceStatus !== 'PENDING' && assistanceStatus !== 'UNDER_REVIEW') ||
+      assistanceStatus === 'APPROVED'
+    ) {
       accountType = 'seeker';
     }
 
@@ -132,12 +171,19 @@ export class UsersService {
       mobile_number: user.mobile_number,
       email: user.email,
       dob: user.dob ?? null,
+      gender: user.gender ?? null,
+      address: user.address ?? null,
       avatar: user.avatar ?? null,
       status: user.status,
       roles,
       created_at: user.created_at,
       updated_at: user.updated_at,
       membership_status: membershipStatus ?? null,
+      membership_expires_at: membershipExpiresAt,
+      membership_start_date: membershipStartDate,
+      membership_category: membershipCategory,
+      membership_number: membershipNumber,
+      membership_days_remaining: membershipDaysRemaining,
       assistance_status: assistanceStatus ?? null,
       account_type: accountType,
     };
@@ -181,6 +227,9 @@ export class UsersService {
     password_hash: string;
     roleName?: string;
     roleId?: string;
+    dob?: string | null;
+    gender?: string | null;
+    avatar?: string | null;
   }): Promise<UserEntity> {
     return this.dataSource.transaction(async (manager) => {
       const user = await manager
@@ -191,6 +240,9 @@ export class UsersService {
             mobile_number: input.mobile_number,
             email: input.email,
             password_hash: input.password_hash,
+            dob: input.dob ?? null,
+            gender: input.gender ?? null,
+            avatar: input.avatar ?? null,
           }),
         );
 
@@ -341,11 +393,13 @@ export class UsersService {
 
   async updateProfile(
     user: UserEntity,
-    patch: { full_name?: string; email?: string | null; mobile_number?: string; avatar?: string | null; dob?: string | null },
+    patch: { full_name?: string; email?: string | null; mobile_number?: string; avatar?: string | null; dob?: string | null; gender?: string | null; address?: string | null },
   ): Promise<UserProfile> {
     if (patch.full_name !== undefined) user.full_name = patch.full_name.trim();
     if (patch.avatar !== undefined) user.avatar = patch.avatar;
     if (patch.dob !== undefined) user.dob = patch.dob ? patch.dob.trim() : null;
+    if (patch.gender !== undefined) user.gender = patch.gender ? patch.gender.trim() : null;
+    if (patch.address !== undefined) user.address = patch.address ? patch.address.trim() : null;
     if (patch.email !== undefined) {
       const cleanEmail = patch.email ? patch.email.trim().toLowerCase() : null;
       const currentEmail = user.email ? user.email.trim().toLowerCase() : null;

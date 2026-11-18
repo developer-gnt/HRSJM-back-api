@@ -3,7 +3,7 @@ import { MatchConstraint } from '../../../common/validators/match.constraint';
 
 export class ForgotPasswordDto {
   @IsString()
-  @MinLength(3)
+  @IsEmail({}, { message: 'Please provide a valid email address' })
   identifier: string;
 }
 

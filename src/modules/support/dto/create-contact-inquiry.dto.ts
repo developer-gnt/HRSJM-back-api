@@ -23,6 +23,15 @@ export class CreateContactInquiryDto {
   @IsString()
   subject?: string;
 
+  @ApiPropertyOptional({ example: 'Contact Us', description: 'Form or module name' })
+  @IsOptional()
+  @IsString()
+  formName?: string;
+
+  @ApiPropertyOptional({ description: 'Additional structured form metadata' })
+  @IsOptional()
+  metadata?: Record<string, any>;
+
   @ApiProperty({ example: 'I need legal guidance regarding human rights.', description: 'Inquiry message' })
   @IsString()
   @IsNotEmpty()

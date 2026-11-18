@@ -58,6 +58,17 @@ export class DonationPaymentsController {
     return this.donationPaymentsService.list(dto, user.sub, isAdmin);
   }
 
+  @Get('my')
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard)
+  @ApiOperation({ summary: 'List current user donation payments' })
+  getMyDonations(
+    @Query() dto: ListDonationPaymentsDto,
+    @AuthenticatedUser() user: { sub: string },
+  ) {
+    return this.donationPaymentsService.list(dto, user.sub, false);
+  }
+
   @Get(':id')
   @UseGuards(OptionalJwtAuthGuard)
   @ApiOperation({ summary: 'View single donation payment details' })

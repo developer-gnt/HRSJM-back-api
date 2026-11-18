@@ -8,6 +8,7 @@ import {
   Optional,
 } from '@nestjs/common';
 import { MailService } from '../../mail/mail.service';
+import { NotificationsService } from '../../notifications/services/notifications.service';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Brackets, DataSource, EntityManager, Repository } from 'typeorm';
 import { DonationEntity } from '../../donations/entities/donation.entity';
@@ -54,6 +55,8 @@ export class DonationPaymentsService implements OnModuleInit {
     private readonly audit: AuditService,
     @Optional()
     private readonly mailService?: MailService,
+    @Optional()
+    private readonly notificationsService?: NotificationsService,
   ) {}
 
   async onModuleInit() {
@@ -102,16 +105,25 @@ export class DonationPaymentsService implements OnModuleInit {
       });
     }
 
+    const rawUserId = actingUserId || dto.user_id || donation.user_id || donation.created_by || null;
+    const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+    const resolvedUserId = rawUserId && UUID_REGEX.test(rawUserId) ? rawUserId : null;
+
+    if (!donation.user_id && resolvedUserId) {
+      donation.user_id = resolvedUserId;
+      await this.donations.save(donation);
+    }
+
     const payment = this.payments.create({
       donation_id: donation.id,
-      user_id: actingUserId ?? null,
+      user_id: resolvedUserId,
       amount,
       payment_method: dto.payment_method ?? 'ONLINE',
       payment_status: PaymentStatus.PENDING,
       gateway_order_id: dto.transaction_id ?? null,
       notes: dto.notes ?? null,
-      created_by: actingUserId ?? null,
-      updated_by: actingUserId ?? null,
+      created_by: resolvedUserId,
+      updated_by: resolvedUserId,
     });
 
     const savedPayment = await this.payments.save(payment);
@@ -121,8 +133,8 @@ export class DonationPaymentsService implements OnModuleInit {
       gateway_name: 'CASHFREE',
       amount: savedPayment.amount,
       status: 'INITIATED',
-      created_by: actingUserId ?? null,
-      updated_by: actingUserId ?? null,
+      created_by: resolvedUserId,
+      updated_by: resolvedUserId,
     });
     await this.transactions.save(transaction);
 
@@ -159,12 +171,14 @@ export class DonationPaymentsService implements OnModuleInit {
       .skip((page - 1) * limit)
       .take(limit);
 
-    if (!isAdmin) {
+    const targetUserId = dto.user_id || (!isAdmin ? actingUserId : (dto.my_only ? actingUserId : null));
+
+    if (targetUserId) {
       let userMobile = '';
       let userEmail = '';
       if (this.dataSource) {
         try {
-          const user = await this.dataSource.getRepository(UserEntity).findOne({ where: { id: actingUserId } });
+          const user = await this.dataSource.getRepository(UserEntity).findOne({ where: { id: targetUserId } });
           if (user?.mobile_number) {
             userMobile = user.mobile_number.replace(/\D/g, '').slice(-10);
           }
@@ -177,9 +191,10 @@ export class DonationPaymentsService implements OnModuleInit {
       const conditions: string[] = [
         'payment.user_id = :userId',
         'payment.created_by = :userId',
+        'donation.user_id = :userId',
         'donation.created_by = :userId',
       ];
-      const params: Record<string, any> = { userId: actingUserId };
+      const params: Record<string, any> = { userId: targetUserId };
 
       if (userMobile && userMobile.length === 10) {
         conditions.push('donation.donor_mobile LIKE :mobileEnding');
@@ -284,6 +299,9 @@ export class DonationPaymentsService implements OnModuleInit {
 
     const result = await this.dataSource.transaction(async (manager) => {
       const now = new Date();
+      if (!payment.user_id && actingUserId) {
+        payment.user_id = actingUserId;
+      }
       payment.payment_status = PaymentStatus.SUCCESS;
       payment.gateway_payment_id = dto.gateway_payment_id;
       if (dto.gateway_order_id) {
@@ -370,6 +388,7 @@ export class DonationPaymentsService implements OnModuleInit {
         }
       }
 
+      const causeTitle = savedPayment.donation?.cause || 'General Donation';
       const receipt = manager.create(ReceiptEntity, {
         receipt_number: receiptNumber,
         receipt_date: now,
@@ -379,7 +398,7 @@ export class DonationPaymentsService implements OnModuleInit {
         payment_method: savedPayment.payment_method,
         receipt_type: 'DONATION',
         issued_to: savedPayment.donation?.donor_name ?? 'Donor',
-        notes: `Donation payment verified via ${savedPayment.payment_method}`,
+        notes: causeTitle,
         accounting_entry_id: entry.id,
         created_by: receiptUserId,
         updated_by: receiptUserId,
@@ -402,6 +421,9 @@ export class DonationPaymentsService implements OnModuleInit {
       });
       if (donation) {
         donation.status = 'SUCCESS';
+        if (!donation.user_id && (payment.user_id || actingUserId)) {
+          donation.user_id = payment.user_id || actingUserId || null;
+        }
         donation.updated_by = actingUserId ?? null;
         await manager.save(DonationEntity, donation);
       }
@@ -421,6 +443,31 @@ export class DonationPaymentsService implements OnModuleInit {
         donationId: result.payment.donation_id,
       },
     });
+
+    // Real-time in-app notification to donor (if registered) and administrators
+    if (this.notificationsService) {
+      if (payment.user_id) {
+        this.notificationsService
+          .sendToUser(
+            payment.user_id,
+            'Donation Received with Gratitude 🙏',
+            `Thank you for your generous donation of ₹${result.payment.amount}. Receipt #${result.receipt.receipt_number} has been generated.`,
+            actingUserId || undefined,
+          )
+          .catch((err) => {
+            this.logger.error(`Error sending donation notification to user: ${err.message}`);
+          });
+      }
+      this.notificationsService
+        .sendToAdmins(
+          'New Donation Received 💰',
+          `Donation of ₹${result.payment.amount} received (Receipt #${result.receipt.receipt_number}).`,
+          actingUserId || undefined,
+        )
+        .catch((err) => {
+          this.logger.error(`Error sending donation notification to admins: ${err.message}`);
+        });
+    }
 
     // Asynchronously dispatch official gratitude email to donor if email was provided
     if (this.mailService) {

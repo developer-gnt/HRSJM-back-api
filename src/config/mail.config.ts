@@ -8,4 +8,8 @@ export default registerAs('mail', () => ({
   pass: process.env.SMTP_PASS || '',
   from: process.env.MAIL_FROM || process.env.SMTP_FROM || 'thefarooquicollection@gmail.com',
   fromName: process.env.SMTP_FROM_NAME || 'Human Rights & Social Justice Mission (HRSJM)',
+  adminRecipient:
+    process.env.ADMIN_NOTIFICATION_EMAIL ||
+    process.env.PRESIDENT_EMAIL ||
+    'president.hrsjm@gmail.com',
 }));

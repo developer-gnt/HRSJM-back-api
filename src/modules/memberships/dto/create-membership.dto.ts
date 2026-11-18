@@ -49,6 +49,11 @@ export class CreateMembershipDto {
   @IsString()
   police_station?: string;
 
+  @ApiPropertyOptional({ description: 'Applicant profile photo / avatar URL or URI' })
+  @IsOptional()
+  @IsString()
+  avatar?: string;
+
   @ApiPropertyOptional({
     description: 'Personal details (dob, gender, address)',
     example: { dob: '1990-01-01', gender: 'MALE', address: '123 Main St, New Delhi' },
@@ -61,6 +66,12 @@ export class CreateMembershipDto {
   @IsOptional()
   @IsObject()
   application_data?: Record<string, unknown>;
+
+  @ApiPropertyOptional({ description: '6-digit Referral code of introducing active member', example: '582914' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(20)
+  referral_code?: string;
 
   @ApiPropertyOptional({ description: 'Admin notes' })
   @IsOptional()

@@ -19,7 +19,7 @@ import { ListReceiptEntriesDto } from '../dto/list-receipt-entries.dto';
 import { UpdateReceiptEntryDto } from '../dto/update-receipt-entry.dto';
 import { UpdateReceiptStatusDto } from '../dto/update-receipt-status.dto';
 import { ReceiptEntryEntity } from '../entities/receipt-entry.entity';
-import { ReceiptStatus } from '../enums/receipt-entry.enums';
+import { ReceiptPaymentMethod, ReceiptStatus } from '../enums/receipt-entry.enums';
 
 function formatVoucherNumber(receiptDate: Date, seq: number): string {
   const y = receiptDate.getUTCFullYear();
@@ -96,21 +96,59 @@ export class ReceiptEntriesService {
       }
 
       // 2. Validate Received In (Asset) Account
-      const receivedInAccount = await manager.findOne(AccountEntity, {
-        where: { id: dto.received_in_account_id },
-      });
-      if (!receivedInAccount) {
-        throw new NotFoundException({
-          message: 'Received-in payment account not found',
-          code: 'RECEIVED_IN_ACCOUNT_NOT_FOUND',
-          details: { id: dto.received_in_account_id },
+      let receivedInAccount: AccountEntity | null = null;
+      if (dto.received_in_account_id) {
+        receivedInAccount = await manager.findOne(AccountEntity, {
+          where: { id: dto.received_in_account_id },
         });
+        if (!receivedInAccount) {
+          throw new NotFoundException({
+            message: 'Received-in payment account not found',
+            code: 'RECEIVED_IN_ACCOUNT_NOT_FOUND',
+            details: { id: dto.received_in_account_id },
+          });
+        }
+      } else {
+        // Auto-resolve received-in account based on payment_method
+        const isCash = dto.payment_method === ReceiptPaymentMethod.CASH;
+        const targetCode = isCash ? '1002' : '1001';
+        receivedInAccount = await manager.findOne(AccountEntity, {
+          where: {
+            account_code: targetCode,
+            account_type: AccountType.ASSET,
+            is_active: true,
+          },
+        });
+        // Fallback to name pattern match if specific code not found
+        if (!receivedInAccount) {
+          receivedInAccount = await manager
+            .createQueryBuilder(AccountEntity, 'acc')
+            .where('acc.account_type = :type', { type: AccountType.ASSET })
+            .andWhere('acc.is_active = true')
+            .andWhere('acc.account_name ILIKE :kw', {
+              kw: isCash ? '%cash%' : '%bank%',
+            })
+            .getOne();
+        }
+        // Fallback to any active asset account
+        if (!receivedInAccount) {
+          receivedInAccount = await manager.findOne(AccountEntity, {
+            where: { account_type: AccountType.ASSET, is_active: true },
+          });
+        }
+        if (!receivedInAccount) {
+          throw new NotFoundException({
+            message: 'No active asset account (Cash/Bank) found to debit receipt',
+            code: 'RECEIVED_IN_ACCOUNT_NOT_FOUND',
+          });
+        }
       }
+
       if (!receivedInAccount.is_active) {
         throw new BadRequestException({
           message: 'Selected receiving account is inactive',
           code: 'RECEIVED_IN_ACCOUNT_INACTIVE',
-          details: { id: dto.received_in_account_id },
+          details: { id: receivedInAccount.id },
         });
       }
       if (receivedInAccount.account_type !== AccountType.ASSET) {
@@ -119,7 +157,7 @@ export class ReceiptEntriesService {
             'Selected receiving account must have account type ASSET (Bank/Cash)',
           code: 'INVALID_RECEIVED_IN_ACCOUNT_TYPE',
           details: {
-            id: dto.received_in_account_id,
+            id: receivedInAccount.id,
             account_type: receivedInAccount.account_type,
           },
         });
@@ -138,7 +176,7 @@ export class ReceiptEntriesService {
         receipt_date: receiptDate,
         received_from: dto.received_from.trim(),
         income_account_id: dto.income_account_id,
-        received_in_account_id: dto.received_in_account_id,
+        received_in_account_id: receivedInAccount.id,
         amount: dto.amount,
         payment_method: dto.payment_method,
         reference_number: dto.reference_number?.trim() || `REF-${voucherNumber}`,
@@ -161,7 +199,7 @@ export class ReceiptEntriesService {
           `Receipt voucher ${voucherNumber} received from ${dto.received_from.trim()}`,
         lines: [
           {
-            account_id: dto.received_in_account_id,
+            account_id: receivedInAccount.id,
             debit_amount: dto.amount,
             line_description: `Received via ${dto.payment_method}`,
           },
@@ -192,7 +230,7 @@ export class ReceiptEntriesService {
           amount: dto.amount,
           received_from: dto.received_from,
           income_account_id: dto.income_account_id,
-          received_in_account_id: dto.received_in_account_id,
+          received_in_account_id: receivedInAccount.id,
           accounting_entry_id: postedJournal.id,
         },
       });

@@ -1,7 +1,9 @@
+import { getResetPasswordPageHtml } from './reset-password-page.template';
 import {
   BadRequestException,
   ForbiddenException,
   Injectable,
+  Logger,
   InternalServerErrorException,
   UnauthorizedException,
   Optional,
@@ -32,9 +34,10 @@ import {
 } from '../../assistance/entities/assistance-request.entity';
 
 import { MailService } from '../../mail/mail.service';
+import { validateAgeEligibility } from '../../../common/utils/age.util';
 
 const BCRYPT_ROUNDS = 10;
-const RESET_TOKEN_TTL_MS = 30 * 60 * 1000;
+const RESET_TOKEN_TTL_MS = 15 * 60 * 1000; // 15-minute expiry per security requirements
 
 function sha256(value: string): string {
   return createHash('sha256').update(value).digest('hex');
@@ -45,8 +48,11 @@ export interface AuthTokens {
   refresh_token: string;
 }
 
+import { NotificationsService } from '../../notifications/services/notifications.service';
+
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
   constructor(
     private readonly usersService: UsersService,
     private readonly jwtService: JwtService,
@@ -58,6 +64,8 @@ export class AuthService {
     @InjectRepository(PasswordResetTokenEntity)
     private readonly resetTokens: Repository<PasswordResetTokenEntity>,
     private readonly mailService: MailService,
+    @Optional()
+    private readonly notificationsService?: NotificationsService,
   ) {}
 
   async register(
@@ -69,6 +77,27 @@ export class AuthService {
       dto.mobile_number,
       dto.email ?? null,
     );
+
+    // 18+ Age Eligibility Enforcement
+    const rawDob = dto.dob || dto.date_of_birth;
+    const ageCheck = validateAgeEligibility(rawDob);
+    if (!ageCheck.isValid) {
+      throw new BadRequestException({
+        message: ageCheck.error || 'Date of birth is required and must be valid',
+        code: ageCheck.errorCode || 'INVALID_DOB',
+        details: null,
+      });
+    }
+    if (!ageCheck.isEligible) {
+      throw new BadRequestException({
+        message: 'You must be at least 18 years old to register with HRSJM',
+        code: 'AGE_NOT_ELIGIBLE',
+        details: {
+          minimum_age: 18,
+          calculated_age: ageCheck.age,
+        },
+      });
+    }
 
     const isDonationSeekerRequest = dto.role_name === 'DONATION_SEEKER';
     // When someone creates an account as Donation Seeker, they are provisioned with
@@ -85,12 +114,15 @@ export class AuthService {
       // Self-service registration picks role by name (never ADMIN);
       // defaults to USER when unspecified or when seeker application is pending admin approval.
       roleName: dto.role_id ? undefined : initialRoleName,
+      dob: rawDob,
+      avatar: dto.avatar ?? null,
     });
 
+    let initialRequest: AssistanceRequestEntity | null = null;
     if (isDonationSeekerRequest) {
       try {
         const assistanceRepo = this.dataSource.getRepository(AssistanceRequestEntity);
-        const initialRequest = assistanceRepo.create({
+        initialRequest = assistanceRepo.create({
           user_id: user.id,
           full_name: dto.full_name.trim(),
           mobile: dto.mobile_number.trim(),
@@ -123,7 +155,48 @@ export class AuthService {
     });
 
     const tokens = await this.issueTokens(user, ip, userAgent);
-    return { user: await this.profileOrThrow(user.id), ...tokens };
+
+    if (this.notificationsService) {
+      // 1. In-app welcome notification to the newly registered user
+      this.notificationsService
+        .sendToUser(
+          user.id,
+          'Welcome to HRSJM 🏛️',
+          `Welcome, ${dto.full_name}! Your account has been registered successfully. Explore our initiatives, rights awareness, or file a complaint.`,
+          user.id,
+        )
+        .catch(() => {});
+
+      // 2. Alert administrators of new account
+      this.notificationsService
+        .sendToAdmins(
+          'New User Registration 👤',
+          `${dto.full_name} (${dto.mobile_number}) registered with role ${initialRoleName}.`,
+          user.id,
+        )
+        .catch(() => {});
+
+      // 3. If donation seeker, alert admins of pending verification
+      if (isDonationSeekerRequest) {
+        this.notificationsService
+          .sendToAdmins(
+            'New Donation Seeker Registration 🆘',
+            `Donation Seeker application received for ${dto.full_name} (${dto.mobile_number}). Awaiting verification and review.`,
+            user.id,
+          )
+          .catch(() => {});
+      }
+    }
+
+    const profile = await this.profileOrThrow(user.id);
+    const assistanceAppNumber = initialRequest
+      ? ("HRSJM-SEK-" + initialRequest.id.replace(/-/g, "").slice(0, 6).toUpperCase())
+      : undefined;
+    if (assistanceAppNumber) {
+      (profile as any).assistance_application_number = assistanceAppNumber;
+      (profile as any).assistance_request_id = initialRequest?.id;
+    }
+    return { user: profile, assistance_application_number: assistanceAppNumber, assistance_request_id: initialRequest?.id, ...tokens } as any;
   }
 
   async login(
@@ -328,12 +401,13 @@ export class AuthService {
     };
   }
 
-  async forgotPassword(
+    async forgotPassword(
     identifier: string,
     ip: string | null,
     userAgent: string | null,
-  ): Promise<{ delivered_mechanism: 'TBC'; reset_token?: string }> {
-    const user = await this.usersService.findByLoginIdentifier(identifier);
+  ): Promise<{ delivered_mechanism: 'EMAIL'; message: string }> {
+    const cleanEmail = identifier ? identifier.trim().toLowerCase() : '';
+    const user = cleanEmail ? await this.usersService.findByLoginIdentifier(cleanEmail) : null;
     await this.auditService.record({
       event: 'AUTH_PASSWORD_RESET_REQUESTED',
       actorId: user?.id ?? null,
@@ -344,7 +418,16 @@ export class AuthService {
       metadata: { account_found: Boolean(user) },
     });
 
-    if (!user) return { delivered_mechanism: 'TBC' };
+    const genericResponse: { delivered_mechanism: 'EMAIL'; message: string } = {
+      delivered_mechanism: 'EMAIL',
+      message: 'If an account exists with this email address, you will receive a password-reset link.',
+    };
+
+    if (!user || !user.email || !user.email.includes('@')) {
+      return genericResponse;
+    }
+
+
 
     const rawToken = randomBytes(32).toString('hex');
     await this.resetTokens.insert(
@@ -355,87 +438,207 @@ export class AuthService {
       }),
     );
 
-    // Delivery channel (email/SMS) is TBC per BRD. Outside production the raw
-    // token is returned in the response for manual testing only.
-    const isProduction = this.configService.get('app')?.env === 'production';
+    // Build the reset password URL without exposing or logging it
+    const baseUrl = (
+      process.env.PASSWORD_RESET_BASE_URL ||
+      process.env.FRONTEND_URL ||
+      process.env.APP_URL ||
+      'http://194.164.151.17:3000'
+    ).replace(/\/+$/, '');
+    const resetUrl = `${baseUrl}/reset-password?token=${rawToken}`;
+
+    // Dispatch email containing the reset URL if user has an email address
+    try {
+      await this.mailService.sendPasswordResetLinkEmail({
+        recipientName: user.full_name,
+        recipientEmail: user.email,
+        resetUrl,
+        expiresInMinutes: 15,
+      });
+      this.logger.log(`[AuthService] Password reset link dispatched for account (expires in 15m)`);
+    } catch (err) {
+      this.logger.error(`Failed to deliver password reset email: ${err.message}`);
+    }
+
+    return genericResponse;
+  }
+
+  async verifyResetToken(token: string): Promise<{ valid: boolean; email?: string }> {
+    if (!token || typeof token !== 'string') {
+      throw new BadRequestException({
+        message: 'Invalid or missing reset token',
+        code: 'RESET_TOKEN_INVALID',
+      });
+    }
+
+    const stored = await this.resetTokens.findOne({
+      where: { token_hash: sha256(token.trim()) },
+    });
+
+    if (!stored) {
+      throw new BadRequestException({
+        message: 'This password reset link is invalid. Please request a new link from the mobile application.',
+        code: 'RESET_TOKEN_INVALID',
+      });
+    }
+
+    if (stored.used_at) {
+      throw new BadRequestException({
+        message: 'This reset link has already been used or superseded by a newer request. Please check your inbox for the most recent link.',
+        code: 'RESET_TOKEN_ALREADY_USED',
+      });
+    }
+
+    if (stored.expires_at.getTime() < Date.now()) {
+      throw new BadRequestException({
+        message: 'This reset link has expired (15-minute validity exceeded). Please request a new link from the mobile application.',
+        code: 'RESET_TOKEN_EXPIRED',
+      });
+    }
+
+    const user = await this.usersService.findById(stored.user_id);
+    const maskedEmail = user?.email
+      ? `${user.email.slice(0, 3)}***@${user.email.split('@')[1]}`
+      : undefined;
+
     return {
-      delivered_mechanism: 'TBC',
-      ...(isProduction ? {} : { reset_token: rawToken }),
+      valid: true,
+      email: maskedEmail,
     };
   }
 
-  async resetPassword(
+async resetPassword(
     dto: ResetPasswordDto,
     ip: string | null,
     userAgent: string | null,
   ): Promise<void> {
-    const stored = await this.resetTokens.findOne({
-      where: { token_hash: sha256(dto.token) },
-    });
-
-    if (!stored || stored.used_at || stored.expires_at.getTime() < Date.now()) {
+    const rawToken = dto.token ? dto.token.trim() : '';
+    if (!rawToken) {
       throw new BadRequestException({
-        message: 'Invalid or expired reset token',
+        message: 'This password reset link is invalid. Please request a new link from the mobile application.',
         code: 'RESET_TOKEN_INVALID',
         details: null,
       });
     }
 
+    const tokenHash = sha256(rawToken);
     const password_hash = await bcrypt.hash(dto.password, BCRYPT_ROUNDS);
+    let userId: string | null = null;
 
-    await this.dataSource.transaction(async (manager) => {
-      const user = await manager
-        .getRepository(UserEntity)
-        .findOne({ where: { id: stored.user_id } });
-      if (!user) {
-        throw new BadRequestException({
-          message: 'Invalid or expired reset token',
-          code: 'RESET_TOKEN_INVALID',
-          details: null,
-        });
-      }
-
-      user.password_hash = password_hash;
-      user.updated_by = user.id;
-      await manager.getRepository(UserEntity).save(user);
-
-      stored.used_at = new Date();
-      await manager.getRepository(PasswordResetTokenEntity).save(stored);
-
-      // Revoke every still-active refresh token of the user (TC-AUTH-031).
-      await manager
-        .getRepository(RefreshTokenEntity)
-        .update(
-          { user_id: user.id, revoked_at: IsNull() },
-          { revoked_at: new Date() },
-        );
-    });
-
-    await this.auditService.record({
-      event: 'AUTH_PASSWORD_RESET',
-      actorId: stored.user_id,
-      entityType: 'user',
-      entityId: stored.user_id,
-      ip,
-      userAgent,
-    });
-
-    // Dispatch security email notification
     try {
-      const user = await this.usersService.findById(stored.user_id);
-      if (user?.email && user.email.includes('@')) {
-        this.mailService
-          .sendPasswordChangedNoticeEmail({
-            recipientName: user.full_name,
-            recipientEmail: user.email,
-            changedAt: new Date(),
-          })
-          .catch((mailErr) => {
-            console.error(`[AuthService] Failed to send password changed alert: ${mailErr.message}`);
+      await this.dataSource.transaction(async (manager) => {
+        const tokenRepo = manager.getRepository(PasswordResetTokenEntity);
+        // Look up token within transaction with pessimistic write lock to prevent race conditions
+        let stored: PasswordResetTokenEntity | null = null;
+        try {
+          stored = await tokenRepo.findOne({
+            where: { token_hash: tokenHash },
+            lock: { mode: 'pessimistic_write' },
           });
+        } catch {
+          // Fallback if driver does not support row lock in current mode
+          stored = await tokenRepo.findOne({
+            where: { token_hash: tokenHash },
+          });
+        }
+
+        if (!stored) {
+          throw new BadRequestException({
+            message: 'This password reset link is invalid. Please request a new link from the mobile application.',
+            code: 'RESET_TOKEN_INVALID',
+            details: null,
+          });
+        }
+
+        if (stored.used_at) {
+          throw new BadRequestException({
+            message: 'This reset link has already been used. If you requested multiple links, please check your inbox for the most recent email.',
+            code: 'RESET_TOKEN_ALREADY_USED',
+            details: null,
+          });
+        }
+
+        if (stored.expires_at.getTime() < Date.now()) {
+          throw new BadRequestException({
+            message: 'This password reset link has expired (15-minute limit exceeded). Please request a fresh reset link from the mobile application.',
+            code: 'RESET_TOKEN_EXPIRED',
+            details: null,
+          });
+        }
+
+        const userRepo = manager.getRepository(UserEntity);
+        const user = await userRepo.findOne({ where: { id: stored.user_id } });
+        if (!user) {
+          throw new BadRequestException({
+            message: 'User account associated with this reset link could not be found.',
+            code: 'RESET_TOKEN_INVALID',
+            details: null,
+          });
+        }
+
+        user.password_hash = password_hash;
+        user.updated_by = user.id;
+        await userRepo.save(user);
+
+        // Mark this token used
+        stored.used_at = new Date();
+        await tokenRepo.save(stored);
+
+        // Invalidate any other active/pending reset tokens for this user once password is changed
+        await tokenRepo.update(
+          { user_id: user.id, used_at: IsNull() },
+          { used_at: new Date() },
+        );
+
+        userId = user.id;
+
+        // Revoke every still-active refresh token of the user (TC-AUTH-031).
+        await manager
+          .getRepository(RefreshTokenEntity)
+          .update(
+            { user_id: user.id, revoked_at: IsNull() },
+            { revoked_at: new Date() },
+          );
+      });
+    } catch (err) {
+      if (err instanceof BadRequestException) {
+        throw err;
       }
-    } catch (mailErr) {
-      console.warn('Error initiating password changed security email:', mailErr);
+      this.logger.error(`Failed to reset password: ${err.message}`, err.stack);
+      throw new InternalServerErrorException({
+        message: 'Unable to reset password at this time. Please try again.',
+        code: 'RESET_PASSWORD_FAILED',
+        details: null,
+      });
+    }
+
+    if (userId) {
+      await this.auditService.record({
+        event: 'AUTH_PASSWORD_RESET',
+        actorId: userId,
+        entityType: 'user',
+        entityId: userId,
+        ip,
+        userAgent,
+      });
+
+      // Dispatch security email notification
+      try {
+        const user = await this.usersService.findById(userId);
+        if (user?.email && user.email.includes('@')) {
+          this.mailService
+            .sendPasswordChangedNoticeEmail({
+              recipientName: user.full_name,
+              recipientEmail: user.email,
+              changedAt: new Date(),
+            })
+            .catch((mailErr) => {
+              this.logger.error(`[AuthService] Failed to send password changed alert: ${mailErr.message}`);
+            });
+        }
+      } catch (mailErr) {
+        this.logger.warn('Error initiating password changed security email:', mailErr);
+      }
     }
   }
 
@@ -541,6 +744,62 @@ export class AuthService {
     };
   }
 
+  async getUserImpact(userId: string): Promise<{
+    complaintsSubmitted: number;
+    causesSupported: number;
+    totalDonations: number;
+    eventsAttended: number;
+  }> {
+    let complaintsSubmitted = 0;
+    let causesSupported = 0;
+    let totalDonations = 0;
+    let eventsAttended = 0;
+
+    try {
+      const tickets = await this.dataSource.query(
+        'SELECT count(*)::int as count FROM support_tickets WHERE user_id = $1',
+        [userId],
+      );
+      complaintsSubmitted = tickets[0]?.count ?? 0;
+    } catch {
+      // ignore
+    }
+
+    try {
+      const donations = await this.dataSource.query(
+        'SELECT count(*)::int as count, count(DISTINCT cause)::int as causes FROM donations WHERE user_id = $1',
+        [userId],
+      );
+      causesSupported = donations[0]?.causes ?? donations[0]?.count ?? 0;
+      totalDonations = donations[0]?.count ?? 0;
+    } catch {
+      // ignore
+    }
+
+    try {
+      const events = await this.dataSource.query(
+        "SELECT count(*)::int as count FROM events WHERE status = 'COMPLETED'",
+      );
+      eventsAttended = events[0]?.count ?? 0;
+      if (eventsAttended === 0) {
+        const anyEvents = await this.dataSource.query(
+          "SELECT count(*)::int as count FROM events WHERE status != 'CANCELLED'",
+        );
+        eventsAttended = anyEvents[0]?.count ?? 0;
+      }
+    } catch {
+      // ignore
+    }
+
+    return {
+      complaintsSubmitted,
+      causesSupported,
+      totalDonations,
+      eventsAttended,
+    };
+  }
+
+
   /**
    * Loads a user profile or fails loudly — after a successful auth operation the
    * profile must exist; a miss means data inconsistency, not a client error.
@@ -634,12 +893,18 @@ export class AuthService {
       return;
     }
 
-    const latestMembership = await this.dataSource
-      .getRepository(MembershipEntity)
-      .findOne({
-        where: { user_id: userId },
-        order: { created_at: 'DESC' },
-      });
+    let latestMembership: MembershipEntity | null = null;
+    try {
+      latestMembership = await this.dataSource
+        .getRepository(MembershipEntity)
+        .findOne({
+          where: { user_id: userId },
+          order: { created_at: 'DESC' },
+        });
+    } catch (err: any) {
+      this.logger.warn(`Could not verify membership status for ${userId}: ${err?.message}`);
+      return;
+    }
 
     if (!latestMembership) {
       return;
@@ -689,4 +954,12 @@ export class AuthService {
       });
     }
   }
+
+  /**
+   * Serve the dedicated responsive Reset Password webpage HTML
+   */
+  getResetPasswordPageHtml(token?: string): string {
+    return getResetPasswordPageHtml(token);
+  }
+
 }

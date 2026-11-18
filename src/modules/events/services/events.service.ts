@@ -1,10 +1,12 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { IsNull, Repository } from 'typeorm';
 import { EventEntity, EventStatus } from '../entities/event.entity';
 import { CreateEventDto } from '../dto/create-event.dto';
 import { UpdateEventDto } from '../dto/update-event.dto';
 import { ListEventsDto } from '../dto/list-events.dto';
+import { NotificationsService } from '../../notifications/services/notifications.service';
+import { NotificationAudience } from '../../notifications/entities/notification.entity';
 
 export interface EventStatsSummary {
   total: number;
@@ -26,6 +28,8 @@ export class EventsService {
   constructor(
     @InjectRepository(EventEntity)
     private readonly eventRepo: Repository<EventEntity>,
+    @Optional()
+    private readonly notifications?: NotificationsService,
   ) {}
 
   async findAll(dto: ListEventsDto): Promise<EventsListResponse> {
@@ -84,6 +88,12 @@ export class EventsService {
       );
     }
 
+    const isEnabledFilter = dto.is_enabled ?? dto.isEnabled;
+    if (isEnabledFilter && isEnabledFilter.toLowerCase() !== 'all') {
+      const boolVal = isEnabledFilter.toLowerCase() === 'true';
+      qb.andWhere('e.is_enabled = :isEnabled', { isEnabled: boolVal });
+    }
+
     if (dto.status === EventStatus.UPCOMING) {
       // Upcoming events ordered chronologically ascending (nearest first)
       qb.orderBy('e.start_at', 'ASC');
@@ -128,8 +138,32 @@ export class EventsService {
   }
 
   async create(dto: CreateEventDto, userId?: string): Promise<EventEntity> {
+    const isEnabled =
+      dto.is_enabled !== undefined
+        ? dto.is_enabled
+        : dto.isEnabled !== undefined
+        ? dto.isEnabled
+        : true;
+
+    const isDonationEnabled =
+      dto.is_donation_enabled !== undefined
+        ? dto.is_donation_enabled
+        : dto.isDonationEnabled !== undefined
+        ? dto.isDonationEnabled
+        : false;
+
+    const donationMessage =
+      dto.donation_message !== undefined
+        ? dto.donation_message
+        : dto.donationMessage !== undefined
+        ? dto.donationMessage
+        : null;
+
     const event = this.eventRepo.create({
       ...dto,
+      is_enabled: Boolean(isEnabled),
+      is_donation_enabled: Boolean(isDonationEnabled),
+      donation_message: isDonationEnabled && donationMessage ? donationMessage.trim() : null,
       created_by: userId ?? null,
       updated_by: userId ?? null,
       start_at: new Date(dto.start_at),
@@ -137,7 +171,26 @@ export class EventsService {
       status: dto.status ?? EventStatus.UPCOMING,
     });
 
-    return this.eventRepo.save(event);
+    const saved = await this.eventRepo.save(event);
+
+    if (this.notifications && saved.status === EventStatus.UPCOMING) {
+      const dateStr = new Date(saved.start_at).toLocaleDateString('en-IN', {
+        day: 'numeric',
+        month: 'short',
+        year: 'numeric',
+      });
+      const locationStr = saved.location ? ` at ${saved.location}` : '';
+      this.notifications
+        .broadcastToAudience(
+          NotificationAudience.ALL_USERS,
+          `New Event: ${saved.title} 📅`,
+          `Join us for "${saved.title}" on ${dateStr}${locationStr}. View full details in the Events tab.`,
+          userId,
+        )
+        .catch(() => {});
+    }
+
+    return saved;
   }
 
   async update(
@@ -153,9 +206,26 @@ export class EventsService {
     if (dto.end_at !== undefined) {
       event.end_at = dto.end_at ? new Date(dto.end_at) : null;
     }
+    if (dto.is_enabled !== undefined || dto.isEnabled !== undefined) {
+      event.is_enabled = Boolean(
+        dto.is_enabled !== undefined ? dto.is_enabled : dto.isEnabled,
+      );
+    }
+    if (dto.is_donation_enabled !== undefined || dto.isDonationEnabled !== undefined) {
+      event.is_donation_enabled = Boolean(
+        dto.is_donation_enabled !== undefined ? dto.is_donation_enabled : dto.isDonationEnabled,
+      );
+    }
+    if (dto.donation_message !== undefined || dto.donationMessage !== undefined) {
+      const msg = dto.donation_message !== undefined ? dto.donation_message : dto.donationMessage;
+      event.donation_message = msg ? msg.trim() : null;
+    }
 
     Object.assign(event, {
       ...dto,
+      is_enabled: event.is_enabled,
+      is_donation_enabled: event.is_donation_enabled,
+      donation_message: event.donation_message,
       updated_by: userId ?? null,
       start_at: dto.start_at ? new Date(dto.start_at) : event.start_at,
       end_at: dto.end_at !== undefined ? (dto.end_at ? new Date(dto.end_at) : null) : event.end_at,

@@ -23,6 +23,7 @@ import { CreateCashfreeOrderDto } from './dto/create-cashfree-order.dto';
 import { RenewalRequestEntity } from '../../renewals/entities/renewal-request.entity';
 import { RenewalCalculationService } from '../../renewals/services/renewal-calculation.service';
 import { UserEntity } from '../../users/entities/user.entity';
+import { EventEntity } from '../../events/entities/event.entity';
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 function toValidUuid(val?: string | null): string | undefined {
@@ -129,7 +130,7 @@ export class CashfreeOrdersService {
   ) {
     let payment: DonationPaymentEntity | null = null;
     const paymentId = dto.reference_id?.trim();
-    const validActingUserId = this.toValidUuidOrNull(actingUserId);
+    const validActingUserId = this.toValidUuidOrNull(actingUserId) || this.toValidUuidOrNull(dto.user_id);
 
     if (paymentId) {
       payment = await this.donationPaymentsRepo.findOne({
@@ -182,15 +183,36 @@ export class CashfreeOrdersService {
 
       const donationsRepo = this.getDonationsRepo();
       if (donationsRepo) {
+        if (dto.event_id && this.dataSource) {
+          try {
+            const eventsRepo = this.dataSource.getRepository(EventEntity);
+            const ev = await eventsRepo.findOne({ where: { id: dto.event_id } });
+            if (ev && !ev.is_donation_enabled) {
+              throw new BadRequestException(
+                `Donations are currently disabled for event "${ev.title}".`,
+              );
+            }
+          } catch (err: any) {
+            if (err instanceof BadRequestException) throw err;
+          }
+        }
+
         const dbUser = await this.getDbUser(validActingUserId);
+        const remarkParts: string[] = [];
+        if (dto.event_id) remarkParts.push(`Event ID: ${dto.event_id}`);
+        if (dto.pan_number) remarkParts.push(`80G PAN: ${dto.pan_number}`);
+        const finalRemark = remarkParts.length > 0 ? remarkParts.join(' | ') : 'Donation from Website';
+
         const newDonation = donationsRepo.create({
+          user_id: validActingUserId,
           donor_name: dbUser?.full_name || dto.customer_name || 'Kind Citizen',
           donor_mobile: dbUser?.mobile_number || dto.customer_phone || '',
           donor_email: dbUser?.email || dto.customer_email || null,
-          cause: dto.order_note || 'General Support & Human Rights Protection',
+          cause: dto.order_note || (dto.event_id ? `Event Donation: ${dto.event_id}` : 'General Support & Human Rights Protection'),
           amount: donationAmount,
           status: 'PENDING',
-          remark: 'Donation from Website',
+          remark: finalRemark,
+          source: dto.event_id ? 'Event' : 'Website',
           created_by: validActingUserId,
           updated_by: validActingUserId,
         });
@@ -293,7 +315,7 @@ export class CashfreeOrdersService {
   ) {
     let payment: MembershipPaymentEntity | null = null;
     const refId = dto.reference_id?.trim();
-    const validActingUserId = this.toValidUuidOrNull(actingUserId);
+    const validActingUserId = this.toValidUuidOrNull(actingUserId) || this.toValidUuidOrNull(dto.user_id);
 
     if (refId) {
       payment = await this.membershipPaymentsRepo.findOne({
@@ -366,35 +388,62 @@ export class CashfreeOrdersService {
         (mem && mem.status === MembershipStatus.EXPIRED) ||
         (mem && mem.expiry_date && new Date(mem.expiry_date).getTime() < Date.now());
 
-      if (isRenewal && mem && this.renewalCalculationService) {
-        const renewalsRepo = this.getRenewalsRepo();
-        const pastRenewals = renewalsRepo
-          ? await renewalsRepo.find({
-              where: { membership_id: mem.id },
-              order: { created_at: 'ASC' },
-            })
-          : [];
+      if (isRenewal && mem) {
+        if (mem.expiry_date) {
+          const now = new Date();
+          const currentExpiry = new Date(mem.expiry_date);
+          const isOverdue = currentExpiry.getTime() < now.getTime();
+          const daysRemaining = !isOverdue
+            ? Math.ceil((currentExpiry.getTime() - now.getTime()) / (1000 * 60 * 60 * 24))
+            : 0;
 
-        renewalQuote = this.renewalCalculationService.calculateQuote({
-          membership: mem,
-          successfulRenewals: pastRenewals,
-        });
-
-        if (renewalQuote.requires_verification) {
-          throw new BadRequestException({
-            message: `Membership renewal requires administrative verification: ${renewalQuote.verification_reason}`,
-            code: 'MEMBERSHIP_VERIFICATION_REQUIRED',
-            details: { reason: renewalQuote.verification_reason },
-          });
+          if (!isOverdue && daysRemaining > 30) {
+            throw new BadRequestException({
+              message: 'Membership renewal is allowed only within 30 days before the expiry date.',
+              code: 'RENEWAL_WINDOW_NOT_OPEN',
+              details: { daysRemaining, expiryDate: mem.expiry_date },
+            });
+          }
         }
 
-        // Validate amount against authoritative quote (Test 9)
-        if (dto.amount !== undefined && Math.abs(dto.amount - renewalQuote.total_payable) > 0.01) {
-          throw new BadRequestException({
-            message: `Payable amount mismatch: server quoted INR ${renewalQuote.total_payable}, but received INR ${dto.amount}`,
-            code: 'RENEWAL_AMOUNT_MISMATCH',
-            details: { expected: renewalQuote.total_payable, provided: dto.amount },
+        if (this.renewalCalculationService) {
+          const renewalsRepo = this.getRenewalsRepo();
+          const pastRenewals = renewalsRepo
+            ? await renewalsRepo.find({
+                where: { membership_id: mem.id },
+                order: { created_at: 'ASC' },
+              })
+            : [];
+
+          renewalQuote = this.renewalCalculationService.calculateQuote({
+            membership: mem,
+            successfulRenewals: pastRenewals,
           });
+
+          if (renewalQuote.requires_verification) {
+            throw new BadRequestException({
+              message: `Membership renewal requires administrative verification: ${renewalQuote.verification_reason}`,
+              code: 'MEMBERSHIP_VERIFICATION_REQUIRED',
+              details: { reason: renewalQuote.verification_reason },
+            });
+          }
+
+          if (!renewalQuote.is_eligible_for_renewal) {
+            throw new BadRequestException({
+              message: renewalQuote.renewal_validation_message || 'Membership renewal is allowed only within 30 days before the expiry date.',
+              code: 'RENEWAL_WINDOW_NOT_OPEN',
+              details: { daysRemaining: renewalQuote.days_remaining },
+            });
+          }
+
+          // Validate amount against authoritative quote (Test 9)
+          if (dto.amount !== undefined && Math.abs(dto.amount - renewalQuote.total_payable) > 0.01) {
+            throw new BadRequestException({
+              message: `Payable amount mismatch: server quoted INR ${renewalQuote.total_payable}, but received INR ${dto.amount}`,
+              code: 'RENEWAL_AMOUNT_MISMATCH',
+              details: { expected: renewalQuote.total_payable, provided: dto.amount },
+            });
+          }
         }
       }
 

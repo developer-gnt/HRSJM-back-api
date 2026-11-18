@@ -70,6 +70,24 @@ export class RenewalsService {
       });
     }
 
+    // 30-day renewal window validation: allow renewal only within 30 days before expiry date or after expiry
+    if (membership.expiry_date) {
+      const now = new Date();
+      const currentExpiry = new Date(membership.expiry_date);
+      const isOverdue = currentExpiry.getTime() < now.getTime();
+      const daysRemaining = !isOverdue
+        ? Math.ceil((currentExpiry.getTime() - now.getTime()) / (1000 * 60 * 60 * 24))
+        : 0;
+
+      if (!isOverdue && daysRemaining > 30) {
+        throw new BadRequestException({
+          message: 'Membership renewal is allowed only within 30 days before the expiry date.',
+          code: 'RENEWAL_WINDOW_NOT_OPEN',
+          details: { daysRemaining, expiryDate: membership.expiry_date },
+        });
+      }
+    }
+
     const pastRenewals = await this.renewalsRepo.find({
       where: { membership_id: membership.id },
       order: { created_at: 'ASC' },
@@ -95,6 +113,7 @@ export class RenewalsService {
     const renewal = this.renewalsRepo.create({
       membership_id: dto.membership_id,
       requested_by: requestedBy,
+      user_id: requestedBy || dto.user_id,
       period_years: periodYears,
       amount,
       payment_method: dto.payment_method || 'CASH',
@@ -417,6 +436,11 @@ export class RenewalsService {
       renewal.requested_by,
       'Membership Renewal Activated! 🎉',
       `Your membership #${membership.membership_number} has been renewed and is now valid until ${newExpiry.toISOString().slice(0, 10)}. Receipt #${renewal.receipt_number}.`,
+      actingUserId,
+    );
+    await this.notifications.sendToAdmins(
+      'Membership Renewal Payment Received 💳',
+      `Member #${membership.membership_number} renewed membership for ${renewal.period_years} year(s). Receipt #${renewal.receipt_number}.`,
       actingUserId,
     );
 

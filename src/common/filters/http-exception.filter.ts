@@ -6,7 +6,7 @@ import {
   HttpStatus,
   Logger,
 } from '@nestjs/common';
-import { Response } from 'express';
+import { Request, Response } from 'express';
 
 interface ErrorBody {
   success: false;
@@ -30,7 +30,9 @@ export class HttpExceptionFilter implements ExceptionFilter {
   private readonly logger = new Logger(HttpExceptionFilter.name);
 
   catch(exception: unknown, host: ArgumentsHost) {
-    const response = host.switchToHttp().getResponse<Response>();
+    const ctx = host.switchToHttp();
+    const response = ctx.getResponse<Response>();
+    const request = ctx.getRequest<Request>();
 
     let status = HttpStatus.INTERNAL_SERVER_ERROR;
     let message = 'Internal server error';
@@ -49,7 +51,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
       } else if (body && typeof body === 'object') {
         const errorBody = body as Record<string, unknown>;
         if (Array.isArray(errorBody.message)) {
-          message = 'Validation failed';
+          message = errorBody.message.join('; ');
           details = errorBody.message;
         } else {
           message = (errorBody.message as string) ?? message;
@@ -58,6 +60,14 @@ export class HttpExceptionFilter implements ExceptionFilter {
             code = errorBody.code;
           }
         }
+      }
+
+      const method = request?.method || 'REQ';
+      const url = request?.url || '';
+      if (status >= 400 && status < 500) {
+        this.logger.warn(
+          `[HTTP ${status}] ${method} ${url} - ${message} (details: ${JSON.stringify(details)})`,
+        );
       }
     } else {
       const err = exception as any;
@@ -71,7 +81,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
         message = err.message || 'Server error';
       }
       this.logger.error(
-        exception instanceof Error ? exception.stack : String(exception),
+        `[HTTP ${status}] ${request?.method || 'REQ'} ${request?.url || ''} - ${exception instanceof Error ? exception.stack : String(exception)}`,
       );
     }
 

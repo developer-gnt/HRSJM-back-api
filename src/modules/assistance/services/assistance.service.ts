@@ -23,6 +23,7 @@ import {
 import { AuditService } from '../../audit/services/audit.service';
 import { UsersService } from '../../users/services/users.service';
 import { NotificationsService } from '../../notifications/services/notifications.service';
+import { NotificationAudience } from '../../notifications/entities/notification.entity';
 import { DonationEntity } from '../../donations/entities/donation.entity';
 import { MailService } from '../../mail/mail.service';
 
@@ -315,6 +316,19 @@ export class AssistanceService {
 
     const enrichedItems = await this.attachRaisedAmounts(items);
 
+    if (enrichedItems.length > 0) {
+      try {
+        const requestIds = enrichedItems.map((r) => r.id);
+        const docs = await this.documentsService.findForRelatedEntities(
+          RelatedEntityType.ASSISTANCE_REQUEST,
+          requestIds,
+        );
+        enrichedItems.forEach((r) => {
+          r.documents = docs.filter((d) => d.related_entity_id === r.id);
+        });
+      } catch {}
+    }
+
     return {
       items: enrichedItems,
       meta: {
@@ -339,6 +353,8 @@ export class AssistanceService {
       .createQueryBuilder('request')
       .leftJoinAndSelect('request.user', 'user')
       .where('request.status = :status', { status: AssistanceRequestStatus.APPROVED })
+      .andWhere('request.requested_amount > 0')
+      .andWhere("LOWER(request.reason) NOT LIKE '%account verification%'")
       .orderBy('request.reviewed_at', 'DESC', 'NULLS LAST')
       .addOrderBy('request.created_at', 'DESC')
       .skip((page - 1) * limit)
@@ -465,7 +481,33 @@ export class AssistanceService {
     }
 
     const [enriched] = await this.attachRaisedAmounts([request]);
+    try {
+      const docs = await this.documentsService.findByRelatedEntity(
+        RelatedEntityType.ASSISTANCE_REQUEST,
+        id,
+      );
+      if (request.user_id) {
+        const userDocs = await this.documentsService.findByUser(request.user_id);
+        const map = new Map<string, any>();
+        docs.forEach((d) => map.set(d.id, d));
+        userDocs.forEach((d) => map.set(d.id, d));
+        (enriched as any).documents = Array.from(map.values());
+      } else {
+        (enriched as any).documents = docs;
+      }
+    } catch {
+      (enriched as any).documents = [];
+    }
     return enriched;
+  }
+
+  async getDocuments(
+    id: string,
+    actingUserId: string,
+    isAdmin = false,
+  ): Promise<any[]> {
+    const request = await this.getById(id, actingUserId, isAdmin);
+    return (request as any).documents || [];
   }
 
   async updateStatus(
@@ -524,6 +566,18 @@ export class AssistanceService {
       `Your assistance request status has been updated to ${saved.status}.${saved.admin_remark ? ' Remarks: ' + saved.admin_remark : ''}`,
       actingUserId,
     );
+
+    // If approved, broadcast to donors and members as an urgent verified cause
+    if (dto.status === AssistanceRequestStatus.APPROVED) {
+      this.notifications
+        .broadcastToAudience(
+          NotificationAudience.DONORS,
+          'Urgent Cause Needs Your Support 🙏',
+          `New verified cause: ${saved.reason} (₹${saved.requested_amount}). Your contribution can make an immediate difference.`,
+          actingUserId,
+        )
+        .catch(() => {});
+    }
 
     // Dispatch official email notification to applicant
     try {
