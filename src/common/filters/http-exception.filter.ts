@@ -90,6 +90,17 @@ export class HttpExceptionFilter implements ExceptionFilter {
       message,
       error: { code, details },
     };
+
+    const origin = request?.headers?.origin as string;
+    if (
+      origin &&
+      (/^https?:\/\/([a-z0-9-]+\.)*hrsjm\.org(:\d+)?$/i.test(origin) ||
+        /^https?:\/\/(localhost|127\.0\.0\.1|187\.126\.121\.157)(:\d+)?$/.test(origin))
+    ) {
+      response.setHeader('Access-Control-Allow-Origin', origin);
+      response.setHeader('Access-Control-Allow-Credentials', 'true');
+    }
+
     response.status(status).json(errorResponse);
   }
 }
