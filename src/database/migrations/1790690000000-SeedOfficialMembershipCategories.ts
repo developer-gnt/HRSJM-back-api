@@ -21,8 +21,8 @@ export class SeedOfficialMembershipCategories1790690000000 implements MigrationI
         validity_days: 365,
       },
       {
-        name: 'Lion, Counselor or Ambassador of State',
-        code: 'LION_COUNSELOR_AMBASSADOR',
+        name: 'Lion, Counselor   or Ambassador of State',
+        code: 'LION_Counselor  _AMBASSADOR',
         description: 'Qualification Required: 12th Pass (12 TH) | Referral Benefit: 3 Years Free Renewal',
         fee: 3000.0,
         validity_days: 365,
@@ -85,7 +85,7 @@ export class SeedOfficialMembershipCategories1790690000000 implements MigrationI
       `DELETE FROM "membership_categories" WHERE "code" IN (
         'DISTRICT_UNIT',
         'STATE_UNIT',
-        'LION_COUNSELOR_AMBASSADOR',
+        'LION_Counselor  _AMBASSADOR',
         'STATE_DIRECTOR',
         'NATIONAL_COUNCIL_CELL',
         'RENEWAL_1ST_YEAR',

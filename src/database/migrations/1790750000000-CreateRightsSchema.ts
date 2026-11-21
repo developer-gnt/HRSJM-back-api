@@ -149,7 +149,7 @@ export class CreateRightsSchema1790750000000 implements MigrationInterface {
         3890,
         'https://picsum.photos/seed/hrsjm-rights-04/400/300',
         'HRSJM Women Cell',
-        'Advocate & Counselor',
+        'Advocate & Counselor  ',
         'HRSJM',
         'Women Rights,POSH Act,Domestic Violence,Safety'
       ),

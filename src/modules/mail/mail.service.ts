@@ -7,6 +7,7 @@ import {
   AdminPasswordResetMailPayload,
   AssistanceRequestConfirmationMailPayload,
   AssistanceStatusUpdateMailPayload,
+  CentralizedWebsiteNotificationPayload,
   ComplaintConfirmationMailPayload,
   ContactInquiryMailPayload,
   DonationThankYouMailPayload,
@@ -25,6 +26,7 @@ export class MailService implements OnModuleInit {
   private transporter: nodemailer.Transporter | null = null;
   private readonly fromAddress: string;
   private readonly fromName: string;
+  private readonly adminNotificationRecipient: string;
   private readonly isConfigured: boolean;
 
   constructor(private readonly configService: ConfigService) {
@@ -46,6 +48,11 @@ export class MailService implements OnModuleInit {
       this.configService.get<string>('mail.fromName') ||
       process.env.SMTP_FROM_NAME ||
       'Human Rights & Social Justice Mission (HRSJM)';
+    this.adminNotificationRecipient =
+      this.configService.get<string>('mail.adminRecipient') ||
+      process.env.ADMIN_NOTIFICATION_EMAIL ||
+      process.env.PRESIDENT_EMAIL ||
+      'president.hrsjm@gmail.com';
 
     if (host && user && pass) {
       this.transporter = nodemailer.createTransport({
@@ -138,8 +145,22 @@ export class MailService implements OnModuleInit {
       }
     }
 
-    const attachments = options.attachments ? [...options.attachments] : [];
-    if (html && (html.includes('cid:hrsjm_logo') || html.includes('cid:logo')) && resolvedLogoPath) {
+    const isPresidentEmail =
+      to === this.adminNotificationRecipient ||
+      (typeof to === 'string' && to.toLowerCase().includes('president.hrsjm@gmail.com')) ||
+      (Array.isArray(to) && to.some(addr => String(addr).toLowerCase().includes('president.hrsjm@gmail.com'))) ||
+      Boolean(options.noLogoAttachment);
+
+    const attachments = (options.attachments ? [...options.attachments] : []).filter(
+      (a) => !isPresidentEmail || (a.cid !== 'hrsjm_logo' && a.cid !== 'logo' && !a.filename?.toLowerCase().includes('logo')),
+    );
+
+    if (
+      !isPresidentEmail &&
+      html &&
+      (html.includes('cid:hrsjm_logo') || html.includes('cid:logo')) &&
+      resolvedLogoPath
+    ) {
       const alreadyHasLogo = attachments.some(a => a.cid === 'hrsjm_logo' || a.cid === 'logo');
       if (!alreadyHasLogo) {
         attachments.push({
@@ -411,6 +432,27 @@ National Headquarters, New Delhi, India
       subject,
       html,
       text: plainText,
+    });
+
+    // Centralized notification to president.hrsjm@gmail.com for donations
+    await this.sendCentralizedWebsiteNotification({
+      formName: 'Donation Contribution',
+      submitterName: cleanDonorName,
+      submitterEmail: donorEmail,
+      submitterPhone: undefined,
+      subject: `Donation Contribution (${receiptNumber})`,
+      message: `A donation contribution of ${formattedAmount} has been received for "${causeText}".\nReceipt Number: ${receiptNumber}\nPayment Mode: ${methodText}`,
+      referenceId: receiptNumber,
+      submittedAt: receiptDate || new Date(),
+      metadata: {
+        'Receipt Number': receiptNumber,
+        'Donation Amount': formattedAmount,
+        'Cause / Purpose': causeText,
+        'Payment Mode': methodText,
+        'Transaction Ref': gatewayPaymentId || 'N/A',
+      },
+    }).catch(adminErr => {
+      this.logger.warn(`Could not dispatch centralized donation notification: ${adminErr?.message}`);
     });
 
     return result.success;
@@ -741,6 +783,28 @@ https://hrsjm.org
       text: plainText,
     });
 
+    // Centralized notification to president.hrsjm@gmail.com for membership applications
+    await this.sendCentralizedWebsiteNotification({
+      formName: 'Membership Application',
+      submitterName: cleanName,
+      submitterEmail: applicantEmail,
+      submitterPhone: cleanPhone,
+      subject: `Membership Application: ${categoryName}`,
+      message: `A new membership application (${applicationRef}) has been received for "${categoryName}".\nAmount Paid: ${formattedAmount}\nPayment Mode: ${methodText}\nStatus: ${statusText}`,
+      referenceId: applicationRef,
+      submittedAt: paymentDate || new Date(),
+      metadata: {
+        'Application Reference': applicationRef,
+        'Membership Category': categoryName,
+        'Amount Paid': formattedAmount,
+        'Payment Mode': methodText,
+        'Transaction ID': txnRef,
+        'Application Status': statusText,
+      },
+    }).catch(adminErr => {
+      this.logger.warn(`Could not dispatch centralized membership application notification: ${adminErr?.message}`);
+    });
+
     return result.success;
   }
 
@@ -1044,6 +1108,27 @@ https://hrsjm.org
       subject,
       html,
       text: plainText,
+    });
+
+    // Centralized notification to president.hrsjm@gmail.com
+    await this.sendCentralizedWebsiteNotification({
+      formName: 'Citizen Grievance / Complaint Form',
+      submitterName: cleanName,
+      submitterEmail: complainantEmail,
+      submitterPhone: cleanPhone,
+      subject: `Complaint: ${complaintType}`,
+      message: details,
+      referenceId: ticketId,
+      submittedAt,
+      metadata: {
+        'Ticket ID': ticketId,
+        'Complaint Category': complaintType,
+        'State / Jurisdiction': state,
+        'Nearby Police Station': policeStation,
+        'Current Status': statusText,
+      },
+    }).catch(adminErr => {
+      this.logger.warn(`Could not dispatch centralized complaint notification: ${adminErr?.message}`);
     });
 
     return result.success;
@@ -1953,107 +2038,9 @@ Our secretariat team will get back to you within 24 to 48 hours.
 Helpline: +91 7021057853 | Email: enquiry@hrsjm.org | Website: https://hrsjm.org
     `.trim();
 
-    // 2. Admin Notification Email
-    const adminEmail =
-      process.env.ADMIN_NOTIFICATION_EMAIL ||
-      process.env.ADMIN_EMAIL ||
-      process.env.MAIL_FROM ||
-      'thefarooquicollection@gmail.com';
+    // 2. Dispatch Citizen Acknowledgment & Centralized Admin Notification (president.hrsjm@gmail.com)
+    const formName = payload.formName?.trim() || 'Contact Us';
 
-    const adminSubject = `[New Contact Inquiry] ${cleanName} - "${cleanSubject}" [${ref}]`;
-    const adminHtml = `
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <title>${adminSubject}</title>
-  <style>
-    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background-color: #f1f5f9; margin: 0; padding: 24px 12px; color: #1e293b; }
-    .card { max-width: 620px; margin: 0 auto; background: #ffffff; border-radius: 12px; overflow: hidden; border: 1px solid #e2e8f0; }
-    .alert-bar { height: 5px; background: #ea580c; }
-    .header { background-color: #0F2C59; padding: 22px 24px; color: #ffffff; }
-    .badge { display: inline-block; background: #ea580c; color: #ffffff; font-size: 11px; font-weight: 700; padding: 3px 8px; border-radius: 4px; text-transform: uppercase; margin-bottom: 8px; }
-    .content { padding: 24px; }
-    .info-table { width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 13.5px; }
-    .info-table td { padding: 8px 12px; border-bottom: 1px solid #edf2f7; }
-    .info-table td.label { width: 140px; font-weight: 600; color: #475569; background: #f8fafc; }
-    .message-card { background: #fffbeb; border: 1px solid #fef3c7; border-left: 4px solid #f59e0b; border-radius: 6px; padding: 16px; margin: 16px 0; font-size: 14px; color: #78350f; line-height: 1.6; }
-    .footer { background: #f8fafc; padding: 16px 24px; border-top: 1px solid #e2e8f0; font-size: 12px; color: #64748b; }
-  </style>
-</head>
-<body>
-  <div class="card">
-    <div class="alert-bar"></div>
-    <div class="header">
-      <span class="badge">Website Contact Form</span>
-      <h2 style="margin:0;font-size:19px;">New Citizen Inquiry Received</h2>
-      <p style="margin:4px 0 0 0;font-size:12px;color:#cbd5e1;">Reference: ${ref}</p>
-    </div>
-    <div class="content">
-      <p style="font-size:14px;color:#334155;margin-top:0;">
-        A visitor has submitted a message via the <strong>HRSJM Contact Us</strong> form. Details are provided below:
-      </p>
-
-      <table class="info-table">
-        <tr>
-          <td class="label">Reference ID</td>
-          <td><strong>${ref}</strong></td>
-        </tr>
-        <tr>
-          <td class="label">Citizen Name</td>
-          <td><strong>${cleanName}</strong></td>
-        </tr>
-        <tr>
-          <td class="label">Email Address</td>
-          <td><a href="mailto:${senderEmail}" style="color:#0F2C59;font-weight:600;">${senderEmail}</a></td>
-        </tr>
-        <tr>
-          <td class="label">Phone Number</td>
-          <td><a href="tel:${cleanPhone}" style="color:#0F2C59;">${cleanPhone}</a></td>
-        </tr>
-        <tr>
-          <td class="label">Subject</td>
-          <td><strong>${cleanSubject}</strong></td>
-        </tr>
-        <tr>
-          <td class="label">Submitted At</td>
-          <td>${submittedDateStr} (IST)</td>
-        </tr>
-      </table>
-
-      <div style="font-weight:700;color:#0F2C59;margin:18px 0 6px 0;font-size:14px;">Inquiry Message:</div>
-      <div class="message-card">
-        ${message}
-      </div>
-
-      <div style="background:#eff6ff;border:1px solid #dbeafe;border-radius:6px;padding:12px 16px;font-size:13px;color:#1e40af;margin-top:16px;">
-        💡 <strong>Quick Action:</strong> Click "Reply" in your email client to respond directly to <strong>${cleanName}</strong> at <code>${senderEmail}</code>.
-      </div>
-    </div>
-    <div class="footer">
-      This is an automated notification from the HRSJM Website Portal.
-    </div>
-  </div>
-</body>
-</html>
-    `.trim();
-
-    const adminPlainText = `
-[NEW CONTACT INQUIRY RECEIVED]
-Reference ID : ${ref}
-Citizen Name : ${cleanName}
-Email        : ${senderEmail}
-Phone        : ${cleanPhone}
-Subject      : ${cleanSubject}
-Date & Time  : ${submittedDateStr} (IST)
-
-MESSAGE:
-${message}
-
-You can reply directly to this email to respond to ${senderEmail}.
-    `.trim();
-
-    // 3. Dispatch both emails in parallel
     const [citizenResult, adminResult] = await Promise.all([
       this.sendMail({
         to: senderEmail,
@@ -2061,17 +2048,21 @@ You can reply directly to this email to respond to ${senderEmail}.
         html: citizenHtml,
         text: citizenPlainText,
       }),
-      this.sendMail({
-        to: adminEmail,
-        replyTo: senderEmail,
-        subject: adminSubject,
-        html: adminHtml,
-        text: adminPlainText,
+      this.sendCentralizedWebsiteNotification({
+        formName,
+        submitterName: cleanName,
+        submitterEmail: senderEmail,
+        submitterPhone: cleanPhone,
+        subject: cleanSubject,
+        message,
+        referenceId: ref,
+        submittedAt,
+        metadata: payload.metadata,
       }),
     ]);
 
     this.logger.log(
-      `Contact inquiry [${ref}] processed: citizenEmail=${citizenResult.success ? 'sent' : 'failed'}, adminEmail=${adminResult.success ? 'sent' : 'failed'}`
+      `Contact inquiry [${ref}] processed: citizenEmail=${citizenResult.success ? 'sent' : 'failed'}, adminEmail=${adminResult.success ? 'sent' : 'failed'} (delivered to ${this.adminNotificationRecipient})`,
     );
 
     return {
@@ -2079,6 +2070,282 @@ You can reply directly to this email to respond to ${senderEmail}.
       adminSent: adminResult.success,
       inquiryRef: ref,
     };
+  }
+
+  /**
+   * Resolves canonical Form Source Label, Dynamic Subject Title, and Dynamic Subject Prefix
+   * based on server-side inspection of formName, subject, and metadata.
+   */
+  resolveFormSourceDetails(
+    formName?: string,
+    subject?: string,
+    metadata?: Record<string, any>,
+  ): {
+    sourceLabel: string;
+    subjectTitle: string;
+    dynamicSubjectPrefix: string;
+  } {
+    const rawForm = (formName || '').trim();
+    const rawSubj = (subject || '').trim();
+    const combined = `${rawForm} ${rawSubj}`.toLowerCase();
+    const metaStr = metadata ? JSON.stringify(metadata).toLowerCase() : '';
+
+    let sourceLabel = 'CONTACT US ENQUIRY';
+    let subjectTitle = 'Contact Us Enquiry';
+
+    if (combined.includes('feedback')) {
+      sourceLabel = 'WEBSITE FEEDBACK';
+      subjectTitle = 'Website Feedback';
+    } else if (
+      combined.includes('membership application') ||
+      combined.includes('paid membership') ||
+      metaStr.includes('application reference')
+    ) {
+      sourceLabel = 'MEMBERSHIP APPLICATION';
+      subjectTitle = 'Membership Application';
+    } else if (
+      combined.includes('membership') ||
+      combined.includes('join movement') ||
+      metaStr.includes('general member')
+    ) {
+      sourceLabel = 'MEMBERSHIP ENQUIRY';
+      subjectTitle = 'Membership Enquiry';
+    } else if (combined.includes('donation') || combined.includes('donate') || combined.includes('contribution')) {
+      sourceLabel = 'DONATION ENQUIRY';
+      subjectTitle = 'Donation Enquiry';
+    } else if (combined.includes('event')) {
+      sourceLabel = 'EVENT ENQUIRY';
+      subjectTitle = 'Event Enquiry';
+    } else if (combined.includes('complaint') || combined.includes('grievance') || metaStr.includes('ticket id')) {
+      sourceLabel = 'PUBLIC COMPLAINT';
+      subjectTitle = 'Public Complaint';
+    } else if (combined.includes('newsletter') || combined.includes('subscribe')) {
+      sourceLabel = 'NEWSLETTER SUBSCRIPTION';
+      subjectTitle = 'Newsletter Subscription';
+    } else if (combined.includes('volunteer')) {
+      sourceLabel = 'VOLUNTEER ENQUIRY';
+      subjectTitle = 'Volunteer Enquiry';
+    } else if (combined.includes('partner') || combined.includes('collaboration')) {
+      sourceLabel = 'PARTNERSHIP ENQUIRY';
+      subjectTitle = 'Partnership Enquiry';
+    } else if (combined.includes('media') || combined.includes('press')) {
+      sourceLabel = 'MEDIA & PRESS ENQUIRY';
+      subjectTitle = 'Media & Press Enquiry';
+    } else if (combined.includes('support') || combined.includes('human rights support') || combined.includes('help')) {
+      sourceLabel = 'SUPPORT ENQUIRY';
+      subjectTitle = 'Support Enquiry';
+    } else if (combined.includes('general')) {
+      sourceLabel = 'GENERAL ENQUIRY';
+      subjectTitle = 'General Enquiry';
+    } else {
+      sourceLabel = 'CONTACT US ENQUIRY';
+      subjectTitle = 'Contact Us Enquiry';
+    }
+
+    return {
+      sourceLabel,
+      subjectTitle,
+      dynamicSubjectPrefix: `[HRSJM] New ${subjectTitle}`,
+    };
+  }
+
+  /**
+   * Centralized Website Notification Service for the entire HRSJM website.
+   * Delivers all form submissions, inquiries, and citizen messages to president.hrsjm@gmail.com.
+   * Configures submitter's email as replyTo so the President can reply directly.
+   * Ensures high-visibility FORM SOURCE highlighting and zero logo attachments.
+   */
+  async sendCentralizedWebsiteNotification(
+    payload: CentralizedWebsiteNotificationPayload,
+  ): Promise<{ success: boolean; messageId?: string; error?: string }> {
+    const {
+      formName,
+      submitterName,
+      submitterEmail,
+      submitterPhone,
+      subject,
+      message,
+      referenceId,
+      submittedAt,
+      metadata,
+    } = payload;
+
+    const cleanForm = formName?.trim() || 'Contact Us';
+    const cleanName = submitterName?.trim() || 'Citizen';
+    const cleanPhone = submitterPhone?.trim() || 'Not Provided';
+    const cleanSubject = subject?.trim() || cleanForm;
+    const ref = referenceId || `HRSJM-ENQ-${Date.now().toString(36).toUpperCase()}`;
+    const targetRecipient = this.adminNotificationRecipient;
+
+    const submittedDateStr = new Date(submittedAt || Date.now()).toLocaleString('en-IN', {
+      timeZone: 'Asia/Kolkata',
+      dateStyle: 'medium',
+      timeStyle: 'short',
+    });
+
+    const { sourceLabel, subjectTitle, dynamicSubjectPrefix } = this.resolveFormSourceDetails(
+      cleanForm,
+      cleanSubject,
+      metadata,
+    );
+
+    const isSubjectRedundant =
+      cleanSubject.toLowerCase().replace(/[^a-z]/g, '') === subjectTitle.toLowerCase().replace(/[^a-z]/g, '') ||
+      cleanSubject.toLowerCase().replace(/[^a-z]/g, '') === cleanForm.toLowerCase().replace(/[^a-z]/g, '') ||
+      cleanSubject.toLowerCase() === 'contact us';
+
+    const emailSubject = isSubjectRedundant
+      ? `${dynamicSubjectPrefix} - ${cleanName} [${ref}]`
+      : `${dynamicSubjectPrefix}: ${cleanSubject} - ${cleanName} [${ref}]`;
+
+    let metadataRows = '';
+    let metadataTextRows = '';
+    if (metadata && typeof metadata === 'object') {
+      for (const [key, val] of Object.entries(metadata)) {
+        if (val !== undefined && val !== null && String(val).trim()) {
+          const label = key
+            .replace(/([A-Z])/g, ' $1')
+            .replace(/^./, (str) => str.toUpperCase())
+            .trim();
+          metadataRows += `<tr><td class="label-col">${label}:</td><td class="value-col">${String(val)}</td></tr>`;
+          metadataTextRows += `${label.padEnd(20)} : ${String(val)}\n`;
+        }
+      }
+    }
+
+    const html = `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>${emailSubject}</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #f1f5f9; margin: 0; padding: 24px 12px; color: #1e293b; line-height: 1.5; }
+    .card { max-width: 620px; margin: 0 auto; background: #ffffff; border-radius: 12px; overflow: hidden; border: 1px solid #cbd5e1; box-shadow: 0 4px 12px rgba(15, 44, 89, 0.08); }
+    .gold-bar { height: 6px; background: linear-gradient(90deg, #d4af37, #f3e5ab, #d4af37); }
+    .top-header { background-color: #0F2C59; padding: 24px 28px; text-align: left; }
+    .enquiry-tag { display: inline-block; font-size: 11.5px; font-weight: 800; letter-spacing: 1.5px; color: #facc15; text-transform: uppercase; margin-bottom: 8px; }
+    .form-source-banner { background: #ffffff; color: #0F2C59; padding: 10px 16px; border-radius: 8px; font-size: 16px; font-weight: 800; letter-spacing: 0.6px; border-left: 6px solid #d4af37; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+    .content { padding: 26px 26px; }
+    .highlight-card { background: #f8fafc; border: 2px solid #0F2C59; border-radius: 10px; padding: 20px 22px; margin: 0 0 22px 0; }
+    .highlight-source-header { font-size: 15px; font-weight: 800; color: #0F2C59; margin-bottom: 12px; padding-bottom: 10px; border-bottom: 2px solid #e2e8f0; text-transform: uppercase; letter-spacing: 0.5px; }
+    .highlight-source-badge { background: #0F2C59; color: #ffffff; padding: 4px 12px; border-radius: 6px; display: inline-block; }
+    .section-title { font-size: 13px; font-weight: 700; color: #475569; text-transform: uppercase; letter-spacing: 0.6px; margin: 12px 0 10px 0; }
+    .details-table { width: 100%; border-collapse: collapse; margin-top: 6px; font-size: 13.5px; }
+    .details-table td { padding: 8px 12px; border-bottom: 1px solid #edf2f7; vertical-align: top; }
+    .details-table td.label-col { width: 175px; font-weight: 600; color: #475569; background: #f1f5f9; }
+    .details-table td.value-col { color: #0f172a; font-weight: 500; }
+    .message-title { font-weight: 700; color: #0F2C59; font-size: 14px; margin: 20px 0 8px 0; text-transform: uppercase; letter-spacing: 0.5px; }
+    .message-card { background: #fffbeb; border: 1px solid #fef3c7; border-left: 5px solid #f59e0b; border-radius: 8px; padding: 18px 20px; font-size: 14px; color: #78350f; line-height: 1.6; white-space: pre-wrap; word-break: break-word; }
+    .reply-callout { background: #eff6ff; border: 1px solid #bfdbfe; border-left: 5px solid #2563eb; border-radius: 8px; padding: 14px 18px; font-size: 13px; color: #1e40af; margin-top: 22px; line-height: 1.5; }
+    .footer { background: #f8fafc; padding: 18px 24px; text-align: center; border-top: 1px solid #e2e8f0; font-size: 12px; color: #64748b; line-height: 1.5; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="gold-bar"></div>
+    <div class="top-header">
+      <div class="enquiry-tag">NEW WEBSITE ENQUIRY</div>
+      <div class="form-source-banner">
+        FORM SOURCE: ${sourceLabel}
+      </div>
+    </div>
+    <div class="content">
+      <div class="highlight-card">
+        <div class="highlight-source-header">
+          FORM SOURCE: <span class="highlight-source-badge">${sourceLabel}</span>
+        </div>
+        <div class="section-title">Submission Details:</div>
+        <table class="details-table">
+          <tr>
+            <td class="label-col">Full Name:</td>
+            <td class="value-col"><strong>${cleanName}</strong></td>
+          </tr>
+          <tr>
+            <td class="label-col">Email Address:</td>
+            <td class="value-col"><a href="mailto:${submitterEmail}" style="color:#0F2C59;font-weight:700;text-decoration:none;">${submitterEmail}</a></td>
+          </tr>
+          <tr>
+            <td class="label-col">Phone Number:</td>
+            <td class="value-col"><a href="tel:${cleanPhone}" style="color:#0F2C59;text-decoration:none;">${cleanPhone}</a></td>
+          </tr>
+          <tr>
+            <td class="label-col">Subject:</td>
+            <td class="value-col"><strong>${cleanSubject}</strong></td>
+          </tr>
+          <tr>
+            <td class="label-col">Submission Date:</td>
+            <td class="value-col">${submittedDateStr} (IST)</td>
+          </tr>
+          <tr>
+            <td class="label-col">Submission Reference:</td>
+            <td class="value-col"><strong style="font-family:monospace;color:#0F2C59;font-size:14px;">${ref}</strong></td>
+          </tr>
+          ${metadataRows}
+        </table>
+      </div>
+
+      <div class="message-title">Message / Enquiry Details:</div>
+      <div class="message-card">
+${message}
+      </div>
+
+      <div class="reply-callout">
+        💡 <strong>Quick Direct Reply:</strong> Click "Reply" in your email client to respond directly to <strong>${cleanName}</strong> at <code>${submitterEmail}</code>.
+      </div>
+    </div>
+    <div class="footer">
+      Human Rights & Social Justice Mission (HRSJM) &bull; Centralized Intake Portal<br/>
+      Notification delivered to: <strong>${targetRecipient}</strong>
+    </div>
+  </div>
+</body>
+</html>
+    `.trim();
+
+    const text = `
+NEW WEBSITE ENQUIRY
+FORM SOURCE: ${sourceLabel}
+
+Submission Details:
+Full Name            : ${cleanName}
+Email Address        : ${submitterEmail}
+Phone Number         : ${cleanPhone}
+Subject              : ${cleanSubject}
+Submission Date      : ${submittedDateStr} (IST)
+Submission Reference : ${ref}
+${metadataTextRows}
+Message / Enquiry Details:
+${message}
+
+You can reply directly to this email to respond to ${submitterEmail}.
+    `.trim();
+
+    this.logger.log(
+      `Dispatching centralized notification [${sourceLabel}] from ${submitterEmail} to ${targetRecipient}`,
+    );
+
+    const result = await this.sendMail({
+      to: targetRecipient,
+      replyTo: submitterEmail,
+      subject: emailSubject,
+      html,
+      text,
+      noLogoAttachment: true,
+      attachments: [],
+    });
+
+    if (result.success) {
+      this.logger.log(
+        `Centralized notification [${sourceLabel}] successfully delivered to ${targetRecipient} (messageId=${result.messageId})`,
+      );
+    } else {
+      this.logger.error(
+        `Failed delivering centralized notification [${sourceLabel}] to ${targetRecipient}: ${result.error}`,
+      );
+    }
+
+    return result;
   }
 
   /**

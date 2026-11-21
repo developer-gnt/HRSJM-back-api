@@ -4,7 +4,7 @@ import { ApiPropertyOptional } from '@nestjs/swagger';
 export class CheckDuplicatesDto {
   @ApiPropertyOptional({
     description: '10-digit mobile number to check availability for',
-    example: '987654321',
+    example: '7021057853',
   })
   @IsOptional()
   @IsString()

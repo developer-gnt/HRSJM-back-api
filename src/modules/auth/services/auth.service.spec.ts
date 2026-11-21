@@ -1,4 +1,4 @@
-﻿import { BadRequestException, ConflictException, ForbiddenException, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, UnauthorizedException } from '@nestjs/common';
 import { createHash } from 'crypto';
 import * as bcrypt from 'bcryptjs';
 import { AuthService } from './auth.service';
@@ -135,7 +135,7 @@ describe('AuthService', () => {
     await service.register(
       {
         full_name: 'Donation Seeker Applicant',
-        mobile_number: '70210578530',
+        mobile_number: '7021057853',
         email: 'applicant@example.com',
         password: 'password123',
         confirm_password: 'password123',
@@ -253,7 +253,7 @@ describe('AuthService', () => {
       id: 'u1',
       email: 'member@hrsjm.org',
       full_name: 'Test Member',
-      mobile_number: '70210578530',
+      mobile_number: '7021057853',
     });
     resetTokens.update = jest.fn().mockResolvedValue(undefined);
 
@@ -437,7 +437,7 @@ describe('AuthService', () => {
       usersService.findByLoginIdentifier = jest.fn().mockResolvedValue(null);
 
       const res = await service.checkDuplicates({
-        mobile_number: '70210578530',
+        mobile_number: '7021057853',
         email: 'fresh@hrsjm.org',
       });
 
@@ -448,12 +448,12 @@ describe('AuthService', () => {
 
     it('returns mobile_taken: true when mobile number is already registered in database', async () => {
       usersService.findByLoginIdentifier = jest.fn((id: string) => {
-        if (id === '70210578530') return Promise.resolve({ id: 'u-existing' });
+        if (id === '7021057853') return Promise.resolve({ id: 'u-existing' });
         return Promise.resolve(null);
       });
 
       const res = await service.checkDuplicates({
-        mobile_number: '70210578530',
+        mobile_number: '7021057853',
         email: 'fresh@hrsjm.org',
       });
 

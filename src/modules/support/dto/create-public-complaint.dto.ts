@@ -8,7 +8,7 @@ export class CreatePublicComplaintDto {
   @MaxLength(100)
   fullName: string;
 
-  @ApiProperty({ description: '10-digit Phone Number', example: '70210578530' })
+  @ApiProperty({ description: '10-digit Phone Number', example: '7021057853' })
   @IsString()
   @MinLength(10)
   @MaxLength(15)

@@ -13,7 +13,7 @@ export class CreateContactInquiryDto {
   @IsNotEmpty()
   email: string;
 
-  @ApiPropertyOptional({ example: '70210578530', description: 'Citizen 10-digit phone number' })
+  @ApiPropertyOptional({ example: '7021057853', description: 'Citizen 10-digit phone number' })
   @IsOptional()
   @IsString()
   phone?: string;
@@ -22,6 +22,15 @@ export class CreateContactInquiryDto {
   @IsOptional()
   @IsString()
   subject?: string;
+
+  @ApiPropertyOptional({ example: 'Contact Us', description: 'Form or module name' })
+  @IsOptional()
+  @IsString()
+  formName?: string;
+
+  @ApiPropertyOptional({ description: 'Additional structured form metadata' })
+  @IsOptional()
+  metadata?: Record<string, any>;
 
   @ApiProperty({ example: 'I need legal guidance regarding human rights.', description: 'Inquiry message' })
   @IsString()
