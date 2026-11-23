@@ -735,15 +735,17 @@ export class CashfreeOrdersService {
     if (payment && payment.payment_status === PaymentStatus.SUCCESS) {
       let receipt: any = null;
       try {
-        const receiptsRepo = this.dataSource.getRepository(ReceiptEntity);
-        if (isDonation) {
-          receipt = await receiptsRepo.findOne({
-            where: { donation_payment_id: payment.id },
-          });
-        } else {
-          receipt = (payment as any).receipt || (await receiptsRepo.findOne({
-            where: { membership_payment_id: payment.id },
-          }));
+        const receiptsRepo = this.dataSource?.getRepository ? this.dataSource.getRepository(ReceiptEntity) : null;
+        if (receiptsRepo) {
+          if (isDonation) {
+            receipt = await receiptsRepo.findOne({
+              where: { donation_payment_id: payment.id },
+            });
+          } else {
+            receipt = (payment as any).receipt || (await receiptsRepo.findOne({
+              where: { membership_payment_id: payment.id },
+            }));
+          }
         }
       } catch (receiptLookupErr) {
         this.logger.warn(`Could not lookup receipt for already verified payment ${payment.id}: ${receiptLookupErr}`);
@@ -818,6 +820,26 @@ export class CashfreeOrdersService {
 
     if (!successfulAttempt) {
       const latestAttempt = attempts.length > 0 ? attempts[attempts.length - 1] : null;
+
+      // In-flight / Pending check: do not prematurely fail when bank response is delayed or in-progress
+      const isPending =
+        attempts.some((att: any) => att.payment_status === 'PENDING') ||
+        (latestAttempt && latestAttempt.payment_status === 'PENDING') ||
+        (!latestAttempt && cfOrder?.order_status === 'ACTIVE') ||
+        (cfOrder?.order_status === 'ACTIVE' && latestAttempt?.payment_status !== 'FAILED');
+
+      if (isPending) {
+        this.logger.log(`Verification for order ${orderId}: payment is currently in-flight or awaiting bank authorization. Maintaining PENDING status.`);
+        return {
+          status: 'PENDING',
+          message: 'Payment is currently in progress or awaiting bank authorization',
+          order_id: orderId,
+          attempts_count: attempts.length,
+          latest_status: (latestAttempt?.payment_status as string) || cfOrder?.order_status || 'PENDING',
+          latest_message: (latestAttempt as any)?.payment_message || 'Payment authorization in progress',
+        };
+      }
+
       const failureReason =
         (latestAttempt as any)?.payment_message ||
         (cfOrder?.order_status === 'EXPIRED'
@@ -826,7 +848,7 @@ export class CashfreeOrdersService {
           ? 'Payment session terminated'
           : 'Payment cancelled or not completed on Cashfree');
 
-      this.logger.warn(`Verification for order ${orderId}: no SUCCESS confirmed. Updating status to FAILED.`);
+      this.logger.warn(`Verification for order ${orderId}: no SUCCESS confirmed and not in-flight. Updating status to FAILED.`);
 
       if (isDonation && donationPayment) {
         donationPayment.payment_status = PaymentStatus.FAILED;

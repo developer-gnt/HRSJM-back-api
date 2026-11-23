@@ -12,6 +12,14 @@ export class CreateTicketDto {
 
   @IsOptional()
   @IsString()
+  category?: string;
+
+  @IsOptional()
+  @IsString()
+  priority?: string;
+
+  @IsOptional()
+  @IsString()
   source?: string;
 
   @IsOptional()
