@@ -1,4 +1,5 @@
-import { IsEmail, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
+import { IsEmail, IsOptional, IsString, Length, MaxLength, MinLength } from 'class-validator';
+import { Transform } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class CreatePublicComplaintDto {
@@ -9,9 +10,11 @@ export class CreatePublicComplaintDto {
   fullName: string;
 
   @ApiProperty({ description: '10-digit Phone Number', example: '7021057853' })
+  @Transform(({ value }) =>
+    typeof value === 'string' ? value.replace(/\D/g, '').slice(-10) : value,
+  )
   @IsString()
-  @MinLength(10)
-  @MaxLength(15)
+  @Length(10, 10, { message: 'Phone number must be exactly 10 digits' })
   phone: string;
 
   @ApiPropertyOptional({ description: 'Complainant email address', example: 'rajesh@example.com' })

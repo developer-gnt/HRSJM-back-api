@@ -4,6 +4,7 @@ import {
   IsOptional,
   IsString,
   IsUUID,
+  Length,
   MaxLength,
   MinLength,
   Validate,
@@ -24,7 +25,7 @@ export class RegisterDto {
     typeof value === 'string' ? value.replace(/\D/g, '').slice(-10) : value,
   )
   @IsString()
-  @MaxLength(20)
+  @Length(10, 10, { message: 'Mobile number must be exactly 10 digits' })
   mobile_number: string;
 
   @Transform(({ value }) =>

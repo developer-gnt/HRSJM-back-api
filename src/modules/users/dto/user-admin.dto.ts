@@ -1,10 +1,11 @@
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import {
   IsEnum,
   IsInt,
   IsOptional,
   IsString,
   IsUUID,
+  Length,
   Max,
   MaxLength,
   Min,
@@ -49,13 +50,19 @@ export class UpdateUserDto {
   email?: string;
 
   @IsOptional()
+  @Transform(({ value }) =>
+    typeof value === 'string' ? value.replace(/\D/g, '').slice(-10) : value,
+  )
   @IsString()
-  @MaxLength(20)
+  @Length(10, 10, { message: 'Mobile number must be exactly 10 digits' })
   mobile_number?: string;
 
   @IsOptional()
+  @Transform(({ value }) =>
+    typeof value === 'string' ? value.replace(/\D/g, '').slice(-10) : value,
+  )
   @IsString()
-  @MaxLength(20)
+  @Length(10, 10, { message: 'Phone number must be exactly 10 digits' })
   phone?: string;
 
   @IsOptional()
@@ -82,8 +89,11 @@ export class CreateUserAdminDto {
   @MaxLength(255)
   full_name: string;
 
+  @Transform(({ value }) =>
+    typeof value === 'string' ? value.replace(/\D/g, '').slice(-10) : value,
+  )
   @IsString()
-  @MaxLength(20)
+  @Length(10, 10, { message: 'Mobile number must be exactly 10 digits' })
   mobile_number: string;
 
   @IsOptional()

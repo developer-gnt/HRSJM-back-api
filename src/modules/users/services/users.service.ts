@@ -259,9 +259,15 @@ export class UsersService {
           });
         }
       } else {
+        const targetRole = input.roleName ?? 'USER';
         role = await manager
           .getRepository(RoleEntity)
-          .findOne({ where: { name: input.roleName ?? 'USER' } });
+          .findOne({ where: { name: targetRole } });
+        if (!role) {
+          role = await manager
+            .getRepository(RoleEntity)
+            .findOne({ where: { name: 'USER' } });
+        }
         if (!role) {
           throw new InternalServerErrorException({
             message: 'Default role is missing',
@@ -369,15 +375,23 @@ export class UsersService {
   }
 
   async assertNoDuplicates(mobile: string, email?: string | null): Promise<void> {
+    const cleanMobile = mobile.replace(/\D/g, '').slice(-10);
+    if (cleanMobile.length !== 10) {
+      throw new BadRequestException({
+        message: 'Mobile number must be exactly 10 digits',
+        code: 'INVALID_PHONE_NUMBER',
+        details: null,
+      });
+    }
     const clash = await this.users.findOne({
       where: [
-        { mobile_number: mobile },
+        { mobile_number: cleanMobile },
         ...(email ? [{ email: email.toLowerCase() }] : []),
       ],
       select: ['id', 'mobile_number', 'email'],
     });
     if (!clash) return;
-    if (clash.mobile_number === mobile) {
+    if (clash.mobile_number === cleanMobile) {
       throw new ConflictException({
         message: 'Mobile number already registered',
         code: 'MOBILE_NUMBER_TAKEN',
