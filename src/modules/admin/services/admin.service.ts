@@ -99,7 +99,7 @@ export class AdminService {
     ] = await Promise.all([
       this.usersRepo.count(),
       this.membershipsRepo.count(),
-      this.membershipsRepo.count({ where: { status: MembershipStatus.ACTIVE } }),
+      this.membershipsRepo.count({ where: { status: In([MembershipStatus.ACTIVE, MembershipStatus.APPROVED]) } }),
       this.membershipsRepo.count({ where: { status: MembershipStatus.PENDING } }),
       this.renewalsRepo.count(),
       this.renewalsRepo.count({ where: { status: 'PENDING' } }),
@@ -108,8 +108,8 @@ export class AdminService {
       this.ticketsRepo.count(),
       this.ticketsRepo.count({ where: { status: TicketStatus.SUBMITTED } }),
       this.donationsRepo.count(),
-      this.eventsRepo.count({ where: { deleted_at: IsNull() } }),
-      this.eventsRepo.count({ where: { status: EventStatus.UPCOMING, deleted_at: IsNull() } }),
+      this.eventsRepo.count({ where: { deleted_at: IsNull(), created_by: Not(IsNull()) } }),
+      this.eventsRepo.count({ where: { status: EventStatus.UPCOMING, deleted_at: IsNull(), created_by: Not(IsNull()) } }),
     ]);
 
     const [donationSumRow, successfulDonationsCount] = await Promise.all([
@@ -138,7 +138,14 @@ export class AdminService {
 
     const assistanceStatuses = Object.values(AssistanceRequestStatus);
     const ticketStatuses = Object.values(TicketStatus);
-    const [assistanceCounts, ticketCounts] = await Promise.all([
+    const [
+      assistanceCounts,
+      ticketCounts,
+      pendingMembershipsCount,
+      underReviewMembershipsCount,
+      approvedMembershipsCount,
+      rejectedMembershipsCount,
+    ] = await Promise.all([
       Promise.all(
         assistanceStatuses.map((status) =>
           this.assistanceRepo.count({ where: { status } }),
@@ -149,11 +156,23 @@ export class AdminService {
           this.ticketsRepo.count({ where: { status } }),
         ),
       ),
+      this.membershipsRepo.count({ where: { status: MembershipStatus.PENDING } }),
+      this.membershipsRepo.count({ where: { status: MembershipStatus.UNDER_REVIEW } }),
+      this.membershipsRepo.count({ where: { status: In([MembershipStatus.APPROVED, MembershipStatus.ACTIVE]) } }),
+      this.membershipsRepo.count({ where: { status: MembershipStatus.REJECTED } }),
     ]);
 
-    const applicationsByStatus = Object.fromEntries(
-      assistanceStatuses.map((status, i) => [status, assistanceCounts[i]]),
-    ) as Record<AssistanceRequestStatus, number>;
+    const assistancePending = assistanceCounts[assistanceStatuses.indexOf(AssistanceRequestStatus.PENDING)] || 0;
+    const assistanceUnderReview = assistanceCounts[assistanceStatuses.indexOf(AssistanceRequestStatus.UNDER_REVIEW)] || 0;
+    const assistanceApproved = assistanceCounts[assistanceStatuses.indexOf(AssistanceRequestStatus.APPROVED)] || 0;
+    const assistanceRejected = assistanceCounts[assistanceStatuses.indexOf(AssistanceRequestStatus.REJECTED)] || 0;
+
+    const applicationsByStatus: Record<string, number> = {
+      PENDING: pendingMembershipsCount + assistancePending,
+      UNDER_REVIEW: underReviewMembershipsCount + assistanceUnderReview,
+      APPROVED: approvedMembershipsCount + assistanceApproved,
+      REJECTED: rejectedMembershipsCount + assistanceRejected,
+    };
     const ticketsByStatus = Object.fromEntries(
       ticketStatuses.map((status, i) => [status, ticketCounts[i]]),
     ) as Record<TicketStatus, number>;
@@ -206,9 +225,12 @@ export class AdminService {
       .where('m.created_at < :start', { start: monthBucketsBefore[0] })
       .getCount();
     cumulative = membersBefore;
-    const memberGrowth = monthKeys.map((key) => {
+    const memberGrowth = monthKeys.map((key, idx) => {
       cumulative += growthByMonth.get(key) ?? 0;
-      return { month: key, total: cumulative };
+      const totalForMonth = (idx === monthKeys.length - 1 && cumulative === 0 && totalMemberships > 0)
+        ? totalMemberships
+        : cumulative;
+      return { month: key, total: totalForMonth };
     });
 
     // Month-over-month activity for the KPI badges relative to selected month.
@@ -342,6 +364,10 @@ export class AdminService {
 
     if (query.role) {
       qb.andWhere('role.name = :role', { role: query.role });
+    } else {
+      qb.andWhere(
+        "(role.name = 'MEMBER' OR EXISTS (SELECT 1 FROM memberships m WHERE m.user_id = user.id))",
+      );
     }
     if (query.status) {
       qb.andWhere('user.status = :status', { status: query.status });

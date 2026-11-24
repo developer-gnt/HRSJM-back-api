@@ -100,6 +100,16 @@ export class UsersController {
     return this.usersAdmin.updateUserStatus(id, dto, actingUser.sub);
   }
 
+  @Delete(':id')
+  @RequirePermissions('user.manage_status')
+  @ApiOperation({ summary: 'Delete a user (soft delete) (admin)' })
+  deleteUser(
+    @Param('id') id: string,
+    @AuthenticatedUser() actingUser: { sub: string },
+  ) {
+    return this.usersAdmin.deleteUser(id, actingUser.sub);
+  }
+
   @Post(':id/reset-password')
   @RequirePermissions('user.manage_status')
   @ApiOperation({ summary: 'Reset a user password directly (admin)' })

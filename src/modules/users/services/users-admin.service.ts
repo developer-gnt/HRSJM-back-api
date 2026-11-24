@@ -31,7 +31,7 @@ export class UsersAdminService {
     private readonly users: Repository<UserEntity>,
     private readonly usersService: UsersService,
     private readonly dataSource: DataSource,
-  ) {}
+  ) { }
 
   async listUsers(dto: ListUsersDto): Promise<{
     items: UserProfile[];
@@ -44,6 +44,7 @@ export class UsersAdminService {
       .createQueryBuilder('user')
       .leftJoinAndSelect('user.user_roles', 'user_role')
       .leftJoinAndSelect('user_role.role', 'role')
+      .where('user.deleted_at IS NULL')
       .orderBy('user.created_at', 'DESC')
       .skip((page - 1) * limit)
       .take(limit);
@@ -75,6 +76,14 @@ export class UsersAdminService {
   }
 
   async getUser(id: string): Promise<UserProfile> {
+    const user = await this.users.findOne({ where: { id } });
+    if (!user || user.deleted_at) {
+      throw new NotFoundException({
+        message: 'User not found',
+        code: 'USER_NOT_FOUND',
+        details: null,
+      });
+    }
     const profile = await this.usersService.getProfile(id);
     if (!profile) {
       throw new NotFoundException({
@@ -86,18 +95,61 @@ export class UsersAdminService {
     return profile;
   }
 
+  async deleteUser(
+    id: string,
+    actingUserId: string,
+  ): Promise<{ success: boolean; message: string }> {
+    if (id === actingUserId) {
+      throw new ForbiddenException({
+        message: 'You cannot delete your own account',
+        code: 'SELF_DELETE_FORBIDDEN',
+        details: null,
+      });
+    }
+    const user = await this.users.findOne({ where: { id } });
+    if (!user) {
+      throw new NotFoundException({
+        message: 'User not found',
+        code: 'USER_NOT_FOUND',
+        details: null,
+      });
+    }
+    user.deleted_at = new Date();
+    user.deleted_by = actingUserId;
+    user.status = CommonStatus.INACTIVE;
+    await this.users.save(user);
+
+    // Invalidate refresh tokens so user is immediately logged out
+    await this.dataSource.getRepository(RefreshTokenEntity).update(
+      { user_id: id, revoked_at: IsNull() },
+      { revoked_at: new Date() },
+    );
+
+    return {
+      success: true,
+      message: 'User deleted successfully',
+    };
+  }
+
   async createUser(dto: CreateUserAdminDto, actingUserId: string): Promise<UserProfile> {
     const cleanMobile = dto.mobile_number.replace(/\D/g, '').slice(-10);
     await this.usersService.assertNoDuplicates(cleanMobile, dto.email ?? null);
     const pwd = dto.password || 'Hrsjm@123';
     const salt = await bcrypt.genSalt(10);
     const password_hash = await bcrypt.hash(pwd, salt);
+    let roleName = (dto.role_name || 'USER').toUpperCase().trim();
+    if (roleName === 'GENERAL_USER' || roleName === 'GENERAL' || roleName === 'DONOR') {
+      roleName = 'USER';
+    } else if (roleName === 'SEEKER') {
+      roleName = 'DONATION_SEEKER';
+    }
+
     const user = await this.usersService.createUserWithRole({
       full_name: dto.full_name.trim(),
       mobile_number: cleanMobile,
       email: dto.email ? dto.email.trim().toLowerCase() : null,
       password_hash,
-      roleName: dto.role_name || 'USER',
+      roleName,
     });
     if (dto.dob || dto.avatar || dto.gender || dto.address) {
       await this.usersService.updateProfile(user, {
