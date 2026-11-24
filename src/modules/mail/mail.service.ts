@@ -718,7 +718,7 @@ Human Rights & Social Justice Mission (HRSJM)
                 Human Rights & Social Justice Mission
               </p>
               <p style="margin: 2px 0 0 0; font-size: 12px; color: #64748b;">
-                National Headquarters, New Delhi, India &bull; <a href="https://hrsjm.org" style="color: #2563eb; text-decoration: none;">hrsjm.org</a>
+                National Headquarters, New Delhi, India • <a href="https://hrsjm.org" style="color: #2563eb; text-decoration: none;">hrsjm.org</a>
               </p>
             </td>
           </tr>
@@ -1043,7 +1043,7 @@ https://hrsjm.org
                 Human Rights & Social Justice Mission
               </p>
               <p style="margin: 2px 0 0 0; font-size: 12px; color: #64748b;">
-                National Grievance Cell &bull; <a href="https://hrsjm.org" style="color: #2563eb; text-decoration: none;">hrsjm.org</a>
+                National Grievance Cell • <a href="https://hrsjm.org" style="color: #2563eb; text-decoration: none;">hrsjm.org</a>
               </p>
             </td>
           </tr>
@@ -2296,7 +2296,7 @@ ${message}
       </div>
     </div>
     <div class="footer">
-      Human Rights & Social Justice Mission (HRSJM) &bull; Centralized Intake Portal<br/>
+      Human Rights & Social Justice Mission (HRSJM) • Centralized Intake Portal<br/>
       Notification delivered to: <strong>${targetRecipient}</strong>
     </div>
   </div>
