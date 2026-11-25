@@ -8,38 +8,44 @@ export class RemoveTestEntriesFromMembershipsComplaintsDonations1790860000000 im
     await queryRunner.query(`
       DELETE FROM support_ticket_messages 
       WHERE ticket_id IN (
-        SELECT id FROM support_tickets 
-        WHERE subject ILIKE '%test%' 
-           OR subject ILIKE '%asdf%' 
-           OR subject ILIKE '%qwerty%'
-           OR description ILIKE '%test%'
-           OR contact_email ILIKE '%test%'
-           OR contact_name ILIKE '%test%'
-           OR contact_name ILIKE '%sahil%'
+        SELECT st.id FROM support_tickets st
+        LEFT JOIN users u ON st.user_id = u.id
+        WHERE st.subject ILIKE '%test%' 
+           OR st.subject ILIKE '%asdf%' 
+           OR st.subject ILIKE '%qwerty%'
+           OR st.description ILIKE '%test%'
+           OR u.email ILIKE '%test%'
+           OR u.full_name ILIKE '%test%'
+           OR u.full_name ILIKE '%sahil%'
       );
     `);
 
     await queryRunner.query(`
       DELETE FROM support_tickets 
-      WHERE subject ILIKE '%test%' 
-         OR subject ILIKE '%asdf%' 
-         OR subject ILIKE '%qwerty%'
-         OR description ILIKE '%test%'
-         OR contact_email ILIKE '%test%'
-         OR contact_name ILIKE '%test%'
-         OR contact_name ILIKE '%sahil%';
+      WHERE id IN (
+        SELECT st.id FROM support_tickets st
+        LEFT JOIN users u ON st.user_id = u.id
+        WHERE st.subject ILIKE '%test%' 
+           OR st.subject ILIKE '%asdf%' 
+           OR st.subject ILIKE '%qwerty%'
+           OR st.description ILIKE '%test%'
+           OR u.email ILIKE '%test%'
+           OR u.full_name ILIKE '%test%'
+           OR u.full_name ILIKE '%sahil%'
+      );
     `);
 
     // 2. Remove test Donations (Donations, Payments, Refunds)
     await queryRunner.query(`
       DELETE FROM donation_refunds 
-      WHERE donation_id IN (
-        SELECT id FROM donations 
-        WHERE donor_name ILIKE '%test%' 
-           OR donor_email ILIKE '%test%' 
-           OR donor_name ILIKE '%sahil%' 
-           OR notes ILIKE '%test%'
-           OR donor_name ILIKE '%Cashfree Verification%'
+      WHERE donation_payment_id IN (
+        SELECT dp.id FROM donation_payments dp
+        JOIN donations d ON dp.donation_id = d.id
+        WHERE d.donor_name ILIKE '%test%' 
+           OR d.donor_email ILIKE '%test%' 
+           OR d.donor_name ILIKE '%sahil%' 
+           OR d.remark ILIKE '%test%'
+           OR d.donor_name ILIKE '%Cashfree Verification%'
       );
     `);
 
@@ -50,7 +56,7 @@ export class RemoveTestEntriesFromMembershipsComplaintsDonations1790860000000 im
         WHERE donor_name ILIKE '%test%' 
            OR donor_email ILIKE '%test%' 
            OR donor_name ILIKE '%sahil%' 
-           OR notes ILIKE '%test%'
+           OR remark ILIKE '%test%'
            OR donor_name ILIKE '%Cashfree Verification%'
       );
     `);
@@ -60,7 +66,7 @@ export class RemoveTestEntriesFromMembershipsComplaintsDonations1790860000000 im
       WHERE donor_name ILIKE '%test%' 
          OR donor_email ILIKE '%test%' 
          OR donor_name ILIKE '%sahil%' 
-         OR notes ILIKE '%test%'
+         OR remark ILIKE '%test%'
          OR donor_name ILIKE '%Cashfree Verification%';
     `);
 
