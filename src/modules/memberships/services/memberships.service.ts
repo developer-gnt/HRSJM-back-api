@@ -1611,14 +1611,72 @@ export class MembershipsService {
     actingUserId: string,
     isAdmin = false,
   ): Promise<{ membership_id: string; documents: unknown[] }> {
-    await this.getById(id, actingUserId, isAdmin);
-    const docs = await this.documentsService.findByRelatedEntity(
+    const membership = await this.getById(id, actingUserId, isAdmin);
+    const dbDocs = await this.documentsService.findByRelatedEntity(
       RelatedEntityType.MEMBERSHIP,
       id,
     );
+
+    const appData = (membership.application_data as Record<string, any>) || {};
+    const appDocs = Array.isArray(appData.documents) ? appData.documents : [];
+
+    const combined: any[] = [...dbDocs];
+    const seenNames = new Set<string>(
+      dbDocs.map((d) => (d.document_name || d.file_name || '').toLowerCase().trim()),
+    );
+
+    for (const doc of appDocs) {
+      const name = (doc.title || doc.name || doc.type || 'Membership Document').trim();
+      const nameKey = name.toLowerCase();
+      if (!seenNames.has(nameKey)) {
+        seenNames.add(nameKey);
+        const rawUri = doc.fileUri || doc.uri || doc.url || doc.file_url || doc.storage_path || '';
+        const normalizedStorage = rawUri.startsWith('uploads/') ? `/${rawUri}` : rawUri;
+
+        combined.push({
+          id: doc.id || `appdoc-${membership.id}-${nameKey.replace(/[^a-z0-9]/g, '-')}`,
+          document_name: name,
+          document_type: DocumentType.MEMBERSHIP_DOCUMENT,
+          file_name: doc.fileName || doc.file_name || `${name.replace(/[^a-zA-Z0-9]/g, '_')}.pdf`,
+          mime_type: doc.mimeType || (normalizedStorage.startsWith('data:image') ? 'image/jpeg' : 'application/pdf'),
+          file_size: typeof doc.fileSize === 'number' ? doc.fileSize : 1572864,
+          storage_path: normalizedStorage,
+          uri: normalizedStorage,
+          user_id: membership.user_id,
+          created_at: membership.created_at,
+        });
+      }
+    }
+
+    const avatarCandidate =
+      appData.avatar ||
+      appData.personal_details?.avatar ||
+      (membership.user as any)?.avatar;
+
+    if (
+      avatarCandidate &&
+      !seenNames.has('applicant photograph') &&
+      !seenNames.has('applicant photograph (profile photo)') &&
+      !seenNames.has('official passport photograph')
+    ) {
+      const normalizedAvatar = avatarCandidate.startsWith('uploads/') ? `/${avatarCandidate}` : avatarCandidate;
+      combined.push({
+        id: `avatar-${membership.id}`,
+        document_name: 'Official Passport Photograph',
+        document_type: DocumentType.MEMBERSHIP_DOCUMENT,
+        file_name: 'applicant_photograph.jpg',
+        mime_type: 'image/jpeg',
+        file_size: 524288,
+        storage_path: normalizedAvatar,
+        uri: normalizedAvatar,
+        user_id: membership.user_id,
+        created_at: membership.created_at,
+      });
+    }
+
     return {
       membership_id: id,
-      documents: docs,
+      documents: combined,
     };
   }
 

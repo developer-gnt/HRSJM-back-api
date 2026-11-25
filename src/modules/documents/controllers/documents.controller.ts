@@ -17,6 +17,7 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiBearerAuth, ApiBody, ApiConsumes, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Response } from 'express';
 import * as path from 'path';
+import * as fs from 'fs';
 import {
   AuthenticatedRequest,
   JwtAuthGuard,
@@ -93,12 +94,32 @@ export class DocumentsController {
   ) {
     const isAdmin = req.user?.roles?.includes('ADMIN') ?? false;
     const document = await this.documentsService.getById(id, user.sub, isAdmin);
+
+    if (document.storage_path && document.storage_path.startsWith('data:')) {
+      const matches = document.storage_path.match(/^data:([a-zA-Z0-9]+\/[a-zA-Z0-9-.+]+);base64,(.+)$/);
+      if (matches) {
+        const mimeType = matches[1];
+        const buffer = Buffer.from(matches[2], 'base64');
+        res.setHeader('Content-Type', mimeType);
+        res.setHeader('Content-Disposition', `attachment; filename="${document.original_file_name || document.file_name || 'document'}"`);
+        return res.send(buffer);
+      }
+    }
+
+    const cleanPath = document.storage_path.replace(/^\/+/, '');
     const basePath = path.resolve(process.cwd(), 'uploads');
-    const absolutePath = path.resolve(process.cwd(), document.storage_path);
+    const absolutePath = path.resolve(process.cwd(), cleanPath);
     if (!absolutePath.startsWith(basePath)) {
       throw new BadRequestException('Invalid or dangerous document storage path');
     }
-    return res.download(absolutePath, document.original_file_name);
+    if (!fs.existsSync(absolutePath)) {
+      return res.status(404).json({
+        statusCode: 404,
+        message: 'Document file not found on disk storage',
+        code: 'FILE_NOT_FOUND',
+      });
+    }
+    return res.download(absolutePath, document.original_file_name || document.file_name);
   }
 
   @Delete(':id')
