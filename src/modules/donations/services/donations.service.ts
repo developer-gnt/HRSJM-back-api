@@ -143,6 +143,8 @@ export class DonationsService {
 
     if (dto.status) {
       qb.andWhere('donation.status = :status', { status: dto.status });
+    } else {
+      qb.andWhere('donation.status != :pendingStatus', { pendingStatus: 'PENDING' });
     }
 
     if (dto.source) {
