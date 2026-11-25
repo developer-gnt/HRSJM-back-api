@@ -84,23 +84,27 @@ export class ReportsAnalyticsService {
         ? Math.round(((usersInPeriod - usersInPrevPeriod) / usersInPrevPeriod) * 100)
         : (usersInPeriod > 0 ? 0 : 0);
 
-      // 2. REAL DONATIONS & GROWTH
+      // 2. REAL DONATIONS & GROWTH (Only verified/completed donations)
       const [totalDonationsAllTimeCount, totalDonationsAllTimeRow, donPeriodRow, donPrevRow] = await Promise.all([
-        this.donationsRepo.count(),
+        this.donationsRepo
+          .createQueryBuilder('d')
+          .where("d.status IN ('SUCCESS', 'COMPLETED')")
+          .getCount(),
         this.donationsRepo
           .createQueryBuilder('d')
           .select('COALESCE(SUM(d.amount), 0)', 'total')
+          .where("d.status IN ('SUCCESS', 'COMPLETED')")
           .getRawOne<{ total: string }>(),
         this.donationsRepo
           .createQueryBuilder('d')
           .select('COALESCE(SUM(d.amount), 0)', 'total')
           .addSelect('COUNT(d.id)', 'cnt')
-          .where('d.created_at >= :start AND d.created_at <= :end', { start: startDate, end: endDate })
+          .where("d.status IN ('SUCCESS', 'COMPLETED') AND d.created_at >= :start AND d.created_at <= :end", { start: startDate, end: endDate })
           .getRawOne<{ total: string; cnt: string }>(),
         this.donationsRepo
           .createQueryBuilder('d')
           .select('COALESCE(SUM(d.amount), 0)', 'total')
-          .where('d.created_at >= :start AND d.created_at < :end', { start: prevStartDate, end: prevEndDate })
+          .where("d.status IN ('SUCCESS', 'COMPLETED') AND d.created_at >= :start AND d.created_at < :end", { start: prevStartDate, end: prevEndDate })
           .getRawOne<{ total: string }>(),
       ]);
 
@@ -154,7 +158,7 @@ export class ReportsAnalyticsService {
         ? Math.round(((ticketsInPeriod - ticketsInPrevPeriod) / ticketsInPrevPeriod) * 100)
         : (ticketsInPeriod > 0 ? 0 : 0);
 
-      // 4. REAL EVENTS
+      // 4. REAL EVENTS (Only admin-created events, excludes system/seed fixtures)
       const [
         totalEventsAllTime,
         eventsInPeriod,
@@ -162,23 +166,27 @@ export class ReportsAnalyticsService {
         eventRegsRow,
         periodEventRegsRow,
       ] = await Promise.all([
-        this.eventsRepo.count(),
         this.eventsRepo
           .createQueryBuilder('e')
-          .where('e.created_at >= :start AND e.created_at <= :end', { start: startDate, end: endDate })
+          .where('e.created_by IS NOT NULL')
           .getCount(),
         this.eventsRepo
           .createQueryBuilder('e')
-          .where('e.created_at >= :start AND e.created_at < :end', { start: prevStartDate, end: prevEndDate })
+          .where('e.created_by IS NOT NULL AND e.created_at >= :start AND e.created_at <= :end', { start: startDate, end: endDate })
+          .getCount(),
+        this.eventsRepo
+          .createQueryBuilder('e')
+          .where('e.created_by IS NOT NULL AND e.created_at >= :start AND e.created_at < :end', { start: prevStartDate, end: prevEndDate })
           .getCount(),
         this.eventsRepo
           .createQueryBuilder('e')
           .select('COALESCE(SUM(e.registrations), 0)', 'total')
+          .where('e.created_by IS NOT NULL')
           .getRawOne<{ total: string }>(),
         this.eventsRepo
           .createQueryBuilder('e')
           .select('COALESCE(SUM(e.registrations), 0)', 'total')
-          .where('e.created_at >= :start AND e.created_at <= :end', { start: startDate, end: endDate })
+          .where('e.created_by IS NOT NULL AND e.created_at >= :start AND e.created_at <= :end', { start: startDate, end: endDate })
           .getRawOne<{ total: string }>(),
       ]);
 
@@ -231,6 +239,7 @@ export class ReportsAnalyticsService {
         this.donationsRepo
           .createQueryBuilder('d')
           .select('COUNT(DISTINCT d.donor_mobile)', 'cnt')
+          .where("d.status IN ('SUCCESS', 'COMPLETED') AND d.donor_mobile != ''")
           .getRawOne<{ cnt: string }>(),
         this.ticketsRepo
           .createQueryBuilder('t')
@@ -316,7 +325,7 @@ export class ReportsAnalyticsService {
             .createQueryBuilder('d')
             .select('COALESCE(SUM(d.amount), 0)', 'total')
             .addSelect('COUNT(d.id)', 'cnt')
-            .where('d.created_at >= :start AND d.created_at < :end', { start, end })
+            .where("d.status IN ('SUCCESS', 'COMPLETED') AND d.created_at >= :start AND d.created_at < :end", { start, end })
             .getRawOne<{ total: string; cnt: string }>();
           return {
             label: `${end.getDate()} ${monthNames[end.getMonth()]}`,
@@ -353,8 +362,8 @@ export class ReportsAnalyticsService {
           const start = new Date(startDate.getTime() + i * stepMs);
           const end = new Date(startDate.getTime() + (i + 1) * stepMs);
           const [eventCount, regRow] = await Promise.all([
-            this.eventsRepo.createQueryBuilder('e').where('e.created_at >= :start AND e.created_at < :end', { start, end }).getCount(),
-            this.eventsRepo.createQueryBuilder('e').select('COALESCE(SUM(e.registrations), 0)', 'total').where('e.created_at >= :start AND e.created_at < :end', { start, end }).getRawOne<{ total: string }>(),
+            this.eventsRepo.createQueryBuilder('e').where('e.created_by IS NOT NULL AND e.created_at >= :start AND e.created_at < :end', { start, end }).getCount(),
+            this.eventsRepo.createQueryBuilder('e').select('COALESCE(SUM(e.registrations), 0)', 'total').where('e.created_by IS NOT NULL AND e.created_at >= :start AND e.created_at < :end', { start, end }).getRawOne<{ total: string }>(),
           ]);
           const registrations = parseInt(regRow?.total || '0', 10);
           return {
