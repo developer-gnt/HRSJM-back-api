@@ -1,7 +1,7 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
 
-export class PurgeTestEntriesFromMembershipsComplaintsDonations1790870000000 implements MigrationInterface {
-  name = 'PurgeTestEntriesFromMembershipsComplaintsDonations1790870000000';
+export class PurgeTestEntriesFromMembershipsComplaintsDonations1790880000000 implements MigrationInterface {
+  name = 'PurgeTestEntriesFromMembershipsComplaintsDonations1790880000000';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     // 1. Remove test Complaints (Support Tickets & Messages)
@@ -31,7 +31,8 @@ export class PurgeTestEntriesFromMembershipsComplaintsDonations1790870000000 imp
            OR st.description ILIKE '%test%'
            OR u.email ILIKE '%test%'
            OR u.full_name ILIKE '%test%'
-           OR u.full_name ILIKE '%sahil%';
+           OR u.full_name ILIKE '%sahil%'
+      );
     `);
 
     // 2. Remove test Donations (Donations, Payments, Refunds)
