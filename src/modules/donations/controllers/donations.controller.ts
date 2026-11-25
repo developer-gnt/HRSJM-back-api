@@ -46,8 +46,7 @@ export class DonationsController {
   }
 
   @Get(':id')
-  @ApiBearerAuth()
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(OptionalJwtAuthGuard)
   @ApiOperation({ summary: 'Get donation details by ID' })
   getById(@Param('id', ParseUUIDPipe) id: string) {
     return this.donationsService.getById(id);

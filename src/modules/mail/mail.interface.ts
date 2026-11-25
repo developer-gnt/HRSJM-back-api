@@ -12,8 +12,10 @@ export interface SendMailOptions {
 }
 
 export interface DonationThankYouMailPayload {
+  donationId?: string;
   donorName: string;
   donorEmail: string;
+  donorPan?: string;
   amount: number;
   currency?: string;
   receiptNumber: string;

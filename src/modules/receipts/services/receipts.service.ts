@@ -77,10 +77,24 @@ export class ReceiptsService {
   }
 
   async getByDonationPaymentId(donationId: string): Promise<ReceiptEntity> {
-    const receipt = await this.receiptsRepo.findOne({
-      where: { donation_payment_id: donationId },
-      relations: ['user', 'donation_payment', 'donation_payment.donation'],
-    });
+    const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+    const isUuid = UUID_REGEX.test(donationId);
+
+    const qb = this.receiptsRepo
+      .createQueryBuilder('receipt')
+      .leftJoinAndSelect('receipt.user', 'user')
+      .leftJoinAndSelect('receipt.donation_payment', 'donation_payment')
+      .leftJoinAndSelect('donation_payment.donation', 'donation');
+
+    if (isUuid) {
+      qb.where('receipt.donation_payment_id = :id', { id: donationId })
+        .orWhere('donation_payment.donation_id = :id', { id: donationId })
+        .orWhere('receipt.id = :id', { id: donationId });
+    } else {
+      qb.where('receipt.receipt_number = :id', { id: donationId });
+    }
+
+    const receipt = await qb.getOne();
 
     if (!receipt) {
       throw new NotFoundException({

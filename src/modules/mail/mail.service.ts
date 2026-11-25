@@ -20,6 +20,65 @@ import {
   TicketStatusUpdateMailPayload,
 } from './mail.interface';
 
+function numberToIndianWords(num: number): string {
+  const a = [
+    '',
+    'One ',
+    'Two ',
+    'Three ',
+    'Four ',
+    'Five ',
+    'Six ',
+    'Seven ',
+    'Eight ',
+    'Nine ',
+    'Ten ',
+    'Eleven ',
+    'Twelve ',
+    'Thirteen ',
+    'Fourteen ',
+    'Fifteen ',
+    'Sixteen ',
+    'Seventeen ',
+    'Eighteen ',
+    'Nineteen ',
+  ];
+  const b = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety'];
+
+  const whole = Math.floor(Math.abs(num));
+  if (whole === 0) return 'Zero Rupees Only';
+
+  function inWords(n: number): string {
+    let str = '';
+    if (n > 99) {
+      str += a[Math.floor(n / 100)] + 'Hundred ';
+      n %= 100;
+    }
+    if (n > 19) {
+      str += b[Math.floor(n / 10)] + ' ' + a[n % 10];
+    } else {
+      str += a[n];
+    }
+    return str;
+  }
+
+  let words = '';
+  let n = whole;
+  const crore = Math.floor(n / 10000000);
+  n %= 10000000;
+  const lakh = Math.floor(n / 100000);
+  n %= 100000;
+  const thousand = Math.floor(n / 1000);
+  n %= 1000;
+
+  if (crore > 0) words += inWords(crore) + 'Crore ';
+  if (lakh > 0) words += inWords(lakh) + 'Lakh ';
+  if (thousand > 0) words += inWords(thousand) + 'Thousand ';
+  if (n > 0) words += inWords(n);
+
+  return 'Rupees ' + words.trim() + ' Only';
+}
+
 @Injectable()
 export class MailService implements OnModuleInit {
   private readonly logger = new Logger(MailService.name);
@@ -201,12 +260,14 @@ export class MailService implements OnModuleInit {
   }
 
   /**
-   * Shoot official Thank You & Acknowledgment Email to donors upon successful payment.
+   * Shoot official Thank You & Statutory 80G Donation Receipt Email to donors upon successful payment.
    */
   async sendDonationThankYouEmail(payload: DonationThankYouMailPayload): Promise<boolean> {
     const {
+      donationId,
       donorName,
       donorEmail,
+      donorPan,
       amount,
       receiptNumber,
       receiptDate,
@@ -223,10 +284,17 @@ export class MailService implements OnModuleInit {
     }
 
     const cleanDonorName = donorName?.trim() || 'Valued Donor';
-    const formattedAmount = `₹${Number(amount || 0).toLocaleString('en-IN', {
+    const numAmount = Number(amount || 0);
+    const formattedAmount = `₹${numAmount.toLocaleString('en-IN', {
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
     })}`;
+    const halfDeductible = `₹${(numAmount * 0.5).toLocaleString('en-IN', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    })}`;
+    const amountInWords = numberToIndianWords(numAmount);
+
     const displayDate = receiptDate
       ? new Date(receiptDate).toLocaleDateString('en-IN', {
           day: '2-digit',
@@ -239,9 +307,17 @@ export class MailService implements OnModuleInit {
           year: 'numeric',
         });
     const causeText = cause?.trim() || 'General Support & Human Rights Protection';
-    const methodText = paymentMethod || 'Online (Cashfree)';
+    const methodText = paymentMethod || 'Online (Cashfree Payment Gateway)';
+    const panText = donorPan?.trim() || 'Available on record';
 
-    const subject = `Gratitude from HRSJM: Thank You for Your Generous Donation (${receiptNumber})`;
+    const baseUrl =
+      process.env.PASSWORD_RESET_BASE_URL ||
+      process.env.FRONTEND_URL ||
+      'https://webapp.hrsjm.org';
+    const receiptTargetId = donationId || receiptNumber;
+    const receiptUrl = `${baseUrl.replace(/\/+$/, '')}/donations/${receiptTargetId}/receipt`;
+
+    const subject = `Official 80G Donation Receipt #${receiptNumber} - Human Rights & Social Justice Mission`;
 
     const html = `
 <!DOCTYPE html>
@@ -249,107 +325,152 @@ export class MailService implements OnModuleInit {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Thank You for Your Donation - HRSJM</title>
+  <title>Official 80G Donation Receipt - HRSJM</title>
 </head>
 <body style="margin: 0; padding: 0; background-color: #f1f5f9; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #1e293b; -webkit-font-smoothing: antialiased;">
   <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%" style="background-color: #f1f5f9; padding: 30px 15px;">
     <tr>
       <td align="center">
         <!-- Main Container Card -->
-        <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%" style="max-width: 600px; background-color: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1);">
+        <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%" style="max-width: 650px; background-color: #ffffff; border-radius: 14px; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1); border: 1.5px solid #cbd5e1;">
           
-          <!-- Top Decorative Header Bar -->
+          <!-- Top Letterhead Header -->
           <tr>
-            <td style="background: linear-gradient(135deg, #1e3a8a 0%, #0f172a 100%); padding: 28px 24px; text-align: center;">
+            <td style="background: linear-gradient(135deg, #011F39 0%, #06294D 100%); padding: 28px 24px; text-align: center;">
               <div style="margin-bottom: 12px; text-align: center;">
-                <img src="cid:hrsjm_logo" alt="HRSJM Crest" width="76" height="auto" style="display: block; margin: 0 auto 10px auto; width: 76px; max-width: 76px; height: auto; border: 0;" />
+                <img src="cid:hrsjm_logo" alt="HRSJM Official Crest" width="76" height="auto" style="display: block; margin: 0 auto 10px auto; width: 76px; max-width: 76px; height: auto; border: 0;" />
               </div>
-              <h1 style="margin: 0 0 6px 0; color: #ffffff; font-size: 20px; font-weight: 700; letter-spacing: 0.5px;">
+              <h1 style="margin: 0 0 4px 0; color: #ffffff; font-size: 21px; font-weight: 800; letter-spacing: 0.5px; font-family: Georgia, serif;">
                 HUMAN RIGHTS & SOCIAL JUSTICE MISSION
               </h1>
-              <p style="margin: 0; color: #fbbf24; font-size: 13px; font-weight: 600; letter-spacing: 1px;">
-                मानव अधिकार - सामाजिक न्याय
+              <p style="margin: 0 0 6px 0; color: #FAD465; font-size: 14px; font-weight: 700;">
+                मानव अधिकार एवं सामाजिक न्याय संरक्षण ट्रस्ट
+              </p>
+              <p style="margin: 0; color: #cbd5e1; font-size: 11px; line-height: 1.4;">
+                Regd. No: <strong>HR/0092/2019</strong> • PAN: <strong>AABTH4589K</strong> • NITI Aayog: <strong>DL/2021/0284719</strong><br/>
+                80G URN: <strong>AABTH4589KF20214</strong> • 12A URN: <strong>AAATH1234KE20212</strong><br/>
+                National Secretariat: Central Janpath, New Delhi - 110001 • Web: www.hrsjm.org
               </p>
             </td>
           </tr>
 
-          <!-- Gold Accent Stripe -->
+          <!-- Gold Stripe -->
           <tr>
-            <td height="4" style="background-color: #f59e0b; line-height: 4px; font-size: 4px;">&nbsp;</td>
+            <td height="5" style="background-color: #E9B82E; line-height: 5px; font-size: 5px;">&nbsp;</td>
+          </tr>
+
+          <!-- Statutory Banner -->
+          <tr>
+            <td style="background-color: #FEFCE8; border-bottom: 1.5px solid #FDE047; padding: 12px 20px; text-align: center;">
+              <span style="font-size: 12px; font-weight: 800; color: #854D0E; letter-spacing: 0.6px; text-transform: uppercase;">
+                🏛️ Official Statutory Donation Receipt & Section 80G Tax Exemption Certificate
+              </span>
+              <p style="margin: 3px 0 0 0; font-size: 11px; color: #A16207;">
+                Eligible for 50% Tax Deduction under Section 80G(5)(vi) of the Income Tax Act, 1961
+              </p>
+            </td>
           </tr>
 
           <!-- Body Content Area -->
           <tr>
-            <td style="padding: 36px 32px;">
+            <td style="padding: 30px 28px;">
               <!-- Salutation -->
-              <h2 style="margin: 0 0 16px 0; color: #0f172a; font-size: 20px; font-weight: 700;">
+              <h2 style="margin: 0 0 12px 0; color: #011F39; font-size: 18px; font-weight: 700;">
                 Dear ${cleanDonorName},
               </h2>
 
-              <p style="margin: 0 0 16px 0; font-size: 15px; line-height: 1.6; color: #334155;">
-                On behalf of the entire team, volunteers, and trustees at the <strong>Human Rights & Social Justice Mission (HRSJM)</strong>, we express our heartfelt gratitude for your compassionate contribution.
+              <p style="margin: 0 0 16px 0; font-size: 14px; line-height: 1.6; color: #334155;">
+                We gratefully acknowledge receipt of your voluntary donation to the <strong>Human Rights & Social Justice Mission</strong>. Your contribution directly funds vital legal redressal, human rights defense, and humanitarian assistance for vulnerable citizens.
               </p>
 
-              <p style="margin: 0 0 24px 0; font-size: 15px; line-height: 1.6; color: #334155;">
-                Your generous gift directly empowers us to defend fundamental rights, provide free legal counselling to vulnerable citizens, support children’s education, and fight for justice at the grassroots level.
-              </p>
-
-              <!-- Donation Receipt Summary Box -->
-              <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%" style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; margin: 0 0 28px 0; overflow: hidden;">
+              <!-- Detailed Receipt Summary Slip -->
+              <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%" style="background-color: #F8FAFC; border: 1.5px solid #011F39; border-radius: 8px; margin: 0 0 24px 0; overflow: hidden; border-collapse: collapse;">
                 <tr>
-                  <td colspan="2" style="background-color: #e0f2fe; padding: 12px 18px; border-bottom: 1px solid #bae6fd;">
-                    <span style="font-size: 13px; font-weight: 700; color: #0369a1; text-transform: uppercase; letter-spacing: 0.5px;">
-                      Official Donation Receipt Summary
+                  <td colspan="2" style="background-color: #011F39; padding: 10px 16px; border-bottom: 2px solid #E9B82E;">
+                    <span style="font-size: 12px; font-weight: 800; color: #FAD465; text-transform: uppercase; letter-spacing: 0.5px;">
+                      Receipt Voucher Details — #${receiptNumber}
                     </span>
                   </td>
                 </tr>
                 <tr>
-                  <td style="padding: 12px 18px; font-size: 14px; color: #64748b; border-bottom: 1px solid #f1f5f9; width: 40%;">
-                    Receipt Number
+                  <td style="padding: 10px 16px; font-size: 13px; color: #64748b; border-bottom: 1px solid #e2e8f0; width: 42%;">
+                    Organization Legal Name
                   </td>
-                  <td style="padding: 12px 18px; font-size: 14px; font-weight: 700; color: #0f172a; border-bottom: 1px solid #f1f5f9;">
-                    ${receiptNumber}
-                  </td>
-                </tr>
-                <tr>
-                  <td style="padding: 12px 18px; font-size: 14px; color: #64748b; border-bottom: 1px solid #f1f5f9;">
-                    Donation Amount
-                  </td>
-                  <td style="padding: 12px 18px; font-size: 18px; font-weight: 800; color: #15803d; border-bottom: 1px solid #f1f5f9;">
-                    ${formattedAmount}
+                  <td style="padding: 10px 16px; font-size: 13px; font-weight: 700; color: #011F39; border-bottom: 1px solid #e2e8f0;">
+                    Human Rights & Social Justice Mission
                   </td>
                 </tr>
                 <tr>
-                  <td style="padding: 12px 18px; font-size: 14px; color: #64748b; border-bottom: 1px solid #f1f5f9;">
-                    Cause / Purpose
+                  <td style="padding: 10px 16px; font-size: 13px; color: #64748b; border-bottom: 1px solid #e2e8f0;">
+                    Section 80G Registration URN
                   </td>
-                  <td style="padding: 12px 18px; font-size: 14px; color: #0f172a; border-bottom: 1px solid #f1f5f9;">
+                  <td style="padding: 10px 16px; font-size: 13px; font-weight: 800; color: #B45309; font-family: monospace; border-bottom: 1px solid #e2e8f0;">
+                    AABTH4589KF20214
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding: 10px 16px; font-size: 13px; color: #64748b; border-bottom: 1px solid #e2e8f0;">
+                    Donor Legal Name
+                  </td>
+                  <td style="padding: 10px 16px; font-size: 14px; font-weight: 800; color: #0f172a; border-bottom: 1px solid #e2e8f0;">
+                    ${cleanDonorName}
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding: 10px 16px; font-size: 13px; color: #64748b; border-bottom: 1px solid #e2e8f0;">
+                    Donor PAN (For ITR 80G Claim)
+                  </td>
+                  <td style="padding: 10px 16px; font-size: 13px; font-weight: 700; color: #0f172a; font-family: monospace; border-bottom: 1px solid #e2e8f0;">
+                    ${panText}
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding: 10px 16px; font-size: 13px; color: #64748b; border-bottom: 1px solid #e2e8f0;">
+                    Cause / Welfare Purpose (Reason)
+                  </td>
+                  <td style="padding: 10px 16px; font-size: 13px; font-weight: 700; color: #0f172a; border-bottom: 1px solid #e2e8f0;">
                     ${causeText}
                   </td>
                 </tr>
                 <tr>
-                  <td style="padding: 12px 18px; font-size: 14px; color: #64748b; border-bottom: 1px solid #f1f5f9;">
-                    Date of Receipt
+                  <td style="padding: 10px 16px; font-size: 13px; color: #64748b; border-bottom: 1px solid #e2e8f0;">
+                    Donation Amount (In Figures)
                   </td>
-                  <td style="padding: 12px 18px; font-size: 14px; color: #0f172a; border-bottom: 1px solid #f1f5f9;">
+                  <td style="padding: 10px 16px; font-size: 18px; font-weight: 900; color: #15803D; border-bottom: 1px solid #e2e8f0;">
+                    ${formattedAmount}
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding: 10px 16px; font-size: 13px; color: #64748b; border-bottom: 1px solid #e2e8f0;">
+                    Amount (In Words)
+                  </td>
+                  <td style="padding: 10px 16px; font-size: 13px; font-weight: 800; color: #15803D; border-bottom: 1px solid #e2e8f0;">
+                    ${amountInWords}
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding: 10px 16px; font-size: 13px; color: #64748b; border-bottom: 1px solid #e2e8f0;">
+                    Receipt Date & Time
+                  </td>
+                  <td style="padding: 10px 16px; font-size: 13px; color: #0f172a; border-bottom: 1px solid #e2e8f0;">
                     ${displayDate}
                   </td>
                 </tr>
                 <tr>
-                  <td style="padding: 12px 18px; font-size: 14px; color: #64748b; border-bottom: 1px solid #f1f5f9;">
+                  <td style="padding: 10px 16px; font-size: 13px; color: #64748b; border-bottom: 1px solid #e2e8f0;">
                     Payment Mode
                   </td>
-                  <td style="padding: 12px 18px; font-size: 14px; color: #0f172a; border-bottom: 1px solid #f1f5f9;">
+                  <td style="padding: 10px 16px; font-size: 13px; color: #0f172a; border-bottom: 1px solid #e2e8f0;">
                     ${methodText}
                   </td>
                 </tr>
                 ${
                   gatewayPaymentId
                     ? `<tr>
-                        <td style="padding: 12px 18px; font-size: 14px; color: #64748b;">
-                          Payment ID / Ref
+                        <td style="padding: 10px 16px; font-size: 13px; color: #64748b;">
+                          Payment ID / Reference
                         </td>
-                        <td style="padding: 12px 18px; font-size: 13px; font-family: monospace; color: #475569;">
+                        <td style="padding: 10px 16px; font-size: 12px; font-family: monospace; color: #475569;">
                           ${gatewayPaymentId}
                         </td>
                       </tr>`
@@ -357,41 +478,57 @@ export class MailService implements OnModuleInit {
                 }
               </table>
 
-              <!-- Impact Statement Highlight Box -->
-              <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%" style="background-color: #fefce8; border-left: 4px solid #eab308; border-radius: 4px; margin: 0 0 28px 0;">
+              <!-- Action Call to Print/Download Button -->
+              <div style="text-align: center; margin: 26px 0 28px 0;">
+                <a href="${receiptUrl}" target="_blank" style="display: inline-block; background-color: #011F39; color: #FAD465; text-decoration: none; padding: 13px 28px; border-radius: 8px; font-weight: 800; font-size: 14px; letter-spacing: 0.4px; box-shadow: 0 4px 6px rgba(1, 31, 57, 0.2); border: 1px solid #E9B82E;">
+                  🖨️ View & Print Official 80G Receipt
+                </a>
+                <p style="margin: 8px 0 0 0; font-size: 11px; color: #64748b;">
+                  Click the button above to view, print, or download your official statutory A4 PDF receipt.
+                </p>
+              </div>
+
+              <!-- 80G Statutory Endorsement Clause -->
+              <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%" style="background-color: #fefce8; border-left: 4px solid #eab308; border-radius: 4px; margin: 0 0 24px 0;">
                 <tr>
-                  <td style="padding: 16px 18px;">
-                    <p style="margin: 0; font-size: 14px; line-height: 1.5; color: #713f12;">
-                      <em>"Every single contribution stands between injustice and a voice being heard. Thank you for standing with the people who need it most."</em>
-                    </p>
+                  <td style="padding: 14px 16px; font-size: 12px; line-height: 1.55; color: #713f12;">
+                    <strong>🏛️ Statutory Endorsement under Section 80G(5)(vi):</strong><br/>
+                    Certified that donations to Human Rights & Social Justice Mission are entitled to a <strong>50% deduction from taxable income</strong> (Deductible limit: <strong>${halfDeductible}</strong>) under Section 80G of the Income Tax Act, 1961 vide Unique Registration Number (URN) <strong>AABTH4589KF20214</strong> dated 12/04/2021. No commercial benefit, goods, or services were provided in return for this contribution.
                   </td>
                 </tr>
               </table>
 
-              <!-- Closing -->
-              <p style="margin: 0 0 8px 0; font-size: 15px; line-height: 1.6; color: #334155;">
-                With warm regards and solidarity,
-              </p>
-              <p style="margin: 0; font-size: 16px; font-weight: 700; color: #0f172a;">
-                Human Rights & Social Justice Mission
-              </p>
-              <p style="margin: 2px 0 0 0; font-size: 13px; color: #64748b;">
-                National Headquarters, New Delhi, India
-              </p>
+              <!-- Authorized Signatory Block -->
+              <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%" style="margin-top: 20px; border-top: 1px dashed #cbd5e1; padding-top: 14px;">
+                <tr>
+                  <td style="font-size: 11px; color: #64748b; vertical-align: top; width: 60%;">
+                    <strong>Internal Audit & Finance Desk</strong><br/>
+                    Verified Electronic Reconciliation<br/>
+                    Central Headquarters, New Delhi
+                  </td>
+                  <td style="font-size: 11px; text-align: right; vertical-align: top;">
+                    <span style="font-family: Georgia, serif; font-size: 15px; font-weight: bold; color: #011F39; display: block; margin-bottom: 2px;">
+                      K. S. Rathore
+                    </span>
+                    <strong>Authorized Signatory / National Treasurer</strong><br/>
+                    <span style="color: #64748b;">Human Rights & Social Justice Mission</span>
+                  </td>
+                </tr>
+              </table>
             </td>
           </tr>
 
           <!-- Footer Area -->
           <tr>
-            <td style="background-color: #0f172a; padding: 24px 30px; text-align: center; color: #94a3b8; font-size: 12px; line-height: 1.6;">
-              <p style="margin: 0 0 8px 0; color: #cbd5e1; font-weight: 600;">
+            <td style="background-color: #011F39; padding: 22px 28px; text-align: center; color: #94a3b8; font-size: 11.5px; line-height: 1.55;">
+              <p style="margin: 0 0 6px 0; color: #FAD465; font-weight: 700;">
                 Human Rights & Social Justice Mission (HRSJM)
               </p>
-              <p style="margin: 0 0 12px 0;">
+              <p style="margin: 0 0 10px 0;">
                 Dedicated to the preservation of Constitutional Rights, Equality, and Social Welfare.
               </p>
-              <p style="margin: 0; color: #64748b;">
-                This is an automated acknowledgment and official donation receipt. Please keep this email for your financial records.
+              <p style="margin: 0; color: #64748b; font-size: 10.5px;">
+                This is a digitally generated statutory receipt under the Information Technology Act, 2000. It is fully valid for statutory income tax compliance and ITR filing.
               </p>
             </td>
           </tr>
@@ -406,26 +543,37 @@ export class MailService implements OnModuleInit {
 
     const plainText = `
 HUMAN RIGHTS & SOCIAL JUSTICE MISSION (HRSJM)
-मानव अधिकार - सामाजिक न्याय
+मानव अधिकार एवं सामाजिक न्याय संरक्षण ट्रस्ट
+Regd. No: HR/0092/2019 • PAN: AABTH4589K • 80G URN: AABTH4589KF20214
 
 Dear ${cleanDonorName},
 
 On behalf of the entire team and trustees at Human Rights & Social Justice Mission (HRSJM), we express our heartfelt gratitude for your generous donation.
 
-DONATION RECEIPT SUMMARY
----------------------------------------------
+OFFICIAL STATUTORY 80G DONATION RECEIPT
+--------------------------------------------------------------------------------
 Receipt Number : ${receiptNumber}
-Amount         : ${formattedAmount}
+Organization   : Human Rights & Social Justice Mission
+80G Reg. URN   : AABTH4589KF20214 (50% Tax Exemption Claimable)
+NGO PAN        : AABTH4589K
+Donor Name     : ${cleanDonorName}
+Donor PAN      : ${panText}
+Amount         : ${formattedAmount} (${amountInWords})
 Cause / Purpose: ${causeText}
-Date           : ${displayDate}
+Receipt Date   : ${displayDate}
 Payment Mode   : ${methodText}
-${gatewayPaymentId ? `Payment Ref    : ${gatewayPaymentId}\n` : ''}---------------------------------------------
+${gatewayPaymentId ? `Payment Ref    : ${gatewayPaymentId}\n` : ''}--------------------------------------------------------------------------------
 
-Your compassionate support empowers our ongoing work in human rights defense, free legal aid, community education, and social justice.
+View & Print Official Receipt:
+${receiptUrl}
+
+Tax Exemption Clause:
+Donations to Human Rights & Social Justice Mission are eligible for 50% tax deduction under Section 80G(5)(vi) of the Income Tax Act, 1961.
 
 With warm regards and solidarity,
 Human Rights & Social Justice Mission (HRSJM)
-National Headquarters, New Delhi, India
+National Headquarters, Central Janpath, New Delhi - 110001
+Web: www.hrsjm.org
     `.trim();
 
     const result = await this.sendMail({

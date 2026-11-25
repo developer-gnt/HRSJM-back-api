@@ -506,6 +506,7 @@ export class DonationPaymentsService implements OnModuleInit {
           if (donorEmail && donorEmail.includes('@')) {
             this.mailService!
               .sendDonationThankYouEmail({
+                donationId: result.payment.donation_id,
                 donorName,
                 donorEmail,
                 amount: Number(result.payment.amount),
