@@ -60,37 +60,62 @@ async function bootstrap() {
     res.json({ ok: true, version: 'cors-fixed-v2', timestamp: new Date().toISOString() });
   });
 
-  // Statically serve uploads folder for application documents & profile photos with smart prefix resolution
+  // Statically serve uploads folder for application documents & profile photos with recursive smart resolution
   const expressStatic = require('express');
   const uploadsDir = path.resolve(process.cwd(), 'uploads');
   const uploadsStatic = expressStatic.static(uploadsDir);
-  const smartUploadsMiddleware = (req: any, res: any, next: any) => {
-    const rawPath = req.path || '';
-    const requestedFile = path.basename(rawPath);
-    if (!requestedFile || requestedFile === '/' || requestedFile === '.') {
-      return next();
-    }
-    const directPath = path.join(uploadsDir, requestedFile);
-    if (fs.existsSync(directPath) && !fs.statSync(directPath).isDirectory()) {
-      return res.sendFile(directPath);
-    }
-    // Check if file exists with a prefix like <ID>_<requestedFile> or case-insensitive match
+
+  function findFileRecursively(dir: string, targetFile: string): string | null {
     try {
-      if (fs.existsSync(uploadsDir)) {
-        const files = fs.readdirSync(uploadsDir);
-        const lowerReq = requestedFile.toLowerCase();
-        const matched = files.find(f => {
-          const lowerF = f.toLowerCase();
-          return lowerF === lowerReq || lowerF.endsWith(`_${lowerReq}`) || lowerF.endsWith(`-${lowerReq}`);
-        });
-        if (matched) {
-          const matchedPath = path.join(uploadsDir, matched);
-          if (fs.existsSync(matchedPath) && !fs.statSync(matchedPath).isDirectory()) {
-            return res.sendFile(matchedPath);
+      if (!fs.existsSync(dir)) return null;
+      const entries = fs.readdirSync(dir, { withFileTypes: true });
+      const lowerTarget = targetFile.toLowerCase();
+      for (const entry of entries) {
+        const fullPath = path.join(dir, entry.name);
+        if (entry.isDirectory()) {
+          const found = findFileRecursively(fullPath, targetFile);
+          if (found) return found;
+        } else if (entry.isFile()) {
+          const lowerName = entry.name.toLowerCase();
+          if (
+            lowerName === lowerTarget ||
+            lowerName.endsWith(`_${lowerTarget}`) ||
+            lowerName.endsWith(`-${lowerTarget}`)
+          ) {
+            return fullPath;
           }
         }
       }
     } catch {}
+    return null;
+  }
+
+  const smartUploadsMiddleware = (req: any, res: any, next: any) => {
+    const rawPath = decodeURIComponent(req.path || '');
+    const requestedFile = path.basename(rawPath);
+    if (!requestedFile || requestedFile === '/' || requestedFile === '.') {
+      return next();
+    }
+
+    // 1. Direct path relative to uploadsDir (handles /applications/.../file.jpg)
+    const directRelPath = rawPath.replace(/^\/+/, '');
+    const directPath = path.join(uploadsDir, directRelPath);
+    if (fs.existsSync(directPath) && !fs.statSync(directPath).isDirectory()) {
+      return res.sendFile(directPath);
+    }
+
+    // 2. Direct path by requested filename directly in uploadsDir
+    const flatPath = path.join(uploadsDir, requestedFile);
+    if (fs.existsSync(flatPath) && !fs.statSync(flatPath).isDirectory()) {
+      return res.sendFile(flatPath);
+    }
+
+    // 3. Search recursively inside uploadsDir (e.g. inside uploads/applications/<folder>/)
+    const foundPath = findFileRecursively(uploadsDir, requestedFile);
+    if (foundPath && fs.existsSync(foundPath) && !fs.statSync(foundPath).isDirectory()) {
+      return res.sendFile(foundPath);
+    }
+
     uploadsStatic(req, res, next);
   };
 
