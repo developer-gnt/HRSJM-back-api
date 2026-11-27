@@ -1,4 +1,5 @@
 import * as path from 'path';
+import * as fs from 'fs';
 import { ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
@@ -59,9 +60,42 @@ async function bootstrap() {
     res.json({ ok: true, version: 'cors-fixed-v2', timestamp: new Date().toISOString() });
   });
 
-  // Statically serve uploads folder for application documents & profile photos
+  // Statically serve uploads folder for application documents & profile photos with smart prefix resolution
   const expressStatic = require('express');
-  expressApp.use('/uploads', expressStatic.static(path.join(process.cwd(), 'uploads')));
+  const uploadsDir = path.resolve(process.cwd(), 'uploads');
+  const uploadsStatic = expressStatic.static(uploadsDir);
+  const smartUploadsMiddleware = (req: any, res: any, next: any) => {
+    const rawPath = req.path || '';
+    const requestedFile = path.basename(rawPath);
+    if (!requestedFile || requestedFile === '/' || requestedFile === '.') {
+      return next();
+    }
+    const directPath = path.join(uploadsDir, requestedFile);
+    if (fs.existsSync(directPath) && !fs.statSync(directPath).isDirectory()) {
+      return res.sendFile(directPath);
+    }
+    // Check if file exists with a prefix like <ID>_<requestedFile> or case-insensitive match
+    try {
+      if (fs.existsSync(uploadsDir)) {
+        const files = fs.readdirSync(uploadsDir);
+        const lowerReq = requestedFile.toLowerCase();
+        const matched = files.find(f => {
+          const lowerF = f.toLowerCase();
+          return lowerF === lowerReq || lowerF.endsWith(`_${lowerReq}`) || lowerF.endsWith(`-${lowerReq}`);
+        });
+        if (matched) {
+          const matchedPath = path.join(uploadsDir, matched);
+          if (fs.existsSync(matchedPath) && !fs.statSync(matchedPath).isDirectory()) {
+            return res.sendFile(matchedPath);
+          }
+        }
+      }
+    } catch {}
+    uploadsStatic(req, res, next);
+  };
+
+  expressApp.use('/api/v1/uploads', smartUploadsMiddleware);
+  expressApp.use('/uploads', smartUploadsMiddleware);
   // Dedicated responsive Reset Password webpage served at root path
   expressApp.get('/reset-password', (req: any, res: any) => {
     const token = (req.query.token as string) || '';
