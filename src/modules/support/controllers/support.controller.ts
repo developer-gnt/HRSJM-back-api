@@ -1,6 +1,8 @@
 import {
   Body,
   Controller,
+  Delete,
+  ForbiddenException,
   Get,
   Param,
   Patch,
@@ -170,5 +172,21 @@ export class SupportController {
       user.sub,
       isAdmin,
     );
+  }
+
+  @Delete(':id')
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard)
+  @ApiOperation({ summary: 'Delete a support ticket (admin only)' })
+  async remove(
+    @Param('id') id: string,
+    @AuthenticatedUser() user: { sub: string },
+    @Req() req: AuthenticatedRequest,
+  ) {
+    const isAdmin = this.checkIsAdmin(req);
+    if (!isAdmin) {
+      throw new ForbiddenException('Only administrators can delete support tickets');
+    }
+    return this.supportService.remove(id, user.sub);
   }
 }

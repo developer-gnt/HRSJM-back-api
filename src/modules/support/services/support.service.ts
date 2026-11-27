@@ -5,6 +5,8 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
+import * as fs from 'fs';
+import * as path from 'path';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Brackets, Repository } from 'typeorm';
 import {
@@ -283,6 +285,55 @@ ${dto.details.trim()}`;
 
     const saved = await this.tickets.save(ticket);
     const ticketRef = `HRSJM-CMP-${saved.id.slice(0, 8).toUpperCase()}`;
+
+    // Persist attached KYC & handwritten complaint documents into application folder and database
+    try {
+      if (dto.aadhaarFileUri) {
+        await this.documentsService.saveDocumentToApplicationFolder({
+          userId: targetUserId,
+          applicationNumber: ticketRef,
+          documentName: 'Aadhaar Card (Identity Proof)',
+          documentType: DocumentType.SUPPORT_TICKET_ATTACHMENT,
+          relatedEntityType: RelatedEntityType.SUPPORT_TICKET,
+          relatedEntityId: saved.id,
+          fileName: dto.aadhaarFileName || 'aadhaar_card.pdf',
+          dataUriOrBuffer: dto.aadhaarFileUri,
+          actingUserId: targetUserId,
+        });
+      }
+
+      if (dto.handwrittenFileUri) {
+        await this.documentsService.saveDocumentToApplicationFolder({
+          userId: targetUserId,
+          applicationNumber: ticketRef,
+          documentName: 'Signed Handwritten Complaint',
+          documentType: DocumentType.SUPPORT_TICKET_ATTACHMENT,
+          relatedEntityType: RelatedEntityType.SUPPORT_TICKET,
+          relatedEntityId: saved.id,
+          fileName: dto.handwrittenFileName || 'handwritten_complaint.pdf',
+          dataUriOrBuffer: dto.handwrittenFileUri,
+          actingUserId: targetUserId,
+        });
+      }
+
+      if (dto.otherDeptFileUri) {
+        await this.documentsService.saveDocumentToApplicationFolder({
+          userId: targetUserId,
+          applicationNumber: ticketRef,
+          documentName: 'Previous Department Report Copy',
+          documentType: DocumentType.SUPPORT_TICKET_ATTACHMENT,
+          relatedEntityType: RelatedEntityType.SUPPORT_TICKET,
+          relatedEntityId: saved.id,
+          fileName: dto.otherDeptFileName || 'previous_department_report.pdf',
+          dataUriOrBuffer: dto.otherDeptFileUri,
+          actingUserId: targetUserId,
+        });
+      }
+    } catch (docErr) {
+      this.logger.warn(
+        `Failed to persist complaint documents for ${ticketRef}: ${(docErr as Error).message}`,
+      );
+    }
 
     await this.audit.record({
       event: 'support_ticket.public_complaint',
@@ -871,5 +922,58 @@ ${dto.message.trim()}`;
       actingUserId,
       isAdmin,
     );
+  }
+
+  async remove(
+    id: string,
+    actingUserId: string,
+  ): Promise<{ success: boolean; id: string }> {
+    const ticket = await this.tickets.findOne({ where: { id } });
+    if (!ticket) {
+      throw new NotFoundException({
+        message: 'Support ticket not found',
+        code: 'SUPPORT_TICKET_NOT_FOUND',
+        details: { id },
+      });
+    }
+
+    // 1. Delete associated messages
+    await this.messages.delete({ ticket_id: id });
+
+    // 2. Clean up associated documents from filesystem and database
+    try {
+      const docs = await this.documentsService.findByRelatedEntity(
+        RelatedEntityType.SUPPORT_TICKET,
+        id,
+      );
+      for (const doc of docs) {
+        if (doc.storage_path) {
+          const filePath = path.resolve(process.cwd(), doc.storage_path);
+          try {
+            if (fs.existsSync(filePath)) {
+              fs.unlinkSync(filePath);
+            }
+          } catch {}
+        }
+        await this.documentsService.archive(doc.id, actingUserId, true);
+      }
+    } catch (err: any) {
+      this.logger.warn(`Could not clean up documents for ticket ${id}: ${err?.message}`);
+    }
+
+    // 3. Delete ticket record
+    await this.tickets.delete(id);
+
+    await this.audit.record({
+      event: 'support_ticket.deleted',
+      actorId: actingUserId,
+      entityType: 'support_tickets',
+      entityId: id,
+      metadata: {
+        subject: ticket.subject,
+      },
+    });
+
+    return { success: true, id };
   }
 }

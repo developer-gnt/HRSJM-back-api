@@ -10,3 +10,7 @@ backup-*.json
 *-credentials*.txt
 *.keystore
 *.jks
+
+# User uploaded files
+uploads/*
+!uploads/.gitkeep

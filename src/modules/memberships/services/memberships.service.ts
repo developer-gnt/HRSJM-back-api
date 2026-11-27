@@ -454,10 +454,11 @@ export class MembershipsService {
     const userNumber = 'USER' + (targetUserId.replace(/\D/g, '').slice(-4) || targetUserId.slice(0, 8).toUpperCase());
     const appNumber = saved.membership_number || initialNumber;
 
-    const avatarCandidate = dto.avatar || (dto.personal_details as any)?.avatar;
+    let savedAvatar: any = null;
+    const avatarCandidate = dto.avatar || (dto.personal_details as any)?.avatar || (appData as any)?.avatar || (appData as any)?.avatarUrl;
     if (avatarCandidate && typeof avatarCandidate === 'string' && avatarCandidate.startsWith('data:')) {
       try {
-        const savedAvatar = await this.documentsService.saveDocumentToApplicationFolder({
+        savedAvatar = await this.documentsService.saveDocumentToApplicationFolder({
           userId: targetUserId,
           applicationNumber: appNumber,
           userNumber,
@@ -470,7 +471,20 @@ export class MembershipsService {
           actingUserId: actingUserId || targetUserId,
         });
         if (savedAvatar) {
-          if (saved.application_data) { (saved.application_data as any).avatar = `/${savedAvatar.storage_path.replace(/\\/g, '/')}`; }
+          const avatarUrl = `/${savedAvatar.storage_path.replace(/\\/g, '/')}`;
+          if (appData) {
+            (appData as any).avatar = avatarUrl;
+            (appData as any).avatarUrl = avatarUrl;
+          }
+          if (saved.application_data) {
+            (saved.application_data as any).avatar = avatarUrl;
+            (saved.application_data as any).avatarUrl = avatarUrl;
+          }
+          try {
+            await this.dataSource.getRepository(UserEntity).update(targetUserId, { avatar: avatarUrl });
+          } catch (uErr: any) {
+            console.warn(`[MembershipsService] Could not update user avatar_url: ${uErr?.message}`);
+          }
         }
       } catch (avErr: any) {
         console.warn(`[MembershipsService] Could not save avatar file: ${avErr?.message}`);
@@ -479,6 +493,13 @@ export class MembershipsService {
 
     if (Array.isArray((appData as any)?.documents)) {
       for (const doc of (appData as any).documents) {
+        const isPhoto = doc.id === 'photograph' || doc.type === 'PHOTOGRAPH' || (typeof doc.title === 'string' && doc.title.toLowerCase().includes('photograph'));
+        if (isPhoto && savedAvatar) {
+          doc.uri = `/${savedAvatar.storage_path.replace(/\\/g, '/')}`;
+          doc.storage_path = savedAvatar.storage_path;
+          continue;
+        }
+
         const docUri = doc.uri || doc.fileUri;
         if (docUri && typeof docUri === 'string' && docUri.startsWith('data:')) {
           try {
@@ -503,9 +524,10 @@ export class MembershipsService {
           }
         }
       }
-      saved.application_data = appData;
-      await this.memberships.save(saved);
     }
+
+    saved.application_data = appData;
+    await this.memberships.save(saved);
 
     if (shouldBeActive) {
       try {
@@ -1620,21 +1642,42 @@ export class MembershipsService {
     const appData = (membership.application_data as Record<string, any>) || {};
     const appDocs = Array.isArray(appData.documents) ? appData.documents : [];
 
-    const combined: any[] = [...dbDocs];
-    const seenNames = new Set<string>(
-      dbDocs.map((d) => (d.document_name || d.file_name || '').toLowerCase().trim()),
-    );
+    const normalizeDocType = (name: string, fileName: string, path: string): string => {
+      const s = `${name} ${fileName} ${path}`.toLowerCase();
+      if (s.includes('photograph') || s.includes('photo') || s.includes('avatar') || s.includes('profile')) return 'PHOTOGRAPH';
+      if (s.includes('aadhar') || s.includes('aadhaar') || s.includes('identity') || s.includes('id_proof') || s.includes('id-proof') || s.includes('pan') || s.includes('passport')) return 'ID_PROOF';
+      if (s.includes('address') || s.includes('electricity') || s.includes('bill') || s.includes('rent') || s.includes('residence') || s.includes('domicile')) return 'ADDRESS_PROOF';
+      if (s.includes('qualification') || s.includes('degree') || s.includes('marksheet') || s.includes('certificate') || s.includes('education')) return 'QUALIFICATION';
+      return name.toLowerCase().trim();
+    };
 
+    const seenCategories = new Set<string>();
+    const seenPaths = new Set<string>();
+    const combined: any[] = [];
+
+    // Prioritize official documents recorded in DB
+    for (const d of dbDocs) {
+      const cat = normalizeDocType(d.document_name || '', d.file_name || '', d.storage_path || '');
+      const pathKey = (d.storage_path || d.file_name || '').toLowerCase().replace(/\\/g, '/').split('/').pop() || '';
+      seenCategories.add(cat);
+      if (pathKey) seenPaths.add(pathKey);
+      combined.push(d);
+    }
+
+    // Only supplement with appDocs if category and filename are not already present
     for (const doc of appDocs) {
       const name = (doc.title || doc.name || doc.type || 'Membership Document').trim();
-      const nameKey = name.toLowerCase();
-      if (!seenNames.has(nameKey)) {
-        seenNames.add(nameKey);
-        const rawUri = doc.fileUri || doc.uri || doc.url || doc.file_url || doc.storage_path || '';
+      const rawUri = doc.fileUri || doc.uri || doc.url || doc.file_url || doc.storage_path || '';
+      const cat = normalizeDocType(name, doc.fileName || doc.file_name || '', rawUri);
+      const pathKey = (rawUri || doc.fileName || '').toLowerCase().replace(/\\/g, '/').split('/').pop() || '';
+
+      if (!seenCategories.has(cat) && (!pathKey || !seenPaths.has(pathKey))) {
+        seenCategories.add(cat);
+        if (pathKey) seenPaths.add(pathKey);
         const normalizedStorage = rawUri.startsWith('uploads/') ? `/${rawUri}` : rawUri;
 
         combined.push({
-          id: doc.id || `appdoc-${membership.id}-${nameKey.replace(/[^a-z0-9]/g, '-')}`,
+          id: doc.id || `appdoc-${membership.id}-${cat.toLowerCase()}`,
           document_name: name,
           document_type: DocumentType.MEMBERSHIP_DOCUMENT,
           file_name: doc.fileName || doc.file_name || `${name.replace(/[^a-zA-Z0-9]/g, '_')}.pdf`,
@@ -1653,16 +1696,11 @@ export class MembershipsService {
       appData.personal_details?.avatar ||
       (membership.user as any)?.avatar;
 
-    if (
-      avatarCandidate &&
-      !seenNames.has('applicant photograph') &&
-      !seenNames.has('applicant photograph (profile photo)') &&
-      !seenNames.has('official passport photograph')
-    ) {
+    if (avatarCandidate && !seenCategories.has('PHOTOGRAPH')) {
       const normalizedAvatar = avatarCandidate.startsWith('uploads/') ? `/${avatarCandidate}` : avatarCandidate;
       combined.push({
         id: `avatar-${membership.id}`,
-        document_name: 'Official Passport Photograph',
+        document_name: 'Applicant Photograph (Profile Photo)',
         document_type: DocumentType.MEMBERSHIP_DOCUMENT,
         file_name: 'applicant_photograph.jpg',
         mime_type: 'image/jpeg',

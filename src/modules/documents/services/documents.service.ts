@@ -79,27 +79,23 @@ export class DocumentsService {
     }
 
     const ownerId = isAdmin && dto.owner_id ? dto.owner_id : actingUserId;
-    const fileName = `${randomUUID()}${extension}`;
+    await mkdir(STORAGE_DIR, { recursive: true });
 
-    let storagePath: string;
+    let idPrefix = '';
     if (dto.related_entity_id) {
-      let cleanAppId: string;
       if (dto.related_entity_type === RelatedEntityType.ASSISTANCE_REQUEST) {
-        cleanAppId = `HRSJM-SEK-${dto.related_entity_id.replace(/-/g, '').slice(0, 6).toUpperCase()}`;
+        idPrefix = `HRSJM-SEK-${dto.related_entity_id.replace(/-/g, '').slice(0, 6).toUpperCase()}_`;
       } else if (dto.related_entity_type === RelatedEntityType.MEMBERSHIP) {
-        cleanAppId = `HRSJM-${dto.related_entity_id.replace(/-/g, '').slice(0, 5).toUpperCase()}`;
+        idPrefix = `HRSJM-${dto.related_entity_id.replace(/-/g, '').slice(0, 5).toUpperCase()}_`;
+      } else if (dto.related_entity_type === RelatedEntityType.SUPPORT_TICKET) {
+        idPrefix = `HRSJM-CMP-${dto.related_entity_id.replace(/-/g, '').slice(0, 8).toUpperCase()}_`;
       } else {
-        cleanAppId = `APP_${dto.related_entity_id.replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 8).toUpperCase()}`;
+        idPrefix = `${dto.related_entity_id.replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 8).toUpperCase()}_`;
       }
-      const cleanUserId = `USER${ownerId.replace(/\D/g, '').slice(-4) || ownerId.slice(0, 8).toUpperCase()}`;
-      const folderName = `${cleanAppId}_${cleanUserId}`;
-      const targetDir = path.join(STORAGE_DIR, 'applications', folderName);
-      await mkdir(targetDir, { recursive: true });
-      storagePath = path.join('uploads', 'applications', folderName, fileName).replace(/\\/g, '/');
-    } else {
-      await mkdir(STORAGE_DIR, { recursive: true });
-      storagePath = path.join('uploads', fileName).replace(/\\/g, '/');
     }
+    const cleanOrigName = path.basename(file.originalname).replace(/[^a-zA-Z0-9._-]/g, '_');
+    const fileName = `${idPrefix}${cleanOrigName}`;
+    const storagePath = path.join('uploads', fileName).replace(/\\/g, '/');
     await writeFile(path.join(process.cwd(), storagePath), file.buffer);
 
     const document = this.documents.create({
@@ -253,12 +249,9 @@ export class DocumentsService {
     actingUserId?: string;
   }): Promise<DocumentEntity | null> {
     try {
-      const cleanAppNo = (params.applicationNumber || 'APP_UNKNOWN').replace(/[^a-zA-Z0-9_-]/g, '_');
-      const cleanUserNo = (params.userNumber || `USER${params.userId.replace(/\D/g, '').slice(-4) || params.userId.slice(0, 8).toUpperCase()}`).replace(/[^a-zA-Z0-9_-]/g, '_');
-      const folderName = `${cleanAppNo}_${cleanUserNo}`;
-      const appDir = path.join(STORAGE_DIR, 'applications', folderName);
+      await mkdir(STORAGE_DIR, { recursive: true });
 
-      await mkdir(appDir, { recursive: true });
+      const cleanAppNo = (params.applicationNumber || 'APP_UNKNOWN').replace(/[^a-zA-Z0-9_-]/g, '_');
 
       let buffer: Buffer;
       let mimeType = 'application/octet-stream';
@@ -304,10 +297,11 @@ export class DocumentsService {
         safeFileName = `${safeFileName}${extension}`;
       }
 
-      const filePath = path.join(appDir, safeFileName);
+      const finalFileName = `${cleanAppNo}_${safeFileName}`;
+      const filePath = path.join(STORAGE_DIR, finalFileName);
       await writeFile(filePath, buffer);
 
-      const storagePath = path.join('uploads', 'applications', folderName, safeFileName).replace(/\\/g, '/');
+      const storagePath = path.join('uploads', finalFileName).replace(/\\/g, '/');
 
       const doc = this.documents.create({
         user_id: params.userId,
@@ -315,20 +309,20 @@ export class DocumentsService {
         updated_by: params.actingUserId || params.userId,
         document_name: params.documentName.trim(),
         document_type: params.documentType || DocumentType.MEMBERSHIP_DOCUMENT,
-        file_name: safeFileName,
+        file_name: finalFileName,
         original_file_name: params.fileName || safeFileName,
         mime_type: mimeType,
         file_size: buffer.length,
         storage_path: storagePath,
         related_entity_type: params.relatedEntityType || RelatedEntityType.MEMBERSHIP,
         related_entity_id: params.relatedEntityId ?? null,
-        description: `Saved in application folder ${folderName}`,
+        description: `Saved for application ${cleanAppNo}`,
         is_archived: false,
       });
 
       return await this.documents.save(doc);
     } catch (err: any) {
-      this.logger.warn(`Could not save document to application folder: ${err?.message}`);
+      this.logger.warn(`Could not save document to upload folder: ${err?.message}`);
       return null;
     }
   }
