@@ -775,6 +775,7 @@ ${dto.message.trim()}`;
             `[SupportService] Failed to send status update email for ${ticketRef}: ${mailErr.message}`,
           );
         }
+
       }
     } catch (mailTriggerErr) {
       this.logger.warn(`Error resolving email for ticket update: ${(mailTriggerErr as Error).message}`);
