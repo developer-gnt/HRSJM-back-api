@@ -20,9 +20,9 @@ export function validateCashfreeConfig(
   const cashfreeEnv = (env.CASHFREE_ENV ?? 'SANDBOX').toUpperCase();
   const isCashfreeProduction = cashfreeEnv === 'PRODUCTION';
 
-  const appId = env.CASHFREE_APP_ID?.trim();
-  const secretKey = env.CASHFREE_SECRET_KEY?.trim();
-  const webhookSecret = env.CASHFREE_WEBHOOK_SECRET?.trim();
+  const appId = (env.CASHFREE_APP_ID || env.Test_CASHFREE_APP_ID || env.TEST_CASHFREE_APP_ID)?.trim();
+  const secretKey = (env.CASHFREE_SECRET_KEY || env.Test_CASHFREE_SECRET_KEY || env.TEST_CASHFREE_SECRET_KEY)?.trim();
+  const webhookSecret = (env.CASHFREE_WEBHOOK_SECRET || env.Test_CASHFREE_WEBHOOK_SECRET || env.TEST_CASHFREE_WEBHOOK_SECRET)?.trim();
 
   // If Cashfree environment is explicitly set to PRODUCTION, require live credentials
   if (isCashfreeProduction) {

@@ -90,8 +90,8 @@ export class CashfreeService {
     this.webhookUrl = (config.get<string>('cashfree.webhookUrl') || process.env.CASHFREE_WEBHOOK_URL || 'http://localhost:3000/api/v1/payments/cashfree/webhook').trim();
     this.environment = (config.get<string>('cashfree.environment') || process.env.CASHFREE_ENV || 'SANDBOX').toUpperCase().trim();
     
-    this.appId = (config.get<string>('cashfree.appId') || process.env.CASHFREE_APP_ID || '').trim();
-    this.secretKey = (config.get<string>('cashfree.secretKey') || process.env.CASHFREE_SECRET_KEY || '').trim();
+    this.appId = (config.get<string>('cashfree.appId') || process.env.CASHFREE_APP_ID || process.env.Test_CASHFREE_APP_ID || '').trim();
+    this.secretKey = (config.get<string>('cashfree.secretKey') || process.env.CASHFREE_SECRET_KEY || process.env.Test_CASHFREE_SECRET_KEY || '').trim();
 
     const defaultBaseURL = this.environment === 'PRODUCTION'
       ? 'https://api.cashfree.com/pg'
