@@ -117,7 +117,7 @@ export class UpdateOfficialMembershipCategoryFees1790770000000 implements Migrat
       {
         name: 'National Political Council Cell',
         code: 'NATIONAL_POLITICAL_COUNCIL_CELL',
-        description: 'Qualification: Graduate / Degree (For Politicians) · 10 Years Validity',
+        description: 'Qualification: Graduate / Degree (For Politicians Public Social Works) · 10 Years Validity',
         fee: 10000.00,
         validity_days: 3650,
       },
